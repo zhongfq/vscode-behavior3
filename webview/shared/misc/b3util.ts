@@ -69,7 +69,7 @@ export const initWithNodeDefs = (
   nodeDefs = new NodeDefs();
   for (const node of defs) {
     node.args?.forEach((arg) => {
-      if (arg.options && !Array.isArray(arg.options[0].source)) {
+      if (arg.options && !Array.isArray((arg.options as Array<{ source: unknown }>)[0]?.source)) {
         arg.options = [
           {
             source: arg.options as unknown as Array<{ name: string; value: unknown }>,

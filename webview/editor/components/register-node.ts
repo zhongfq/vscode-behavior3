@@ -21,7 +21,8 @@ import { NodeDef, getNodeType, isExprType, NodeData, NodeLayout } from "@shared/
 import * as b3util from "@shared/misc/b3util";
 import i18n from "@shared/misc/i18n";
 import { isMacos } from "@shared/misc/keys";
-import { Constructor } from "@antv/g6/lib/types";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Constructor<T> = new (...args: any[]) => T;
 import { useSetting } from "../contexts/setting-context";
 import { useWorkspace } from "../contexts/workspace-context";
 
