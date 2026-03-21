@@ -1,10 +1,11 @@
 import { App, ConfigProvider } from "antd";
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { NodeDef, TreeData, NodeData, VarDecl } from "@shared/misc/b3type";
 import { setGlobalHooks } from "@shared/misc/hooks";
 import "@shared/misc/i18n";
 import { getThemeConfig } from "@shared/misc/theme";
-import { Inspector } from "./components/inspector";
+import { Inspector, InspectorState } from "./components/inspector";
 import * as vscodeApi from "./vscodeApi";
 import "./style.scss";
 
@@ -13,11 +14,6 @@ const GlobalHooksBridge = () => {
   return null;
 };
 
-type InspectorState =
-  | { kind: "empty" }
-  | { kind: "node"; node: unknown; nodeDefs: unknown[]; editingTree: unknown; workdir: string; checkExpr: boolean }
-  | { kind: "tree"; tree: unknown; nodeDefs: unknown[]; workdir: string; checkExpr: boolean };
-
 const InspectorApp = () => {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [state, setState] = useState<InspectorState>({ kind: "empty" });
@@ -25,21 +21,35 @@ const InspectorApp = () => {
   useEffect(() => {
     const off = vscodeApi.onMessage((msg) => {
       if (msg.type === "nodeSelected") {
+        if (msg.node == null) {
+          setState({ kind: "empty" });
+          return;
+        }
         setState({
           kind: "node",
-          node: msg.node,
-          nodeDefs: msg.nodeDefs,
-          editingTree: msg.editingTree,
+          node: msg.node as NodeData,
+          nodeDefs: msg.nodeDefs as NodeDef[],
+          editingTree: (msg.editingTree as TreeData) ?? null,
           workdir: msg.workdir,
           checkExpr: msg.checkExpr,
+          allFiles: msg.allFiles ?? [],
+          usingVars: (msg.usingVars as Record<string, { name: string; desc: string }>) ?? null,
+          groupDefs: msg.groupDefs ?? [],
         });
       } else if (msg.type === "treeSelected") {
+        if (msg.tree == null) {
+          setState({ kind: "empty" });
+          return;
+        }
         setState({
           kind: "tree",
-          tree: msg.tree,
-          nodeDefs: msg.nodeDefs,
+          tree: msg.tree as TreeData,
+          nodeDefs: msg.nodeDefs as NodeDef[],
           workdir: msg.workdir,
           checkExpr: msg.checkExpr,
+          allFiles: msg.allFiles ?? [],
+          usingVars: (msg.usingVars as Record<string, { name: string; desc: string }>) ?? null,
+          groupDefs: msg.groupDefs ?? [],
         });
       } else if (msg.type === "theme") {
         setTheme(msg.value);

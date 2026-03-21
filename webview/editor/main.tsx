@@ -50,6 +50,15 @@ const EditorApp = () => {
         });
       } else if (msg.type === "treePropertyChanged") {
         workspace.editor?.dispatch?.("updateTree", msg.data);
+      } else if (msg.type === "requestTreeSelection") {
+        // Inspector panel just loaded — re-send current tree selection
+        const editor = workspace.editor;
+        if (editor) {
+          vscodeApi.postMessage({ type: "treeSelected", tree: editor.data });
+        }
+      } else if (msg.type === "varDeclLoaded") {
+        // Host has computed the full usingVars (including import/subtree files)
+        workspace.applyHostVars(msg.usingVars);
       }
     });
 

@@ -12,4 +12,55 @@ body {
 #root {
   width: 100%;
   min-height: 100vh;
+  min-width: 240px;
+}
+
+.b3-inspector {
+  min-width: 240px;
+}
+
+.b3-inspector-content {
+  padding: 20px;
+}
+
+/* The real flex container is .ant-row inside .ant-form-item */
+.b3-inspector .ant-form-item .ant-row {
+  flex-wrap: nowrap;
+}
+
+.b3-inspector .ant-form-item {
+  margin-bottom: 10px;
+}
+
+.b3-inspector .ant-form-item-label {
+  min-width: 100px;
+  text-align: end;
+}
+
+.b3-inspector .ant-form-item-label > label {
+  justify-content: flex-end;
+}
+
+.b3-inspector .ant-form-item-label > label::after {
+  content: ":";
+  position: relative;
+  top: -0.5px;
+  margin-inline: 2px 8px;
+}
+
+.b3-inspector .b3-node-def-label {
+  min-width: 100px;
+  text-align: end;
+}
+
+.b3-inspector .ant-form-item-explain {
+  word-wrap: break-word;
+}
+
+.ant-form-item .ant-form-item-explain {
+  font-size: small;
+}
+
+.ant-divider-horizontal.ant-divider-with-text {
+  margin-bottom: 0;
 }

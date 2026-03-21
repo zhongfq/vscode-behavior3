@@ -501,6 +501,16 @@ export class Graph {
     this.selectNode(null);
   }
 
+  /**
+   * Lightweight repaint: re-renders all node shapes in-place so that
+   * changes to b3util.usingVars/usingGroups are reflected immediately,
+   * WITHOUT clearing data, resetting selection, or triggering any
+   * treeSelected/nodeSelected messages back to the host.
+   */
+  async repaint() {
+    await this._graph.draw();
+  }
+
   async reload() {
     this.selectNode(null);
     // Use in-memory data (already updated by extension host via fileChanged message)

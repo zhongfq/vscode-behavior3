@@ -18,6 +18,7 @@ i18n
   .use(initReactI18next)
   .init({
     returnNull: false,
+    lng: "zh",
     fallbackLng: "zh",
     interpolation: {
       escapeValue: false,
@@ -27,6 +28,7 @@ i18n
     },
     load: "languageOnly",
     detection: {
+      order: ["localStorage"],
       caches: ["localStorage"],
     },
     resources: {

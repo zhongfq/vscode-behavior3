@@ -76,6 +76,17 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Command: open JSON file with Behavior3 custom editor
+  context.subscriptions.push(
+    vscode.commands.registerCommand("behavior3.openWithEditor", async (uri?: vscode.Uri) => {
+      if (!uri) {
+        vscode.window.showErrorMessage("No file selected.");
+        return;
+      }
+      await vscode.commands.executeCommand("vscode.openWith", uri, TreeEditorProvider.viewType);
+    })
+  );
+
   // Command: open node settings
   context.subscriptions.push(
     vscode.commands.registerCommand("behavior3.openSettings", async () => {

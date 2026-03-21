@@ -234,6 +234,8 @@ export const Editor: FC<EditorProps> = ({ onChange, data: editor, ...props }) =>
       updateSearchState();
     } else if (event === "refresh") {
       await graph.refresh();
+    } else if (event === "repaint") {
+      await graph.repaint();
     } else if (event === "reload") {
       graph.reload();
       editor.changed = false;

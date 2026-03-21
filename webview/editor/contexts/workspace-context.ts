@@ -31,6 +31,7 @@ export type EditEvent =
   | "undo"
   | "redo"
   | "refresh"
+  | "repaint"
   | "rename"
   | "reload"
   | "updateTree"
@@ -136,6 +137,9 @@ export type WorkspaceStore = {
   // refresh var declaration (updates usingGroups/usingVars)
   refresh: () => void;
 
+  // apply pre-computed vars from the extension host (includes import/subtree vars)
+  applyHostVars: (vars: Array<{ name: string; desc: string }>) => void;
+
   usingGroups: typeof b3util.usingGroups;
   usingVars: typeof b3util.usingVars;
 
@@ -226,10 +230,20 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
     set({ usingGroups: b3util.usingGroups, usingVars: b3util.usingVars });
   },
 
+  applyHostVars: (vars) => {
+    b3util.updateUsingVars(vars);
+    set({ usingVars: b3util.usingVars });
+    // Repaint node colors to reflect updated usingVars.
+    // Use "repaint" (not "refresh") to avoid triggering selectNode(null)
+    // → onEditingTree → treeSelected → varDeclLoaded infinite loop.
+    get().editor?.dispatch?.("repaint");
+  },
+
   onEditingNode: (node) => {
     set({ editingNode: node, editingNodeDef: null, editingTree: null });
     if (node) {
-      vscodeApi.postMessage({ type: "nodeSelected", node });
+      const currentTree = get().editor?.data ?? null;
+      vscodeApi.postMessage({ type: "nodeSelected", node: node.data, tree: currentTree });
     } else {
       // notify tree selected
       const editor = get().editor;

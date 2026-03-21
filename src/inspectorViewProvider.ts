@@ -57,7 +57,11 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((msg: InspectorToHostMessage) => {
       switch (msg.type) {
         case "ready":
-          // Inspector is ready; nothing to do until an editor becomes active
+          // Re-send last known state so the panel shows data immediately
+          if (this._lastMessage) {
+            this._view?.webview.postMessage(this._lastMessage);
+          }
+          this._onReady?.();
           break;
         case "propertyChanged":
           // Forward to active editor
@@ -73,9 +77,15 @@ export class InspectorViewProvider implements vscode.WebviewViewProvider {
   /** Callback set by TreeEditorProvider when editor becomes active */
   _onPropertyChanged?: (nodeId: string, data: Record<string, unknown>) => void;
   _onTreePropertyChanged?: (data: Record<string, unknown>) => void;
+  /** Called when the inspector webview sends "ready" — allows re-sending current state */
+  _onReady?: () => void;
+
+  /** Cache of the last message sent, so we can replay it when webview reloads */
+  private _lastMessage?: HostToInspectorMessage;
 
   /** Send a message to the Inspector webview */
   postMessage(message: HostToInspectorMessage) {
+    this._lastMessage = message;
     this._view?.webview.postMessage(message);
   }
 

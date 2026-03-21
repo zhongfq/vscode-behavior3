@@ -25,7 +25,7 @@ export interface NodeDef {
 export type EditorToHostMessage =
   | { type: "ready" }
   | { type: "update"; content: string }
-  | { type: "nodeSelected"; node: unknown | null }
+  | { type: "nodeSelected"; node: unknown | null; tree: unknown | null }
   | { type: "treeSelected"; tree: unknown }
   | { type: "requestSetting" }
   | { type: "build" }
@@ -49,7 +49,9 @@ export type HostToEditorMessage =
   | { type: "buildResult"; success: boolean; message: string }
   | { type: "readFileResult"; requestId: string; content: string | null }
   | { type: "propertyChanged"; nodeId: string; data: Record<string, unknown> }
-  | { type: "treePropertyChanged"; data: Record<string, unknown> };
+  | { type: "treePropertyChanged"; data: Record<string, unknown> }
+  | { type: "requestTreeSelection" }
+  | { type: "varDeclLoaded"; usingVars: Array<{ name: string; desc: string }> };
 
 // ─── Inspector Webview → Extension Host ─────────────────────────────────────
 
@@ -68,6 +70,9 @@ export type HostToInspectorMessage =
       editingTree: unknown | null;
       workdir: string;
       checkExpr: boolean;
+      allFiles: string[];
+      usingVars: Record<string, { name: string; desc: string }> | null;
+      groupDefs: string[];
     }
   | {
       type: "treeSelected";
@@ -75,5 +80,8 @@ export type HostToInspectorMessage =
       nodeDefs: NodeDef[];
       workdir: string;
       checkExpr: boolean;
+      allFiles: string[];
+      usingVars: Record<string, { name: string; desc: string }> | null;
+      groupDefs: string[];
     }
   | { type: "theme"; value: "dark" | "light" };

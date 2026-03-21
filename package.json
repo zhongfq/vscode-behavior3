@@ -72,6 +72,10 @@
       {
         "command": "behavior3.openSettings",
         "title": "Behavior Tree: Open Node Config (.b3-setting)"
+      },
+      {
+        "command": "behavior3.openWithEditor",
+        "title": "Open with Behavior3"
       }
     ],
     "menus": {
@@ -87,6 +91,11 @@
           "command": "behavior3.newTree",
           "when": "explorerResourceIsFolder",
           "group": "1_modification"
+        },
+        {
+          "command": "behavior3.openWithEditor",
+          "when": "resourceExtname == .json && !explorerResourceIsFolder",
+          "group": "navigation"
         }
       ]
     },
