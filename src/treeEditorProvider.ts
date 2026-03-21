@@ -25,10 +25,13 @@ function buildWebviewHtml(
   const htmlPath = vscode.Uri.joinPath(extensionUri, "dist", "webview", entry, "index.html");
   let html = fs.readFileSync(htmlPath.fsPath, "utf-8");
 
-  // Replace relative ../assets/ paths with proper webview URIs
-  const assetsUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "dist", "webview", "assets")
+  // The webview root for dist/webview/ – used for base href and icon resolution
+  const webviewRootUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "webview")
   );
+
+  // Replace relative ../assets/ paths with proper webview URIs
+  const assetsUri = `${webviewRootUri}/assets`;
   html = html.replace(/\.\.\/assets\//g, `${assetsUri}/`);
   html = html.replace(/(?<!=")\.\/assets\//g, `${assetsUri}/`);
 
@@ -36,10 +39,14 @@ function buildWebviewHtml(
     html = html.replace(/<title>.*?<\/title>/, `<title>${title}</title>`);
   }
 
-  // Inject CSP before </head>
+  // Inject <base href> pointing to dist/webview/ so that relative paths like
+  // ./icons/Action.svg resolve to dist/webview/icons/Action.svg correctly.
+  const baseTag = `<base href="${webviewRootUri}/">`;
+
+  // Inject CSP + base before </head>
   const src = webview.cspSource;
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${src} data: blob:; style-src ${src} 'unsafe-inline'; script-src ${src} 'unsafe-inline'; font-src ${src} data:; worker-src blob:; connect-src ${src};">`;
-  html = html.replace("</head>", `  ${csp}\n</head>`);
+  html = html.replace("</head>", `  ${baseTag}\n  ${csp}\n</head>`);
 
   return html;
 }

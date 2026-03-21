@@ -10,15 +10,17 @@ function buildWebviewHtml(
   const htmlPath = vscode.Uri.joinPath(extensionUri, "dist", "webview", entry, "index.html");
   let html = fs.readFileSync(htmlPath.fsPath, "utf-8");
 
-  const assetsUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "dist", "webview", "assets")
+  const webviewRootUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "webview")
   );
+  const assetsUri = `${webviewRootUri}/assets`;
   html = html.replace(/\.\.\/assets\//g, `${assetsUri}/`);
   html = html.replace(/(?<!=")\.\/assets\//g, `${assetsUri}/`);
 
+  const baseTag = `<base href="${webviewRootUri}/">`;
   const src = webview.cspSource;
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${src} data: blob:; style-src ${src} 'unsafe-inline'; script-src ${src} 'unsafe-inline'; font-src ${src} data:; worker-src blob:;">`;
-  html = html.replace("</head>", `  ${csp}\n</head>`);
+  html = html.replace("</head>", `  ${baseTag}\n  ${csp}\n</head>`);
 
   return html;
 }
