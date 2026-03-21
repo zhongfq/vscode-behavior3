@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   root: "webview",
   base: "./",
+  publicDir: path.resolve(__dirname, "public"),
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "webview/shared"),

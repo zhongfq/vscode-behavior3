@@ -3,12 +3,19 @@
   "displayName": "Behavior Tree Editor",
   "description": "Visual behavior tree editor for game development",
   "version": "0.1.0",
-  "publisher": "behavior3",
+  "publisher": "codetypes",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhongfq/vscode-behavior3"
+  },
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "icon": "public/icons/icon.png",
+  "categories": [
+    "Other"
+  ],
+  "icon": "icon.png",
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
@@ -16,13 +23,21 @@
       {
         "viewType": "behavior3.treeEditor",
         "displayName": "Behavior Tree Editor",
-        "selector": [{ "filenamePattern": "*.b3tree" }],
+        "selector": [
+          {
+            "filenamePattern": "*.b3tree"
+          }
+        ],
         "priority": "default"
       },
       {
         "viewType": "behavior3.treeEditor",
         "displayName": "Behavior Tree Editor",
-        "selector": [{ "filenamePattern": "*.json" }],
+        "selector": [
+          {
+            "filenamePattern": "*.json"
+          }
+        ],
         "priority": "option"
       }
     ],
@@ -106,6 +121,7 @@
     "@types/react-dom": "^18.3.1",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vscode/vsce": "^3.7.1",
     "autoprefixer": "^10.4.20",
     "esbuild": "^0.24.0",
     "postcss": "^8.4.49",
