@@ -3,7 +3,7 @@
 // - Updated imports to use @shared/ aliases
 // - Replaced Electron-specific setting-context with local webview version
 // - Replaced `assert` (Node.js) with inline assertion
-// - file:// icon URLs are handled via extension host (icons served as webview resources)
+// - Custom `icon` paths from `.b3-setting` are mapped to webview resource URLs in the extension host
 import { Image as GImage, Path as GPath, Rect as GRect, Text as GText } from "@antv/g";
 import { DisplayObject, Group } from "@antv/g-lite";
 import {
@@ -377,13 +377,12 @@ class TreeNode extends Rect {
   }
 
   private drawTypeIcon(attributes: Required<RectStyleProps>, container: Group) {
-    // In webview, custom icons served relative to webview base URL
-    // Standard icons use ./icons/ path (copied from public/)
-    const ws = useWorkspace.getState();
+    // Bundled icons: `./icons/${type}.svg`. Custom icons from `.b3-setting` are rewritten
+    // by the extension host to `https://*.vscode-cdn.net/...` webview URIs.
+    const custom = (this._nodeDef as NodeDef & { icon?: string }).icon?.trim();
     let img: string;
-    if ((this._nodeDef as NodeDef & { icon?: string }).icon) {
-      // Custom icon: not loadable directly; fall back to classify icon
-      img = `./icons/${this._classify}.svg`;
+    if (custom && /^[a-z][a-z0-9+.-]*:/i.test(custom)) {
+      img = custom;
     } else {
       img = `./icons/${this._classify}.svg`;
     }

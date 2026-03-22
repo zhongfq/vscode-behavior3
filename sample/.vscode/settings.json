@@ -1,5 +1,5 @@
 {
   "workbench.editorAssociations": {
-    "sample/**/*.json": "behavior3.treeEditor",
+    "**/*.json": "behavior3.treeEditor",
   }
 }

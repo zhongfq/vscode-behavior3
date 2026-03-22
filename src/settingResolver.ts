@@ -46,6 +46,62 @@ export function findB3SettingPath(
 }
 
 /**
+ * Same discovery order as `resolveNodeDefs`, but returns the resolved `.b3-setting` path only.
+ * Used to resolve relative `icon` paths next to the config file.
+ */
+export async function getResolvedB3SettingDir(
+  workspaceFolder: vscode.Uri,
+  documentUri?: vscode.Uri
+): Promise<string | undefined> {
+  const p = await resolveB3SettingFilePath(workspaceFolder, documentUri);
+  return p ? path.dirname(p) : undefined;
+}
+
+async function resolveB3SettingFilePath(
+  workspaceFolder: vscode.Uri,
+  documentUri?: vscode.Uri
+): Promise<string | undefined> {
+  const config = vscode.workspace.getConfiguration("behavior3");
+  const settingFileRel = config.get<string>("settingFile", "");
+
+  if (settingFileRel) {
+    const uri = vscode.Uri.joinPath(workspaceFolder, settingFileRel);
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return uri.fsPath;
+    } catch {
+      // fall through
+    }
+  }
+
+  if (documentUri) {
+    const wf = vscode.workspace.getWorkspaceFolder(documentUri);
+    const foundFs = findB3SettingPath(documentUri, wf?.uri);
+    if (foundFs) {
+      try {
+        await vscode.workspace.fs.stat(vscode.Uri.file(foundFs));
+        return foundFs;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  const pattern = new vscode.RelativePattern(workspaceFolder.fsPath, "*.b3-setting");
+  const found = await vscode.workspace.findFiles(pattern, null, 1);
+  if (found.length > 0) {
+    try {
+      await vscode.workspace.fs.stat(found[0]);
+      return found[0].fsPath;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Load node definitions from `.b3-setting`.
  *
  * Priority:
@@ -57,47 +113,18 @@ export async function resolveNodeDefs(
   workspaceFolder: vscode.Uri,
   documentUri?: vscode.Uri
 ): Promise<NodeDef[]> {
-  const config = vscode.workspace.getConfiguration("behavior3");
-  const settingFileRel = config.get<string>("settingFile", "");
-
-  if (settingFileRel) {
-    const uri = vscode.Uri.joinPath(workspaceFolder, settingFileRel);
-    try {
-      const raw = await vscode.workspace.fs.readFile(uri);
-      const text = Buffer.from(raw).toString("utf-8");
-      return JSON.parse(text) as NodeDef[];
-    } catch {
-      // fall through to search from file / root
-    }
+  const filePath = await resolveB3SettingFilePath(workspaceFolder, documentUri);
+  if (!filePath) {
+    return [];
   }
-
-  if (documentUri) {
-    const wf = vscode.workspace.getWorkspaceFolder(documentUri);
-    const foundFs = findB3SettingPath(documentUri, wf?.uri);
-    if (foundFs) {
-      try {
-        const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(foundFs));
-        const text = Buffer.from(raw).toString("utf-8");
-        return JSON.parse(text) as NodeDef[];
-      } catch (e) {
-        console.error("[behavior3] failed to load setting file:", foundFs, e);
-      }
-    }
+  try {
+    const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+    const text = Buffer.from(raw).toString("utf-8");
+    return JSON.parse(text) as NodeDef[];
+  } catch (e) {
+    console.error("[behavior3] failed to load setting file:", filePath, e);
+    return [];
   }
-
-  const pattern = new vscode.RelativePattern(workspaceFolder.fsPath, "*.b3-setting");
-  const found = await vscode.workspace.findFiles(pattern, null, 1);
-  if (found.length > 0) {
-    try {
-      const raw = await vscode.workspace.fs.readFile(found[0]);
-      const text = Buffer.from(raw).toString("utf-8");
-      return JSON.parse(text) as NodeDef[];
-    } catch (e) {
-      console.error("[behavior3] failed to load setting file:", found[0].fsPath, e);
-    }
-  }
-
-  return [];
 }
 
 /**

@@ -2,7 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { getBehavior3OutputChannel } from "./outputChannel";
-import { resolveNodeDefs, watchSettingFile } from "./settingResolver";
+import { mapNodeDefsIconsForWebview } from "./nodeDefIcons";
+import { getResolvedB3SettingDir, resolveNodeDefs, watchSettingFile } from "./settingResolver";
 import type {
   EditorToHostMessage,
   HostToEditorMessage,
@@ -65,14 +66,19 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
   ): Promise<void> {
     const workdir = getWorkdir(document.uri);
     const nodeDefs = await resolveNodeDefs(workdir, document.uri);
+    const settingDir = await getResolvedB3SettingDir(workdir, document.uri);
     const config = vscode.workspace.getConfiguration("behavior3");
     const checkExpr = config.get<boolean>("checkExpr", true);
+
+    const mapDefsForWebview = (defs: NodeDef[]) =>
+      mapNodeDefsIconsForWebview(webviewPanel.webview, workdir, settingDir, defs);
 
     webviewPanel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this._extensionUri, "dist", "webview"),
         vscode.Uri.joinPath(this._extensionUri, "public"),
+        workdir,
       ],
     };
 
@@ -107,7 +113,10 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
     // Watch .b3-setting for changes
     const settingWatcher = watchSettingFile(workdir, document.uri, (newDefs) => {
       nodeDefs.splice(0, nodeDefs.length, ...newDefs);
-      const msg: HostToEditorMessage = { type: "settingLoaded", nodeDefs: newDefs };
+      const msg: HostToEditorMessage = {
+        type: "settingLoaded",
+        nodeDefs: mapDefsForWebview(newDefs),
+      };
       webviewPanel.webview.postMessage(msg);
     });
 
@@ -171,7 +180,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             content,
             filePath: document.uri.fsPath,
             workdir: workdir.fsPath,
-            nodeDefs,
+            nodeDefs: mapDefsForWebview(nodeDefs),
             checkExpr,
             theme,
             allFiles,
@@ -217,7 +226,10 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         case "requestSetting": {
           const freshDefs = await resolveNodeDefs(workdir, document.uri);
           nodeDefs.splice(0, nodeDefs.length, ...freshDefs);
-          const replyMsg: HostToEditorMessage = { type: "settingLoaded", nodeDefs: freshDefs };
+          const replyMsg: HostToEditorMessage = {
+            type: "settingLoaded",
+            nodeDefs: mapDefsForWebview(freshDefs),
+          };
           webviewPanel.webview.postMessage(replyMsg);
           break;
         }
