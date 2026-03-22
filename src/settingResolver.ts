@@ -46,8 +46,55 @@ export function findB3SettingPath(
 }
 
 /**
- * Same discovery order as `resolveNodeDefs`, but returns the resolved `.b3-setting` path only.
- * Used to resolve relative `icon` paths next to the config file.
+ * Walk from the opened file's directory up to the workspace root; return the first `*.b3-workspace` found.
+ * Same traversal as {@link findB3SettingPath}, used by the build command to locate the project root.
+ */
+export function findB3WorkspacePath(
+  documentUri: vscode.Uri,
+  workspaceFolder: vscode.Uri | undefined
+): string | undefined {
+  const root = workspaceFolder?.fsPath;
+  let dir = path.resolve(path.dirname(documentUri.fsPath));
+
+  while (true) {
+    if (root && !dirIsInWorkspaceTree(root, dir)) {
+      break;
+    }
+    try {
+      const names = fs.readdirSync(dir);
+      const hit = names.filter((n) => n.endsWith(".b3-workspace")).sort();
+      if (hit.length > 0) {
+        return path.join(dir, hit[0]);
+      }
+    } catch {
+      /* ignore */
+    }
+    if (root && path.resolve(dir) === path.resolve(root)) {
+      break;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
+/**
+ * Behavior-tree project root: the directory containing the resolved `*.b3-workspace` file
+ * (same as build `process.chdir` / `b3util.workdir`). Subtree `path` and imports are relative to this.
+ * Falls back to the VS Code workspace folder when no `.b3-workspace` is found walking up from the document.
+ */
+export function getBehaviorProjectRootFsPath(documentUri: vscode.Uri, workspaceFolder: vscode.Uri): string {
+  const wfile = findB3WorkspacePath(documentUri, workspaceFolder);
+  if (wfile) {
+    return path.dirname(wfile);
+  }
+  return workspaceFolder.fsPath;
+}
+
+/**
+ * Same discovery order as `resolveNodeDefs`. Returns the directory of the resolved `.b3-setting`
+ * file so relative fields such as `NodeDef.icon` can be resolved against that directory.
  */
 export async function getResolvedB3SettingDir(
   workspaceFolder: vscode.Uri,

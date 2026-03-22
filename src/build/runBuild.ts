@@ -2,7 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { formatConsoleArgs, getBehavior3OutputChannel } from "../outputChannel";
-import { findB3SettingPath } from "../settingResolver";
+import { findB3SettingPath, findB3WorkspacePath } from "../settingResolver";
+import { TreeEditorProvider } from "../treeEditorProvider";
 import { setFs } from "../../webview/shared/misc/b3fs";
 import { buildProject, initWorkdirFromSettingFile, setCheckExpr } from "../../webview/shared/misc/b3util";
 
@@ -65,34 +66,62 @@ export function resolveSettingFilePathSync(
 }
 
 /**
- * Find the first `*.b3-workspace` file in the workspace root (same directory scope as desktop app).
+ * Prefer the active behavior tree tab (custom editor or .json / .b3tree); webview focus may hide activeTextEditor.
  */
-export function resolveWorkspaceFilePath(workspaceRootFsPath: string): string | undefined {
-  try {
-    const entries = fs.readdirSync(workspaceRootFsPath);
-    for (const name of entries) {
-      if (name.endsWith(".b3-workspace")) {
-        return path.join(workspaceRootFsPath, name);
+function getActiveBehaviorTreeFileUri(): vscode.Uri | undefined {
+  const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+  if (tab?.input instanceof vscode.TabInputCustom) {
+    if (tab.input.viewType === TreeEditorProvider.viewType && tab.input.uri.scheme === "file") {
+      return tab.input.uri;
+    }
+  }
+  if (tab?.input instanceof vscode.TabInputText) {
+    const u = tab.input.uri;
+    if (u.scheme === "file") {
+      const ext = path.extname(u.fsPath).toLowerCase();
+      if (ext === ".json" || ext === ".b3tree") {
+        return u;
       }
     }
-  } catch {
-    return undefined;
+  }
+  const ed = vscode.window.activeTextEditor;
+  if (ed?.document.uri.scheme === "file") {
+    const u = ed.document.uri;
+    const ext = path.extname(u.fsPath).toLowerCase();
+    if (ext === ".json" || ext === ".b3tree") {
+      return u;
+    }
   }
   return undefined;
 }
 
 export async function runBuild(context: vscode.ExtensionContext): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
+  const treeUri = getActiveBehaviorTreeFileUri();
+  let folder: vscode.WorkspaceFolder | undefined;
+  if (treeUri) {
+    folder = vscode.workspace.getWorkspaceFolder(treeUri);
+    if (!folder) {
+      void vscode.window.showErrorMessage(
+        "The active behavior tree file must belong to an opened workspace folder."
+      );
+      return;
+    }
+  } else {
+    folder = vscode.workspace.workspaceFolders?.[0];
+  }
   if (!folder) {
     void vscode.window.showErrorMessage("Open a workspace folder before building.");
     return;
   }
 
   const workspaceRoot = folder.uri.fsPath;
-  const workspaceFile = resolveWorkspaceFilePath(workspaceRoot);
+  const walkAnchorUri = treeUri ?? vscode.Uri.file(path.join(workspaceRoot, ".behavior3-build-anchor"));
+  const workspaceFile = findB3WorkspacePath(walkAnchorUri, folder.uri);
   if (!workspaceFile) {
     void vscode.window.showErrorMessage(
-      "No .b3-workspace file found in the workspace root. Create one (e.g. sample/workspace.b3-workspace) or open a project that contains it."
+      treeUri
+        ? "No .b3-workspace file found when walking up from the active behavior tree file. Add one next to your project (e.g. sample/workspace.b3-workspace)."
+        : "No .b3-workspace file found when walking up from the workspace folder. Add one (e.g. sample/workspace.b3-workspace) or open a behavior tree file first."
     );
     return;
   }

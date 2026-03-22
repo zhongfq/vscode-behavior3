@@ -85,7 +85,7 @@
         {
           "command": "behavior3.openWithEditor",
           "when": "resourceExtname == .json && !explorerResourceIsFolder",
-          "group": "navigation"
+          "group": "navigation@45"
         }
       ]
     },

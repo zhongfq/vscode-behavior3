@@ -12,8 +12,11 @@ function filePathIsUnderRoot(root: string, candidate: string): boolean {
 }
 
 /**
- * Map `node.icon` paths from `.b3-setting` to `webview.asWebviewUri` URLs so the
- * G6 canvas can load images under the webview CSP.
+ * Map `node.icon` to `webview.asWebviewUri` URLs so the G6 canvas can load images under CSP.
+ *
+ * Convention (same as the desktop editor): **relative** `icon` paths are resolved from the
+ * directory that contains the **currently loaded `.b3-setting`** file — not the workspace root
+ * and not the tree JSON path. `settingDir` must be that directory (`getResolvedB3SettingDir`).
  */
 export function mapNodeDefsIconsForWebview(
   webview: vscode.Webview,
@@ -44,7 +47,8 @@ export function mapNodeDefsIconsForWebview(
     } else if (settingDir) {
       absPath = path.normalize(path.join(settingDir, trimmed));
     } else {
-      absPath = path.normalize(path.join(root, trimmed));
+      // Relative paths are only defined relative to `.b3-setting`; never guess workspace root.
+      return { ...def, icon: undefined };
     }
 
     if (!filePathIsUnderRoot(root, absPath)) {

@@ -3,7 +3,12 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { getBehavior3OutputChannel } from "./outputChannel";
 import { mapNodeDefsIconsForWebview } from "./nodeDefIcons";
-import { getResolvedB3SettingDir, resolveNodeDefs, watchSettingFile } from "./settingResolver";
+import {
+  getBehaviorProjectRootFsPath,
+  getResolvedB3SettingDir,
+  resolveNodeDefs,
+  watchSettingFile,
+} from "./settingResolver";
 import type {
   EditorToHostMessage,
   HostToEditorMessage,
@@ -64,21 +69,22 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken
   ): Promise<void> {
-    const workdir = getWorkdir(document.uri);
-    const nodeDefs = await resolveNodeDefs(workdir, document.uri);
-    const settingDir = await getResolvedB3SettingDir(workdir, document.uri);
+    const workspaceFolderUri = getWorkdir(document.uri);
+    const projectRootUri = vscode.Uri.file(getBehaviorProjectRootFsPath(document.uri, workspaceFolderUri));
+    const nodeDefs = await resolveNodeDefs(workspaceFolderUri, document.uri);
+    const settingDir = await getResolvedB3SettingDir(workspaceFolderUri, document.uri);
     const config = vscode.workspace.getConfiguration("behavior3");
     const checkExpr = config.get<boolean>("checkExpr", true);
 
     const mapDefsForWebview = (defs: NodeDef[]) =>
-      mapNodeDefsIconsForWebview(webviewPanel.webview, workdir, settingDir, defs);
+      mapNodeDefsIconsForWebview(webviewPanel.webview, workspaceFolderUri, settingDir, defs);
 
     webviewPanel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this._extensionUri, "dist", "webview"),
         vscode.Uri.joinPath(this._extensionUri, "public"),
-        workdir,
+        workspaceFolderUri,
       ],
     };
 
@@ -90,7 +96,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
     };
     const getSubtreeRefSet = (): Set<string> => {
       if (!cachedSubtreeRefs) {
-        cachedSubtreeRefs = getTransitiveSubtreeRelativePaths(workdir.fsPath, document.getText());
+        cachedSubtreeRefs = getTransitiveSubtreeRelativePaths(projectRootUri.fsPath, document.getText());
       }
       return cachedSubtreeRefs;
     };
@@ -111,7 +117,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
     };
 
     // Watch .b3-setting for changes
-    const settingWatcher = watchSettingFile(workdir, document.uri, (newDefs) => {
+    const settingWatcher = watchSettingFile(workspaceFolderUri, document.uri, (newDefs) => {
       nodeDefs.splice(0, nodeDefs.length, ...newDefs);
       const msg: HostToEditorMessage = {
         type: "settingLoaded",
@@ -133,7 +139,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         }
         return;
       }
-      const rel = uriToWorkdirRelative(e.document.uri, workdir);
+      const rel = uriToWorkdirRelative(e.document.uri, projectRootUri);
       if (!rel || !getSubtreeRefSet().has(rel)) {
         return;
       }
@@ -146,7 +152,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
       if (saved.uri.toString() === document.uri.toString()) {
         return;
       }
-      const rel = uriToWorkdirRelative(saved.uri, workdir);
+      const rel = uriToWorkdirRelative(saved.uri, projectRootUri);
       if (!rel || !getSubtreeRefSet().has(rel)) {
         return;
       }
@@ -165,11 +171,11 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
           const content = document.getText();
 
           // Compute allFiles and initial usingVars
-          const allFiles = await collectAllFiles(workdir);
+          const allFiles = await collectAllFiles(projectRootUri);
           let initUsingVars: VarDeclResult | undefined;
           try {
             const treeJson = JSON.parse(content) as TreeLike;
-            const uv = await buildUsingVars(workdir, treeJson);
+            const uv = await buildUsingVars(projectRootUri, treeJson);
             if (uv) initUsingVars = uv;
           } catch {
             // parse error — send init without usingVars
@@ -179,7 +185,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             type: "init",
             content,
             filePath: document.uri.fsPath,
-            workdir: workdir.fsPath,
+            workdir: projectRootUri.fsPath,
             nodeDefs: mapDefsForWebview(nodeDefs),
             checkExpr,
             theme,
@@ -208,8 +214,8 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
 
         case "treeSelected": {
           // Recompute usingVars (and optionally refresh allFiles) and send back
-          const allFiles = await collectAllFiles(workdir);
-          const result = await buildUsingVars(workdir, msg.tree as TreeLike | null);
+          const allFiles = await collectAllFiles(projectRootUri);
+          const result = await buildUsingVars(projectRootUri, msg.tree as TreeLike | null);
           if (result) {
             const varMsg: HostToEditorMessage = {
               type: "varDeclLoaded",
@@ -224,7 +230,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         }
 
         case "requestSetting": {
-          const freshDefs = await resolveNodeDefs(workdir, document.uri);
+          const freshDefs = await resolveNodeDefs(workspaceFolderUri, document.uri);
           nodeDefs.splice(0, nodeDefs.length, ...freshDefs);
           const replyMsg: HostToEditorMessage = {
             type: "settingLoaded",
