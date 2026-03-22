@@ -1,0 +1,9 @@
+---
+description: Git commit messages must be written in English
+alwaysApply: true
+---
+
+# Git commits
+
+- Write **commit titles and bodies in English** (conventional commits style is fine, e.g. `fix:`, `feat:`).
+- Do not use Chinese or other languages in commit messages unless quoting user-facing strings.
