@@ -1162,6 +1162,10 @@ const loadVarDecl = (list: ImportDecl[], arr: Array<VarDecl>) => {
           load(v);
           depends.add(v);
         });
+        collectSubtree(model.root).forEach((subPath) => {
+          load(subPath);
+          depends.add(subPath);
+        });
         console.debug(`load var: ${path}`);
       } catch (e) {
         alertError(`parsing error: ${path}`);

@@ -1,0 +1,18 @@
+---
+description: 本扩展基于 behavior3editor；用户说「原项目」时指工作区 behavior3editor/ 目录，勿用任务/子代理中的代码充当原项目
+alwaysApply: true
+---
+
+# 与 behavior3editor（原项目）的关系
+
+- 本仓库的 VS Code 插件是在 **[behavior3editor](https://github.com/zhandouxiaojiji/behavior3editor)**（包名 `@behavior3editor`）基础上改造、集成而来的。
+- 当用户说 **「原项目」** 时，**仅指工作区根目录下的 `behavior3editor/` 目录中的源码**（本地克隆的上游仓库）。对比行为、查实现、回答「原版怎么做」时，应以该目录里的**真实文件**为准。
+
+## 禁止
+
+- **不要**把 Cursor **任务（Task）**、子代理（subagent）返回的片段、或其它会话里粘贴的代码，当作「原项目」的权威引用来源。
+- **不要**在未读取 `behavior3editor/` 下对应文件的情况下，凭记忆或外部片段断言原项目实现。
+
+## 应当
+
+- 需要对照原项目时，**直接读取** `behavior3editor/` 内路径（例如与当前文件平行的 `src/`、`package.json` 等）并引用其中的内容。

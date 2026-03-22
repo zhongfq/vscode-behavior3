@@ -331,6 +331,7 @@ interface TreeNodeLike {
 interface TreeFileLike {
   vars?: Array<{ name: string; desc?: string }>;
   import?: string[];
+  root?: TreeNodeLike;
 }
 
 /**
@@ -368,6 +369,92 @@ function collectSubtreePaths(node: TreeNodeLike | undefined): string[] {
 
 function normalizePathKey(p: string): string {
   return p.replace(/\\/g, "/").replace(/^[/\\]+/, "");
+}
+
+/** Top-level `vars` in one tree JSON file (for Inspector rows; no recursion). */
+function getLocalVarsFromTreeFile(
+  workdirFs: string,
+  relativePath: string
+): Array<{ name: string; desc: string }> {
+  try {
+    const raw = fs.readFileSync(path.join(workdirFs, relativePath), "utf-8");
+    const fileTree = JSON.parse(raw) as TreeFileLike;
+    return (fileTree.vars ?? [])
+      .filter((v) => v.name)
+      .map((v) => ({ name: v.name, desc: v.desc ?? "" }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * All `import` JSON paths reachable from the main tree's import list (BFS), for Inspector "导入变量".
+ */
+function collectOrderedTransitiveImportPaths(workdirFs: string, seedImports: string[]): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const queue: string[] = [];
+  for (const s of seedImports) {
+    const n = normalizePathKey(s);
+    if (!seen.has(n)) {
+      seen.add(n);
+      queue.push(n);
+    }
+  }
+  while (queue.length) {
+    const rel = queue.shift()!;
+    ordered.push(rel);
+    try {
+      const raw = fs.readFileSync(path.join(workdirFs, rel), "utf-8");
+      const fileTree = JSON.parse(raw) as TreeFileLike;
+      for (const imp of fileTree.import ?? []) {
+        if (typeof imp === "string") {
+          const n = normalizePathKey(imp);
+          if (!seen.has(n)) {
+            seen.add(n);
+            queue.push(n);
+          }
+        }
+      }
+    } catch {
+      /* missing or invalid */
+    }
+  }
+  return ordered;
+}
+
+/**
+ * All subtree JSON paths reachable from `root` (BFS), for Inspector "子树变量" (matches desktop transitive view).
+ */
+function collectOrderedTransitiveSubtreePaths(workdirFs: string, root: TreeNodeLike | undefined): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const queue: string[] = [];
+  for (const p of collectSubtreePaths(root)) {
+    const n = normalizePathKey(p);
+    if (!seen.has(n)) {
+      seen.add(n);
+      queue.push(n);
+    }
+  }
+  while (queue.length) {
+    const rel = queue.shift()!;
+    ordered.push(rel);
+    try {
+      const raw = fs.readFileSync(path.join(workdirFs, rel), "utf-8");
+      const sub = JSON.parse(raw) as TreeLike;
+      for (const p of collectSubtreePaths(sub.root)) {
+        const n = normalizePathKey(p);
+        if (!seen.has(n)) {
+          seen.add(n);
+          queue.push(n);
+        }
+      }
+    } catch {
+      /* missing or invalid */
+    }
+  }
+  return ordered;
 }
 
 /**
@@ -437,12 +524,13 @@ function readVarsFromFile(
   globalVars: Record<string, { name: string; desc: string }>
 ): Array<{ name: string; desc: string }> {
   const localVars: Array<{ name: string; desc: string }> = [];
-  if (visitedForGlobal.has(relativePath)) return localVars;
-  visitedForGlobal.add(relativePath);
+  const relKey = normalizePathKey(relativePath);
+  if (visitedForGlobal.has(relKey)) return localVars;
+  visitedForGlobal.add(relKey);
 
   const fsLib = require("fs") as typeof import("fs");
   const nodePath = require("path") as typeof import("path");
-  const fullPath = nodePath.join(workdirFs, relativePath);
+  const fullPath = nodePath.join(workdirFs, relKey);
 
   try {
     const raw = fsLib.readFileSync(fullPath, "utf-8");
@@ -458,6 +546,10 @@ function readVarsFromFile(
       if (typeof imp === "string") {
         readVarsFromFile(imp, workdirFs, visitedForGlobal, globalVars);
       }
+    }
+    // Nested subtree files referenced inside this tree (same as collectSubtreePaths on main doc)
+    for (const subPath of collectSubtreePaths(fileTree.root)) {
+      readVarsFromFile(subPath, workdirFs, visitedForGlobal, globalVars);
     }
   } catch {
     // file not found or parse error — silently skip
@@ -481,21 +573,25 @@ async function buildUsingVars(
   }
 
   const visited = new Set<string>();
-  const importDecls: Array<{ path: string; vars: Array<{ name: string; desc: string }> }> = [];
 
-  for (const imp of tree.import ?? []) {
-    if (typeof imp === "string") {
-      const vars = readVarsFromFile(imp, workdir.fsPath, visited, usingVars);
-      importDecls.push({ path: imp, vars });
-    }
+  const importSeeds = (tree.import ?? []).filter((x): x is string => typeof x === "string");
+  for (const imp of importSeeds) {
+    readVarsFromFile(imp, workdir.fsPath, visited, usingVars);
   }
 
-  const subtreePaths = collectSubtreePaths(tree.root);
-  const subtreeDecls: Array<{ path: string; vars: Array<{ name: string; desc: string }> }> = [];
-  for (const subtreePath of subtreePaths) {
-    const vars = readVarsFromFile(subtreePath, workdir.fsPath, visited, usingVars);
-    subtreeDecls.push({ path: subtreePath, vars });
+  for (const subtreePath of collectSubtreePaths(tree.root)) {
+    readVarsFromFile(subtreePath, workdir.fsPath, visited, usingVars);
   }
+
+  const importDecls = collectOrderedTransitiveImportPaths(workdir.fsPath, importSeeds).map((p) => ({
+    path: p,
+    vars: getLocalVarsFromTreeFile(workdir.fsPath, p),
+  }));
+
+  const subtreeDecls = collectOrderedTransitiveSubtreePaths(workdir.fsPath, tree.root).map((p) => ({
+    path: p,
+    vars: getLocalVarsFromTreeFile(workdir.fsPath, p),
+  }));
 
   return { usingVars, importDecls, subtreeDecls };
 }
