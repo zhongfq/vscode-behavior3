@@ -17,7 +17,7 @@ export type SettingStore = {
 
 export const useSetting = create<SettingStore>((set) => ({
   data: {
-    layout: (localStorage.getItem(LAYOUT_KEY) as NodeLayout) ?? "compact",
+    layout: (localStorage.getItem(LAYOUT_KEY) as NodeLayout) ?? "normal",
   },
   setLayout: (layout) => {
     localStorage.setItem(LAYOUT_KEY, layout);

@@ -1,4 +1,7 @@
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
+import { Context, Node, NodeDef } from "../behavior3/src/behavior3";
 import { composeLoggers, createConsoleLogger, setLogger } from "../webview/shared/misc/logger";
 import { runBuild } from "./build/runBuild";
 import { createLogOutputChannelLogger } from "./logChannel";
@@ -60,41 +63,82 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Command: new tree file
+  // Command: create a new behavior3 project from template (`sample/`)
   context.subscriptions.push(
-    vscode.commands.registerCommand("behavior3.newTree", async (uri?: vscode.Uri) => {
-      const targetDir = uri ?? vscode.workspace.workspaceFolders?.[0]?.uri;
-      if (!targetDir) {
+    vscode.commands.registerCommand("behavior3.createProject", async (uri?: vscode.Uri) => {
+      const parentUri = uri ?? vscode.workspace.workspaceFolders?.[0]?.uri;
+      if (!parentUri || parentUri.scheme !== "file") {
         vscode.window.showErrorMessage("Please open a workspace folder first.");
         return;
       }
-      const name = await vscode.window.showInputBox({
-        prompt: "Enter behavior tree file name (without extension)",
-        placeHolder: "my-tree",
+
+      const projectName = await vscode.window.showInputBox({
+        prompt: "Enter project folder name",
+        placeHolder: "my-behavior3-project",
         validateInput: (v) => (v.trim() ? null : "Name cannot be empty"),
       });
-      if (!name) {
+      if (!projectName) {
         return;
       }
-      const fileUri = vscode.Uri.joinPath(targetDir, `${name.trim()}.b3tree`);
-      const initialContent = JSON.stringify(
-        {
-          version: "1.9.0",
-          name: name.trim(),
-          desc: "",
-          export: true,
-          group: [],
-          import: [],
-          vars: [],
-          root: { id: "1", name: "Sequence", $id: nanoid(), children: [] },
-          $override: {},
-          custom: {},
-        },
-        null,
-        2
-      );
-      await vscode.workspace.fs.writeFile(fileUri, Buffer.from(initialContent, "utf-8"));
-      await vscode.commands.executeCommand("vscode.openWith", fileUri, TreeEditorProvider.viewType);
+
+      const projectDir = path.join(parentUri.fsPath, projectName.trim());
+      if (fs.existsSync(projectDir)) {
+        void vscode.window.showErrorMessage(`Folder already exists: ${projectName.trim()}`);
+        return;
+      }
+
+      try {
+        // Align with desktop createProject (`behavior3editor/src/contexts/workspace-context.ts`):
+        // - write `node-config.b3-setting` (node defs)
+        // - write `example.json` (default example tree)
+        // - write `.b3-workspace` containing `{ nodeConf, metadata }`
+        await fs.promises.mkdir(projectDir, { recursive: false });
+
+        await fs.promises.writeFile(
+          path.join(projectDir, "node-config.b3-setting"),
+          createNodeConfigFromBuiltins(),
+          "utf-8"
+        );
+
+        await fs.promises.writeFile(
+          path.join(projectDir, "example.json"),
+          JSON.stringify(
+            {
+              name: "example",
+              root: {
+                id: 1,
+                name: "Sequence",
+                children: [
+                  { id: 2, name: "Log", args: { message: "hello" } },
+                  { id: 3, name: "Wait", args: { time: 1 } },
+                ],
+              },
+            },
+            null,
+            2
+          ),
+          "utf-8"
+        );
+
+        await fs.promises.writeFile(
+          path.join(projectDir, "workspace.b3-workspace"),
+          JSON.stringify(
+            {
+              nodeConf: "node-config.b3-setting",
+              metadata: [],
+            },
+            null,
+            2
+          ),
+          "utf-8"
+        );
+
+        const fileUri = vscode.Uri.file(path.join(projectDir, "example.json"));
+        await vscode.commands.executeCommand("vscode.openWith", fileUri, TreeEditorProvider.viewType);
+      } catch (e) {
+        void vscode.window.showErrorMessage(`Failed to create project: ${e instanceof Error ? e.message : e}`);
+        return;
+      }
     })
   );
 
@@ -143,11 +187,19 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {}
 
-function nanoid(size = 10): string {
-  const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  let result = "";
-  for (let i = 0; i < size; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+function createNodeConfigFromBuiltins(): string {
+  // Keep behavior aligned with behavior3editor's zhNodeDef():
+  // instantiate Context, collect nodeDefs, sort by name, then apply doc newline normalization.
+  const context = new (class extends Context {
+    override async loadTree(_path: string): Promise<Node> {
+      throw new Error("Not implemented.");
+    }
+  })();
+  const defs = Object.values(context.nodeDefs).sort((a: NodeDef, b: NodeDef) =>
+    a.name.localeCompare(b.name)
+  );
+  let content = JSON.stringify(defs, null, 2);
+  content = content.replace(/"doc": "\\n +/g, '"doc": "');
+  content = content.replace(/\\n +/g, "\\n");
+  return content;
 }

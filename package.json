@@ -44,12 +44,12 @@
     "commands": [
       {
         "command": "behavior3.build",
-        "title": "Build Behavior Tree",
+        "title": "Behavior Tree: Build Behavior Tree",
         "icon": "$(tools)"
       },
       {
-        "command": "behavior3.newTree",
-        "title": "New .b3tree File"
+        "command": "behavior3.createProject",
+        "title": "Behavior Tree: Create Project"
       },
       {
         "command": "behavior3.openSettings",
@@ -57,11 +57,11 @@
       },
       {
         "command": "behavior3.openWithEditor",
-        "title": "Open with Behavior3"
+        "title": "Behavior Tree: Open with Behavior3"
       },
       {
         "command": "behavior3.toggleEditorMode",
-        "title": "Toggle Text / Behavior3",
+        "title": "Behavior Tree: Toggle Text / Behavior3",
         "icon": "$(edit)"
       }
     ],
@@ -87,11 +87,6 @@
         }
       ],
       "explorer/context": [
-        {
-          "command": "behavior3.newTree",
-          "when": "explorerResourceIsFolder",
-          "group": "1_modification"
-        },
         {
           "command": "behavior3.openWithEditor",
           "when": "resourceExtname == .json && !explorerResourceIsFolder",

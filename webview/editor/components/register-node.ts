@@ -288,7 +288,7 @@ class TreeNode extends Rect {
   private _width = 0;
   private _height = 0;
   private _radius = 0;
-  private _nodeLayout: NodeLayout = "compact";
+  private _nodeLayout: NodeLayout = "normal";
   private _nodeDef!: NodeDef;
   private _data!: NodeData;
   private _prefix = "";
