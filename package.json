@@ -29,39 +29,34 @@
           }
         ],
         "priority": "default"
-      },
-      {
-        "viewType": "behavior3.treeEditor",
-        "displayName": "Behavior Tree Editor",
-        "selector": [
-          {
-            "filenamePattern": "*.json"
-          }
-        ],
-        "priority": "option"
       }
     ],
     "commands": [
       {
         "command": "behavior3.build",
-        "title": "Behavior Tree: Build Behavior Tree",
+        "title": "Build Behavior Tree",
+        "category": "Behavior Tree",
         "icon": "$(tools)"
       },
       {
         "command": "behavior3.createProject",
-        "title": "Behavior Tree: Create Project"
+        "title": "Create Project",
+        "category": "Behavior Tree"
       },
       {
         "command": "behavior3.openSettings",
-        "title": "Behavior Tree: Open Node Config (.b3-setting)"
+        "title": "Open Node Config (.b3-setting)",
+        "category": "Behavior Tree"
       },
       {
         "command": "behavior3.openWithEditor",
-        "title": "Behavior Tree: Open with Behavior3"
+        "title": "Open with Behavior3",
+        "category": "Behavior Tree"
       },
       {
         "command": "behavior3.toggleEditorMode",
-        "title": "Behavior Tree: Toggle Text / Behavior3",
+        "title": "Toggle Text / Behavior3",
+        "category": "Behavior Tree",
         "icon": "$(edit)"
       }
     ],
@@ -71,6 +66,11 @@
         "key": "ctrl+b",
         "mac": "cmd+b",
         "when": "activeCustomEditorId == 'behavior3.treeEditor'"
+      },
+      {
+        "command": "behavior3.toggleEditorMode",
+        "key": "f4",
+        "when": "activeCustomEditorId == 'behavior3.treeEditor' || resourceExtname == .json || resourceExtname == .b3tree"
       }
     ],
     "menus": {
@@ -106,6 +106,34 @@
           "type": "boolean",
           "default": true,
           "description": "启用表达式校验"
+        },
+        "behavior3.language": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "zh",
+            "en"
+          ],
+          "enumDescriptions": [
+            "跟随 VS Code 显示语言",
+            "强制中文",
+            "Force English"
+          ],
+          "description": "编辑器界面语言。默认跟随 VS Code，也可手动指定。"
+        },
+        "behavior3.nodeLayout": {
+          "type": "string",
+          "default": "normal",
+          "enum": [
+            "normal",
+            "compact"
+          ],
+          "enumDescriptions": [
+            "标准布局",
+            "紧凑布局"
+          ],
+          "description": "Behavior Tree 节点布局样式。"
         }
       }
     }

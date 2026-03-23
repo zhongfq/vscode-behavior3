@@ -27,8 +27,13 @@
       {
         "$id": "ZpXcZl6oDz",
         "args": {
+          "w": 1,
+          "x": 1,
+          "y": 1
         },
         "id": "4",
+        "input": [
+        ],
         "name": "FindEnemy",
         "output": [
           "target1"

@@ -3,6 +3,7 @@
  */
 
 import type { NodeDef } from "../behavior3/src/behavior3/node";
+import type { NodeLayout } from "../webview/shared/misc/b3type";
 
 export type { NodeDef };
 
@@ -31,6 +32,8 @@ export type HostToEditorMessage =
       workdir: string;
       nodeDefs: NodeDef[];
       checkExpr: boolean;
+      language: "zh" | "en";
+      nodeLayout: NodeLayout;
       theme: "dark" | "light";
       allFiles: string[];
     }

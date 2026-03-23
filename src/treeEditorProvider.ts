@@ -14,6 +14,7 @@ import type {
   HostToEditorMessage,
   NodeDef,
 } from "./types";
+import type { NodeLayout } from "../webview/shared/misc/b3type";
 
 /**
  * Read the Vite-generated HTML for the editor webview entry,
@@ -75,6 +76,8 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
     const settingDir = await getResolvedB3SettingDir(workspaceFolderUri, document.uri);
     const config = vscode.workspace.getConfiguration("behavior3");
     const checkExpr = config.get<boolean>("checkExpr", true);
+    const language = getEditorLanguage(config.get<string>("language", "auto"));
+    const nodeLayout = getNodeLayout(config.get<string>("nodeLayout", "normal"));
 
     const mapDefsForWebview = (defs: NodeDef[]) =>
       mapNodeDefsIconsForWebview(webviewPanel.webview, workspaceFolderUri, settingDir, defs);
@@ -188,6 +191,8 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             workdir: projectRootUri.fsPath,
             nodeDefs: mapDefsForWebview(nodeDefs),
             checkExpr,
+            language,
+            nodeLayout,
             theme,
             allFiles,
           };
@@ -677,4 +682,16 @@ function getVSCodeTheme(): "dark" | "light" {
     kind === vscode.ColorThemeKind.HighContrastLight
     ? "light"
     : "dark";
+}
+
+function getEditorLanguage(setting: string): "zh" | "en" {
+  if (setting === "zh" || setting === "en") {
+    return setting;
+  }
+  const envLanguage = vscode.env.language.toLowerCase();
+  return envLanguage.startsWith("zh") ? "zh" : "en";
+}
+
+function getNodeLayout(setting: string): NodeLayout {
+  return setting === "compact" ? "compact" : "normal";
 }
