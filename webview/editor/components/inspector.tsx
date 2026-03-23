@@ -40,6 +40,7 @@ import {
   NodeArg,
   NodeData,
   NodeDef,
+  TreeData,
   VarDecl,
 } from "../../shared/misc/b3type";
 import { logger } from "../../shared/misc/logger";
@@ -460,7 +461,7 @@ const NodeInspector: FC<{
     const data = createNodeFromForm(form, node, nodeDefs);
     const ws = useWorkspace.getState();
     ws.editor?.dispatch?.("updateNode", {
-      data: { id: data.id!, ...data },
+      data: {...data, id: data.id },
       prefix: ws.editor.data.prefix,
       disabled: false,
     });

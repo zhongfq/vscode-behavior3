@@ -28,6 +28,38 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  /** Switch between the Behavior3 webview editor and the built-in text (JSON) editor for the same file. */
+  context.subscriptions.push(
+    vscode.commands.registerCommand("behavior3.toggleEditorMode", async () => {
+      const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+      if (!tab) {
+        return;
+      }
+      const input = tab.input;
+      if (input instanceof vscode.TabInputTextDiff) {
+        void vscode.window.showInformationMessage("Cannot switch editor mode while viewing a diff.");
+        return;
+      }
+      if (input instanceof vscode.TabInputCustom && input.viewType === TreeEditorProvider.viewType) {
+        await vscode.commands.executeCommand("vscode.openWith", input.uri, "default");
+        return;
+      }
+      if (input instanceof vscode.TabInputText) {
+        const uri = input.uri;
+        if (uri.scheme === "file") {
+          const p = uri.fsPath.toLowerCase();
+          if (p.endsWith(".b3tree") || p.endsWith(".json")) {
+            await vscode.commands.executeCommand("vscode.openWith", uri, TreeEditorProvider.viewType);
+            return;
+          }
+        }
+      }
+      void vscode.window.showInformationMessage(
+        "Editor mode toggle applies to Behavior Tree files (.b3tree / .json)."
+      );
+    })
+  );
+
   // Command: new tree file
   context.subscriptions.push(
     vscode.commands.registerCommand("behavior3.newTree", async (uri?: vscode.Uri) => {
