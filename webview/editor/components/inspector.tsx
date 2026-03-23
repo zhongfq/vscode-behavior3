@@ -24,7 +24,7 @@ import {
 } from "antd";
 import TextArea from "antd/es/input/TextArea";
 import { DefaultOptionType } from "antd/es/select";
-import React, { FC, useEffect, useMemo, useState } from "react";
+import React, { FC, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import { useShallow } from "zustand/react/shallow";
@@ -74,11 +74,15 @@ const updateFormWithNode = (
   form: ReturnType<typeof Form.useForm>[0],
   node: NodeData,
   defs: NodeDefs,
-  checkExpr: boolean
+  checkExpr: boolean,
+  /** When true, skip resetFields so the form is not torn down after blur→submit while the same node is still selected (preserves focus). */
+  soft?: boolean
 ) => {
   const def = defs.get(node.name);
   const t = i18n.t;
-  form.resetFields();
+  if (!soft) {
+    form.resetFields();
+  }
   form.setFieldValue("id", node.id);
   form.setFieldValue("name", node.name);
   form.setFieldValue("type", def.type);
@@ -439,8 +443,16 @@ const NodeInspector: FC<{
     100
   );
 
+  const prevNodeIdentityRef = useRef<{ id: string; name: string } | null>(null);
   useEffect(() => {
-    updateFormWithNode(form, node, nodeDefs, checkExpr);
+    const prev = prevNodeIdentityRef.current;
+    const identity = { id: node.id, name: node.name };
+    const soft =
+      prev !== null &&
+      prev.id === identity.id &&
+      prev.name === identity.name;
+    prevNodeIdentityRef.current = identity;
+    updateFormWithNode(form, node, nodeDefs, checkExpr, soft);
     setNodeArgs(node.args ?? {});
     validateFieldsLater();
   }, [node, nodeDefs, checkExpr]);
@@ -1112,8 +1124,13 @@ const TreeInspector: FC<{
   // Sync form from store when `tree` changes only. Do not depend on `usingCount` here:
   // otherwise blur→updateTree→usingCount change re-runs resetFields with stale `tree.vars`
   // before Zustand editingTree sync, and inputs snap back to old values.
+  const prevTreeNameRef = useRef<string | null>(null);
   useEffect(() => {
-    form.resetFields();
+    const soft = prevTreeNameRef.current === tree.name;
+    prevTreeNameRef.current = tree.name;
+    if (!soft) {
+      form.resetFields();
+    }
     form.setFieldValue("name", tree.name);
     form.setFieldValue("desc", tree.desc);
     form.setFieldValue("export", tree.export !== false);
