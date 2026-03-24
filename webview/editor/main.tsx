@@ -7,11 +7,15 @@ import "../shared/misc/i18n";
 import i18n from "../shared/misc/i18n";
 import { getThemeConfig } from "../shared/misc/theme";
 import { useSetting } from "./contexts/setting-context";
-import { useWorkspace } from "./contexts/workspace-context";
+import { detectInitialThemeMode, useWorkspace } from "./contexts/workspace-context";
 import { writeTree } from "../shared/misc/util";
 import { Editor } from "./components/editor";
 import "./components/register-node";
 import "./style.scss";
+
+const bootTheme = detectInitialThemeMode();
+document.documentElement.setAttribute("data-theme", bootTheme);
+document.body.setAttribute("data-theme", bootTheme);
 
 const GlobalHooksBridge = () => {
   setGlobalHooks();
@@ -21,6 +25,11 @@ const GlobalHooksBridge = () => {
 const EditorApp = () => {
   const [ready, setReady] = useState(false);
   const workspace = useWorkspace();
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", workspace.theme);
+    document.body.setAttribute("data-theme", workspace.theme);
+  }, [workspace.theme]);
 
   useEffect(() => {
     const off = vscodeApi.onMessage((msg) => {
@@ -85,7 +94,7 @@ const EditorApp = () => {
                 alignItems: "center",
                 justifyContent: "center",
                 flex: 1,
-                color: "#666",
+                color: "var(--b3-text-muted)",
                 fontSize: 14,
               }}
             >

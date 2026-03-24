@@ -24,6 +24,20 @@ import {
   treeDataForPersistence,
 } from "../../shared/misc/util";
 
+export const detectInitialThemeMode = (): "dark" | "light" => {
+  if (typeof document === "undefined") {
+    return "dark";
+  }
+  const classes = document.body?.classList;
+  if (classes?.contains("vscode-light") || classes?.contains("vscode-high-contrast-light")) {
+    return "light";
+  }
+  if (classes?.contains("vscode-dark") || classes?.contains("vscode-high-contrast")) {
+    return "dark";
+  }
+  return window.matchMedia?.("(prefers-color-scheme: light)")?.matches ? "light" : "dark";
+};
+
 export type EditEvent =
   | "close"
   | "save"
@@ -201,7 +215,7 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
   nodeDefs: new b3util.NodeDefs(),
   groupDefs: [],
   checkExpr: true,
-  theme: "dark",
+  theme: detectInitialThemeMode(),
   allFiles: [],
   editor: undefined,
   modifiedTime: 0,

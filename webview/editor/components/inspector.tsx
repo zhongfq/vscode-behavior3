@@ -340,6 +340,7 @@ const VarDeclItem: FC<VarDeclItemProps> = ({ value, onChange, onRemove, onSubmit
     <Flex gap={4} style={{ width: "100%" }}>
       <Space.Compact style={{ width: "100%" }}>
         <div
+          className="b3-var-decl-counter"
           style={{
             display: "flex",
             cursor: "pointer",
@@ -350,9 +351,6 @@ const VarDeclItem: FC<VarDeclItemProps> = ({ value, onChange, onRemove, onSubmit
             minWidth: "52px",
             borderTopLeftRadius: "4px",
             borderBottomLeftRadius: "4px",
-            borderLeft: "1px solid #3d506c",
-            borderTop: "1px solid #3d506c",
-            borderBottom: "1px solid #3d506c",
           }}
           onClick={() => local.name && useWorkspace.getState().editor?.dispatch?.("clickVar", local.name)}
         >

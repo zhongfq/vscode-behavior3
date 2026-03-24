@@ -128,6 +128,7 @@ export const Editor: FC<EditorProps> = ({ onChange, data: editor, ...props }) =>
       usingVars: state.usingVars,
       usingGroups: state.usingGroups,
       hostSubtreeRefreshSeq: state.hostSubtreeRefreshSeq,
+      theme: state.theme,
     }))
   );
 
@@ -438,11 +439,11 @@ export const Editor: FC<EditorProps> = ({ onChange, data: editor, ...props }) =>
           >
             <Flex
               style={{
-                backgroundColor: "#161b22",
+                backgroundColor: "var(--b3-search-bg)",
                 padding: "4px 10px 4px 10px",
                 borderRadius: "4px",
-                borderLeft: "3px solid #f78166",
-                boxShadow: "0 0 8px 2px #0000005c",
+                borderLeft: "3px solid var(--b3-search-border-accent)",
+                boxShadow: "0 0 8px 2px var(--b3-search-shadow)",
                 alignItems: "center",
               }}
             >
@@ -491,7 +492,7 @@ export const Editor: FC<EditorProps> = ({ onChange, data: editor, ...props }) =>
                   </Flex>
                 }
               />
-              <div style={{ padding: "0 10px 0 5px", minWidth: "40px" }}>
+              <div style={{ padding: "0 10px 0 5px", minWidth: "40px", color: "var(--b3-text-muted)" }}>
                 {filterOption.results.length
                   ? `${filterOption.index + 1}/${filterOption.results.length}`
                   : ""}
@@ -560,7 +561,7 @@ export const Editor: FC<EditorProps> = ({ onChange, data: editor, ...props }) =>
           width: 360,
           minWidth: 360,
           height: "100%",
-          borderLeft: "1px solid #30363d",
+          borderLeft: "1px solid var(--b3-inspector-divider)",
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",

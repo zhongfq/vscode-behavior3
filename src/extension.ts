@@ -69,10 +69,15 @@ export function activate(context: vscode.ExtensionContext) {
       }
       const input = tab.input;
       if (input instanceof vscode.TabInputTextDiff) {
-        void vscode.window.showInformationMessage("Cannot switch editor mode while viewing a diff.");
+        void vscode.window.showInformationMessage(
+          "Cannot switch editor mode while viewing a diff."
+        );
         return;
       }
-      if (input instanceof vscode.TabInputCustom && input.viewType === TreeEditorProvider.viewType) {
+      if (
+        input instanceof vscode.TabInputCustom &&
+        input.viewType === TreeEditorProvider.viewType
+      ) {
         skipNextAutoOpenUris.add(input.uri.toString());
         await vscode.commands.executeCommand("vscode.openWith", input.uri, "default");
         return;
@@ -82,7 +87,11 @@ export function activate(context: vscode.ExtensionContext) {
         if (uri.scheme === "file") {
           const p = uri.fsPath.toLowerCase();
           if (p.endsWith(".json")) {
-            await vscode.commands.executeCommand("vscode.openWith", uri, TreeEditorProvider.viewType);
+            await vscode.commands.executeCommand(
+              "vscode.openWith",
+              uri,
+              TreeEditorProvider.viewType
+            );
             return;
           }
         }
@@ -164,9 +173,15 @@ export function activate(context: vscode.ExtensionContext) {
         );
 
         const fileUri = vscode.Uri.file(path.join(projectDir, "example.json"));
-        await vscode.commands.executeCommand("vscode.openWith", fileUri, TreeEditorProvider.viewType);
+        await vscode.commands.executeCommand(
+          "vscode.openWith",
+          fileUri,
+          TreeEditorProvider.viewType
+        );
       } catch (e) {
-        void vscode.window.showErrorMessage(`Failed to create project: ${e instanceof Error ? e.message : e}`);
+        void vscode.window.showErrorMessage(
+          `Failed to create project: ${e instanceof Error ? e.message : e}`
+        );
         return;
       }
     })
@@ -249,12 +264,12 @@ async function tryAutoOpenBehaviorEditor(
   }
   autoOpeningJsonUris.add(key);
   try {
+    await closeDuplicateTextTabForUri(uri);
     await vscode.commands.executeCommand("vscode.openWith", uri, TreeEditorProvider.viewType, {
       viewColumn: vscode.ViewColumn.Active,
       preserveFocus: false,
       preview: true,
     });
-    await closeDuplicateTextTabForUri(uri);
   } catch {
     // Ignore openWith failures and keep default text editor.
   } finally {

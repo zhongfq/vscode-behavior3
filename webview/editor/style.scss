@@ -2,6 +2,36 @@
   box-sizing: border-box;
 }
 
+:root[data-theme="dark"] {
+  --b3-editor-bg: #0d1116;
+  --b3-text-muted: #8b949e;
+  --b3-filter-hover-bg: #30363d;
+  --b3-filter-selected-bg: #2f81f7;
+  --b3-filter-selected-hover-bg: #388bfd;
+  --b3-search-bg: #161b22;
+  --b3-search-border-accent: #f78166;
+  --b3-search-shadow: #0000005c;
+  --b3-inspector-divider: #30363d;
+  --b3-var-counter-bg: #0d1117;
+  --b3-var-counter-border: #3d506c;
+  --b3-var-counter-text: #e6edf3;
+}
+
+:root[data-theme="light"] {
+  --b3-editor-bg: #ffffff;
+  --b3-text-muted: #6b7280;
+  --b3-filter-hover-bg: #e5e7eb;
+  --b3-filter-selected-bg: #1677ff;
+  --b3-filter-selected-hover-bg: #4096ff;
+  --b3-search-bg: #ffffff;
+  --b3-search-border-accent: #1677ff;
+  --b3-search-shadow: #00000026;
+  --b3-inspector-divider: #d9d9d9;
+  --b3-var-counter-bg: #ffffff;
+  --b3-var-counter-border: #d9d9d9;
+  --b3-var-counter-text: #1f2328;
+}
+
 html,
 body {
   margin: 0;
@@ -9,6 +39,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background-color: var(--b3-editor-bg);
 }
 
 #root {
@@ -16,6 +47,7 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background-color: var(--b3-editor-bg);
 }
 
 /* Antd App wrapper needs to fill too */
@@ -24,6 +56,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background-color: var(--b3-editor-bg);
 }
 
 .b3-editor {
@@ -33,18 +66,19 @@ body {
   width: 100%;
   height: 100%;
   outline: none;
+  background-color: var(--b3-editor-bg);
 }
 
 .b3-editor-filter {
   &:hover {
-    background-color: #30363d !important;
+    background-color: var(--b3-filter-hover-bg) !important;
   }
 }
 
 .b3-editor-filter-selected {
-  background-color: #2f81f7 !important;
+  background-color: var(--b3-filter-selected-bg) !important;
   &:hover {
-    background-color: #388bfd !important;
+    background-color: var(--b3-filter-selected-hover-bg) !important;
   }
 }
 
@@ -72,6 +106,14 @@ body {
   font-size: small;
 }
 
+.b3-var-decl-counter {
+  background-color: var(--b3-var-counter-bg);
+  border-left: 1px solid var(--b3-var-counter-border);
+  border-top: 1px solid var(--b3-var-counter-border);
+  border-bottom: 1px solid var(--b3-var-counter-border);
+  color: var(--b3-var-counter-text);
+}
+
 .ant-divider-horizontal.ant-divider-with-text {
   margin-bottom: 0px;
 }
@@ -83,7 +125,7 @@ body {
 .b3-markdown {
   padding: 0 4px;
   font-size: 13px;
-  color: #8b949e;
+  color: var(--b3-text-muted);
   word-break: break-word;
 
   code {
