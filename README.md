@@ -46,6 +46,50 @@ Create a `.b3-setting` file in workspace:
 
 Click **Build** in the editor title bar.
 
+### Build Script (`.b3-workspace`)
+
+`settings.buildScript` supports ESM scripts:
+
+- JavaScript: `.js`, `.mjs`
+- TypeScript: `.ts`, `.mts` (runtime transpile, no type-check)
+
+Example:
+
+```json
+{
+  "settings": {
+    "checkExpr": true,
+    "buildScript": "scripts/build.ts"
+  }
+}
+```
+
+All build hooks receive `env`:
+
+- `env.fs`: Node `fs`
+- `env.path`: full path helper object (all methods exposed)
+- `env.workdir`: resolved workspace directory
+- `env.nodeDefs`: loaded node definitions map
+- `env.logger`: `log/debug/info/warn/error`
+
+Use a `Hook` class. The extension constructs it once with `env`, then calls methods:
+
+- `constructor(env)`
+- `onProcessTree(tree, path, errors)`
+- `onProcessNode(node, errors)`
+- `onWriteFile(path, tree)`
+- `onComplete(status)`
+
+For compatibility:
+
+- `.ts` / `.mts`: must export a class via named `Hook` or `default`
+- `.js` / `.mjs`: support class export and legacy function-style exports
+
+For TypeScript authoring hints, see:
+
+- `sample/scripts/build-script.d.ts`
+- `sample/scripts/build.ts`
+
 ## Extension Settings
 
 | Setting                   | Type    | Default      | Description                                                                     |

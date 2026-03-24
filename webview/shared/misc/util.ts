@@ -3,7 +3,7 @@ import { customAlphabet } from "nanoid";
 import { VERSION, type TreeData, type WorkspaceModel } from "./b3type";
 import { getFs } from "./b3fs";
 import { createNode, dfs } from "./b3util";
-import Path from "./path";
+import b3path from "./b3path";
 import { stringifyJson } from "./stringify";
 
 export const nanoid = customAlphabet(
@@ -90,7 +90,7 @@ export const readTreeFromFile = (path: string): TreeData => {
 export const writeTreeToFile = (path: string, data: TreeData) => {
   writeJson<TreeData>(path, {
     version: VERSION,
-    name: Path.basenameWithoutExt(path),
+    name: b3path.basenameWithoutExt(path),
     desc: data.desc,
     prefix: data.prefix,
     export: data.export,

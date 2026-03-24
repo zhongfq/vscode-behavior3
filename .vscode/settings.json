@@ -1,3 +1,4 @@
 {
-    "behavior3.language": "zh"
+    "behavior3.language": "zh",
+    "editor.formatOnSave": true,
 }

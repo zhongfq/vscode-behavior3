@@ -21,7 +21,7 @@ import {
   VERSION,
 } from "./b3type";
 import { logger } from "./logger";
-import Path from "./path";
+import b3path from "./b3path";
 import { stringifyJson } from "./stringify";
 import { nanoid, readJson, readTreeFromFile, readWorkspace } from "./util";
 import { ExpressionEvaluator } from "../../../behavior3/src/behavior3/evaluator";
@@ -34,18 +34,92 @@ export class NodeDefs extends Map<string, NodeDef> {
 
 type Env = {
   fs: typeof Fs;
-  path: typeof Path;
+  path: typeof b3path;
   workdir: string;
   nodeDefs: NodeDefs;
+  logger: Pick<typeof logger, "debug" | "info" | "warn" | "error" | "log">;
 };
 
 export interface BatchScript {
-  onSetup?(env: Env): void;
   onProcessTree?(tree: TreeData, path: string, errors: string[]): TreeData | null;
   onProcessNode?(node: NodeData, errors: string[]): NodeData | null;
   onWriteFile?(path: string, tree: TreeData): void;
   onComplete?(status: "success" | "failure"): void;
 }
+
+type HookCtor = new (env: Env) => BatchScript;
+
+const hasBatchHookMethod = (obj: unknown): obj is BatchScript => {
+  if (!obj || typeof obj !== "object") {
+    return false;
+  }
+  const candidate = obj as Partial<BatchScript>;
+  return (
+    typeof candidate.onProcessTree === "function" ||
+    typeof candidate.onProcessNode === "function" ||
+    typeof candidate.onWriteFile === "function" ||
+    typeof candidate.onComplete === "function"
+  );
+};
+
+const createBatchHooks = (
+  moduleExports: unknown,
+  env: Env,
+  scriptPath: string
+): BatchScript | undefined => {
+  if (!moduleExports || typeof moduleExports !== "object") {
+    return undefined;
+  }
+  const m = moduleExports as Record<string, unknown>;
+  const ctor = (m.Hook ?? m.default) as HookCtor | undefined;
+  if (typeof ctor === "function") {
+    try {
+      const instance = new ctor(env);
+      if (hasBatchHookMethod(instance)) {
+        return instance;
+      }
+      logger.error("build hook class instance has no supported hook methods");
+    } catch (e) {
+      logger.error("failed to instantiate build hook class", e);
+    }
+  }
+
+  const ext = b3path.extname(scriptPath).toLowerCase();
+  const isJsScript = ext === ".js" || ext === ".mjs" || ext === ".cjs";
+  if (isJsScript) {
+    const legacy = m as unknown as {
+      onProcessTree?: (env: Env, tree: TreeData, path: string, errors: string[]) => TreeData | null;
+      onProcessNode?: (env: Env, node: NodeData, errors: string[]) => NodeData | null;
+      onWriteFile?: (env: Env, path: string, tree: TreeData) => void;
+      onComplete?: (env: Env, status: "success" | "failure") => void;
+    };
+    if (
+      typeof legacy.onProcessTree === "function" ||
+      typeof legacy.onProcessNode === "function" ||
+      typeof legacy.onWriteFile === "function" ||
+      typeof legacy.onComplete === "function"
+    ) {
+      return {
+        onProcessTree: legacy.onProcessTree
+          ? (tree, path, errors) => legacy.onProcessTree?.(env, tree, path, errors) ?? tree
+          : undefined,
+        onProcessNode: legacy.onProcessNode
+          ? (node, errors) => legacy.onProcessNode?.(env, node, errors) ?? node
+          : undefined,
+        onWriteFile: legacy.onWriteFile
+          ? (path, tree) => legacy.onWriteFile?.(env, path, tree)
+          : undefined,
+        onComplete: legacy.onComplete ? (status) => legacy.onComplete?.(env, status) : undefined,
+      };
+    }
+  }
+  logger.error(
+    isJsScript
+      ? "build script must export a Hook class (`Hook`/default) or legacy hook functions (JS only)"
+      : "build script must export a Hook class (named export `Hook` or default export)"
+  );
+  return undefined;
+};
 
 export let calcSize: (d: NodeData) => number[] = () => [0, 0];
 export let nodeDefs: NodeDefs = new NodeDefs();
@@ -109,11 +183,7 @@ export const initWorkdirFromSettingFile = (
 };
 
 /** Webview: receive pre-loaded defs from extension host (no disk). */
-export const initWithNodeDefs = (
-  defs: NodeDef[],
-  handler: typeof alertError,
-  check: boolean
-) => {
+export const initWithNodeDefs = (defs: NodeDef[], handler: typeof alertError, check: boolean) => {
   alertError = handler;
   checkExpr = check;
   const groups: Set<string> = new Set();
@@ -355,7 +425,9 @@ export const checkNodeArgValue = (
 
   if (hasArgOptions(arg)) {
     const options = getNodeArgOptions(arg, data.args ?? {});
-    const found = !!options?.find((option: { name: string; value: unknown }) => option.value === value);
+    const found = !!options?.find(
+      (option: { name: string; value: unknown }) => option.value === value
+    );
     const isOptional = value === undefined && isNodeArgOptional(arg);
     if (!(found || isOptional)) {
       error(`'${arg.name}=${JSON.stringify(value)}' is not a one of the option values`);
@@ -626,7 +698,10 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
 
 /** Align with extension `treeEditorProvider.normalizePathKey` for subtree path lookup. */
 export const normalizeSubtreePathKey = (p: string) =>
-  p.replace(/\\/g, "/").replace(/^[/\\]+/, "").replace(/^\.\//, "");
+  p
+    .replace(/\\/g, "/")
+    .replace(/^[/\\]+/, "")
+    .replace(/^\.\//, "");
 
 /**
  * Webview: snapshot of subtree files read from the extension host for the current graph refresh only
@@ -888,7 +963,7 @@ export const createBuildData = (path: string) => {
     const treeModel: TreeData = readTreeFromFile(path);
     refreshNodeData(treeModel, treeModel.root, 1);
     dfs(treeModel.root, (node) => (node.id = treeModel.prefix + node.id));
-    treeModel.name = Path.basenameWithoutExt(path);
+    treeModel.name = b3path.basenameWithoutExt(path);
     treeModel.root = createFileData(treeModel.root, true);
     dfs(treeModel.root, (node) => clearUnnecessaryKey(node));
     clearUnnecessaryKey(treeModel);
@@ -953,11 +1028,11 @@ export const syncFilesFromDisk = () => {
   if (!wd) {
     return;
   }
-  for (const absPath of Path.ls(wd, true)) {
+  for (const absPath of b3path.lsdir(wd, true)) {
     if (!absPath.endsWith(".json")) {
       continue;
     }
-    const rel = Path.posixPath(absPath.slice(wd.length + 1).replace(/^[\\/]+/, ""));
+    const rel = b3path.posixPath(absPath.slice(wd.length + 1).replace(/^[\\/]+/, ""));
     try {
       files[rel] = fsApi.statSync(absPath).mtimeMs;
     } catch {
@@ -975,7 +1050,7 @@ const SKIP_JSON_BASENAMES = new Set([
 ]);
 
 const shouldSkipJsonForBuild = (absPath: string): boolean => {
-  const base = Path.basename(absPath);
+  const base = b3path.basename(absPath);
   const lower = base.toLowerCase();
   if (SKIP_JSON_BASENAMES.has(lower)) {
     return true;
@@ -983,8 +1058,10 @@ const shouldSkipJsonForBuild = (absPath: string): boolean => {
   if (lower === "tsconfig.json" || /^tsconfig\..*\.json$/i.test(base)) {
     return true;
   }
-  const norm = Path.posixPath(absPath).toLowerCase();
-  return ["/.vscode/", "/.git/", "/node_modules/", "/dist/", "/build/"].some((m) => norm.includes(m));
+  const norm = b3path.posixPath(absPath).toLowerCase();
+  return ["/.vscode/", "/.git/", "/node_modules/", "/dist/", "/build/"].some((m) =>
+    norm.includes(m)
+  );
 };
 
 export const buildProject = async (project: string, buildDir: string) => {
@@ -993,29 +1070,31 @@ export const buildProject = async (project: string, buildDir: string) => {
   }
   let hasError = false;
   const settings = readWorkspace(project).settings;
+  const buildSetting = settings.buildScript;
+  let buildScriptModule: unknown;
   let buildScript: BatchScript | undefined;
   if (settings.checkExpr) {
     setCheckExpr(true);
   }
-  if (settings.buildScript) {
-    const scriptPath = workdir + "/" + settings.buildScript;
+  if (buildSetting) {
+    const scriptPath = workdir + "/" + buildSetting;
     try {
-      buildScript = await loadModule(scriptPath);
+      buildScriptModule = await loadModule(scriptPath);
     } catch (e) {
       logger.error(`'${scriptPath}' is not a valid build script`);
     }
   }
-  if (buildScript) {
-    buildScript.onSetup?.({
-      fs: getFs(),
-      path: Path,
-      workdir,
-      nodeDefs,
-    });
-  }
+  const scriptEnv: Env = {
+    fs: getFs(),
+    path: b3path,
+    workdir,
+    nodeDefs,
+    logger,
+  };
+  buildScript = createBatchHooks(buildScriptModule, scriptEnv, buildSetting ?? "");
 
   const allErrors: string[] = [];
-  for (const path of Path.ls(Path.dirname(project), true)) {
+  for (const path of b3path.lsdir(b3path.dirname(project), true)) {
     if (path.endsWith(".json") && !shouldSkipJsonForBuild(path)) {
       const buildpath = buildDir + "/" + path.substring(workdir.length + 1);
       let tree = createBuildData(path);
@@ -1048,7 +1127,7 @@ export const buildProject = async (project: string, buildDir: string) => {
         errors.forEach((v) => allErrors.push(`  ${v}`));
       }
       buildScript?.onWriteFile?.(buildpath, tree);
-      getFs().mkdirSync(Path.dirname(buildpath), { recursive: true });
+      getFs().mkdirSync(b3path.dirname(buildpath), { recursive: true });
       getFs().writeFileSync(buildpath, stringifyJson(tree, { indent: 2 }));
     }
   }
@@ -1058,6 +1137,7 @@ export const buildProject = async (project: string, buildDir: string) => {
 };
 
 export const loadModule = async (path: string) => {
+  let tempModulePath: string | null = null;
   try {
     if (typeof require !== "undefined" && require.cache) {
       try {
@@ -1069,14 +1149,46 @@ export const loadModule = async (path: string) => {
     if (typeof process !== "undefined" && (process as { type?: string }).type === "renderer") {
       return await import(/* @vite-ignore */ `${path}?t=${Date.now()}`);
     } else {
-      const mjs = path.endsWith(".mjs") ? path : path.replace(".js", ".mjs");
-      getFs().copyFileSync(path, mjs);
-      const ret = await import(/* @vite-ignore */ `file:///${mjs}?t=${Date.now()}`);
-      getFs().unlinkSync(mjs);
+      const ext = b3path.extname(path).toLowerCase();
+      if (ext === ".ts" || ext === ".mts") {
+        const ts = await import("typescript");
+        const source = getFs().readFileSync(path, "utf8");
+        const transpiled = ts.transpileModule(source, {
+          compilerOptions: {
+            module: ts.ModuleKind.ESNext,
+            target: ts.ScriptTarget.ES2020,
+            sourceMap: false,
+            inlineSourceMap: false,
+            inlineSources: false,
+            removeComments: false,
+          },
+          fileName: path,
+        });
+        const base = b3path.basenameWithoutExt(path);
+        tempModulePath = b3path.join(b3path.dirname(path), `${base}.runtime.${Date.now()}.mjs`);
+        getFs().writeFileSync(tempModulePath, transpiled.outputText, "utf8");
+      } else if (ext === ".mjs") {
+        tempModulePath = path;
+      } else {
+        tempModulePath = path.replace(".js", `.runtime.${Date.now()}.mjs`);
+        getFs().copyFileSync(path, tempModulePath);
+      }
+      const modulePath = b3path.posixPath(tempModulePath);
+      const ret = await import(/* @vite-ignore */ `file:///${modulePath}?t=${Date.now()}`);
+      if (tempModulePath !== path) {
+        getFs().unlinkSync(tempModulePath);
+      }
       return ret;
     }
   } catch (e) {
     logger.error(`failed to load module: ${path}`, e);
+    if (tempModulePath && tempModulePath !== path) {
+      try {
+        getFs().unlinkSync(tempModulePath);
+      } catch {
+        /* ignore temp file cleanup failure */
+      }
+    }
     return null;
   }
 };
@@ -1234,10 +1346,7 @@ const refreshVarDeclWebview = (root: NodeData, group: string[], declare: FileVar
   let changed = false;
   const lastGroup = Array.from(Object.keys(usingGroups ?? {})).sort();
   const sortedGroup = [...group].sort();
-  if (
-    lastGroup.length !== sortedGroup.length ||
-    lastGroup.some((v, i) => v !== sortedGroup[i])
-  ) {
+  if (lastGroup.length !== sortedGroup.length || lastGroup.some((v, i) => v !== sortedGroup[i])) {
     changed = true;
     updateUsingGroups(group);
   }
