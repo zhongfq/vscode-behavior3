@@ -276,7 +276,17 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         }
 
         case "readFile": {
-          const fileUri = vscode.Uri.file(path.normalize(msg.path));
+          const fileUri = resolvePathInWorkdir(msg.path, projectRootUri);
+          if (!fileUri) {
+            const reply: HostToEditorMessage = {
+              type: "readFileResult",
+              requestId: msg.requestId,
+              content: null,
+            };
+            webviewPanel.webview.postMessage(reply);
+            getBehavior3OutputChannel().warn("readFile rejected: path outside workdir", msg.path);
+            break;
+          }
           try {
             const openDoc = vscode.workspace.textDocuments.find(
               (d) => d.uri.fsPath === fileUri.fsPath || d.uri.toString() === fileUri.toString()
@@ -309,16 +319,40 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
               content: null,
             };
             webviewPanel.webview.postMessage(reply);
+            getBehavior3OutputChannel().warn("readFile failed", msg.path);
           }
           break;
         }
 
         case "saveSubtree": {
+          const reply = (r: HostToEditorMessage) => webviewPanel.webview.postMessage(r);
+          const fileUri = resolvePathInWorkdir(msg.path, projectRootUri, { mustBeJson: true });
+          if (!fileUri) {
+            const err = "Save path must be a .json file inside the behavior tree work directory.";
+            reply({
+              type: "saveSubtreeResult",
+              requestId: msg.requestId,
+              success: false,
+              error: err,
+            });
+            getBehavior3OutputChannel().warn("saveSubtree rejected", msg.path);
+            break;
+          }
           try {
-            const fileUri = vscode.Uri.file(msg.path);
             await vscode.workspace.fs.writeFile(fileUri, Buffer.from(msg.content, "utf-8"));
+            reply({
+              type: "saveSubtreeResult",
+              requestId: msg.requestId,
+              success: true,
+            });
           } catch (e) {
             vscode.window.showErrorMessage(`Failed to save subtree: ${e}`);
+            reply({
+              type: "saveSubtreeResult",
+              requestId: msg.requestId,
+              success: false,
+              error: String(e),
+            });
           }
           break;
         }
@@ -451,26 +485,49 @@ function normalizePathKey(p: string): string {
   return p.replace(/\\/g, "/").replace(/^[/\\]+/, "");
 }
 
+function readTreeFileCached(
+  workdirFs: string,
+  relativePath: string,
+  cache: Map<string, TreeFileLike | null>
+): TreeFileLike | null {
+  const rel = normalizePathKey(relativePath);
+  if (cache.has(rel)) {
+    return cache.get(rel) ?? null;
+  }
+  try {
+    const raw = fs.readFileSync(path.join(workdirFs, rel), "utf-8");
+    const fileTree = JSON.parse(raw) as TreeFileLike;
+    cache.set(rel, fileTree);
+    return fileTree;
+  } catch {
+    cache.set(rel, null);
+    return null;
+  }
+}
+
 /** Top-level `vars` in one tree JSON file (for Inspector rows; no recursion). */
 function getLocalVarsFromTreeFile(
   workdirFs: string,
-  relativePath: string
+  relativePath: string,
+  cache: Map<string, TreeFileLike | null>
 ): Array<{ name: string; desc: string }> {
-  try {
-    const raw = fs.readFileSync(path.join(workdirFs, relativePath), "utf-8");
-    const fileTree = JSON.parse(raw) as TreeFileLike;
-    return (fileTree.vars ?? [])
-      .filter((v) => v.name)
-      .map((v) => ({ name: v.name, desc: v.desc ?? "" }));
-  } catch {
+  const fileTree = readTreeFileCached(workdirFs, relativePath, cache);
+  if (!fileTree) {
     return [];
   }
+  return (fileTree.vars ?? [])
+    .filter((v) => v.name)
+    .map((v) => ({ name: v.name, desc: v.desc ?? "" }));
 }
 
 /**
  * All `import` JSON paths reachable from the main tree's import list (BFS), for Inspector "导入变量".
  */
-function collectOrderedTransitiveImportPaths(workdirFs: string, seedImports: string[]): string[] {
+function collectOrderedTransitiveImportPaths(
+  workdirFs: string,
+  seedImports: string[],
+  cache: Map<string, TreeFileLike | null>
+): string[] {
   const ordered: string[] = [];
   const seen = new Set<string>();
   const queue: string[] = [];
@@ -484,20 +541,18 @@ function collectOrderedTransitiveImportPaths(workdirFs: string, seedImports: str
   while (queue.length) {
     const rel = queue.shift()!;
     ordered.push(rel);
-    try {
-      const raw = fs.readFileSync(path.join(workdirFs, rel), "utf-8");
-      const fileTree = JSON.parse(raw) as TreeFileLike;
-      for (const imp of fileTree.import ?? []) {
-        if (typeof imp === "string") {
-          const n = normalizePathKey(imp);
-          if (!seen.has(n)) {
-            seen.add(n);
-            queue.push(n);
-          }
+    const fileTree = readTreeFileCached(workdirFs, rel, cache);
+    if (!fileTree) {
+      continue;
+    }
+    for (const imp of fileTree.import ?? []) {
+      if (typeof imp === "string") {
+        const n = normalizePathKey(imp);
+        if (!seen.has(n)) {
+          seen.add(n);
+          queue.push(n);
         }
       }
-    } catch {
-      /* missing or invalid */
     }
   }
   return ordered;
@@ -506,7 +561,11 @@ function collectOrderedTransitiveImportPaths(workdirFs: string, seedImports: str
 /**
  * All subtree JSON paths reachable from `root` (BFS), for Inspector "子树变量" (matches desktop transitive view).
  */
-function collectOrderedTransitiveSubtreePaths(workdirFs: string, root: TreeNodeLike | undefined): string[] {
+function collectOrderedTransitiveSubtreePaths(
+  workdirFs: string,
+  root: TreeNodeLike | undefined,
+  cache: Map<string, TreeFileLike | null>
+): string[] {
   const ordered: string[] = [];
   const seen = new Set<string>();
   const queue: string[] = [];
@@ -520,18 +579,16 @@ function collectOrderedTransitiveSubtreePaths(workdirFs: string, root: TreeNodeL
   while (queue.length) {
     const rel = queue.shift()!;
     ordered.push(rel);
-    try {
-      const raw = fs.readFileSync(path.join(workdirFs, rel), "utf-8");
-      const sub = JSON.parse(raw) as TreeLike;
-      for (const p of collectSubtreePaths(sub.root)) {
-        const n = normalizePathKey(p);
-        if (!seen.has(n)) {
-          seen.add(n);
-          queue.push(n);
-        }
+    const sub = readTreeFileCached(workdirFs, rel, cache);
+    if (!sub) {
+      continue;
+    }
+    for (const p of collectSubtreePaths(sub.root)) {
+      const n = normalizePathKey(p);
+      if (!seen.has(n)) {
+        seen.add(n);
+        queue.push(n);
       }
-    } catch {
-      /* missing or invalid */
     }
   }
   return ordered;
@@ -587,6 +644,28 @@ function uriToWorkdirRelative(uri: vscode.Uri, workdir: vscode.Uri): string | un
   return normalizePathKey(rel);
 }
 
+function resolvePathInWorkdir(
+  inputPath: string,
+  workdir: vscode.Uri,
+  options?: { mustBeJson?: boolean }
+): vscode.Uri | undefined {
+  if (!inputPath || typeof inputPath !== "string") {
+    return undefined;
+  }
+  const normalized = path.normalize(inputPath);
+  const candidate = path.isAbsolute(normalized)
+    ? normalized
+    : path.join(workdir.fsPath, normalized);
+  if (options?.mustBeJson && path.extname(candidate).toLowerCase() !== ".json") {
+    return undefined;
+  }
+  const rel = path.relative(workdir.fsPath, candidate).replace(/\\/g, "/");
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    return undefined;
+  }
+  return vscode.Uri.file(candidate);
+}
+
 
 interface VarDeclResult {
   usingVars: Record<string, { name: string; desc: string }>;
@@ -601,38 +680,33 @@ function readVarsFromFile(
   relativePath: string,
   workdirFs: string,
   visitedForGlobal: Set<string>,
-  globalVars: Record<string, { name: string; desc: string }>
+  globalVars: Record<string, { name: string; desc: string }>,
+  cache: Map<string, TreeFileLike | null>
 ): Array<{ name: string; desc: string }> {
   const localVars: Array<{ name: string; desc: string }> = [];
   const relKey = normalizePathKey(relativePath);
   if (visitedForGlobal.has(relKey)) return localVars;
   visitedForGlobal.add(relKey);
 
-  const fsLib = require("fs") as typeof import("fs");
-  const nodePath = require("path") as typeof import("path");
-  const fullPath = nodePath.join(workdirFs, relKey);
-
-  try {
-    const raw = fsLib.readFileSync(fullPath, "utf-8");
-    const fileTree = JSON.parse(raw) as TreeFileLike;
-    for (const v of fileTree.vars ?? []) {
-      if (v.name) {
-        localVars.push({ name: v.name, desc: v.desc ?? "" });
-        if (!globalVars[v.name]) globalVars[v.name] = { name: v.name, desc: v.desc ?? "" };
-      }
+  const fileTree = readTreeFileCached(workdirFs, relKey, cache);
+  if (!fileTree) {
+    return localVars;
+  }
+  for (const v of fileTree.vars ?? []) {
+    if (v.name) {
+      localVars.push({ name: v.name, desc: v.desc ?? "" });
+      if (!globalVars[v.name]) globalVars[v.name] = { name: v.name, desc: v.desc ?? "" };
     }
-    // Also recurse into transitive imports for global vars
-    for (const imp of fileTree.import ?? []) {
-      if (typeof imp === "string") {
-        readVarsFromFile(imp, workdirFs, visitedForGlobal, globalVars);
-      }
+  }
+  // Also recurse into transitive imports for global vars
+  for (const imp of fileTree.import ?? []) {
+    if (typeof imp === "string") {
+      readVarsFromFile(imp, workdirFs, visitedForGlobal, globalVars, cache);
     }
-    // Nested subtree files referenced inside this tree (same as collectSubtreePaths on main doc)
-    for (const subPath of collectSubtreePaths(fileTree.root)) {
-      readVarsFromFile(subPath, workdirFs, visitedForGlobal, globalVars);
-    }
-  } catch {
-    // file not found or parse error — silently skip
+  }
+  // Nested subtree files referenced inside this tree (same as collectSubtreePaths on main doc)
+  for (const subPath of collectSubtreePaths(fileTree.root)) {
+    readVarsFromFile(subPath, workdirFs, visitedForGlobal, globalVars, cache);
   }
   return localVars;
 }
@@ -647,6 +721,7 @@ async function buildUsingVars(
   if (!tree) return null;
 
   const usingVars: Record<string, { name: string; desc: string }> = {};
+  const readCache = new Map<string, TreeFileLike | null>();
 
   for (const v of tree.vars ?? []) {
     if (v.name) usingVars[v.name] = { name: v.name, desc: v.desc ?? "" };
@@ -656,21 +731,21 @@ async function buildUsingVars(
 
   const importSeeds = (tree.import ?? []).filter((x): x is string => typeof x === "string");
   for (const imp of importSeeds) {
-    readVarsFromFile(imp, workdir.fsPath, visited, usingVars);
+    readVarsFromFile(imp, workdir.fsPath, visited, usingVars, readCache);
   }
 
   for (const subtreePath of collectSubtreePaths(tree.root)) {
-    readVarsFromFile(subtreePath, workdir.fsPath, visited, usingVars);
+    readVarsFromFile(subtreePath, workdir.fsPath, visited, usingVars, readCache);
   }
 
-  const importDecls = collectOrderedTransitiveImportPaths(workdir.fsPath, importSeeds).map((p) => ({
+  const importDecls = collectOrderedTransitiveImportPaths(workdir.fsPath, importSeeds, readCache).map((p) => ({
     path: p,
-    vars: getLocalVarsFromTreeFile(workdir.fsPath, p),
+    vars: getLocalVarsFromTreeFile(workdir.fsPath, p, readCache),
   }));
 
-  const subtreeDecls = collectOrderedTransitiveSubtreePaths(workdir.fsPath, tree.root).map((p) => ({
+  const subtreeDecls = collectOrderedTransitiveSubtreePaths(workdir.fsPath, tree.root, readCache).map((p) => ({
     path: p,
-    vars: getLocalVarsFromTreeFile(workdir.fsPath, p),
+    vars: getLocalVarsFromTreeFile(workdir.fsPath, p, readCache),
   }));
 
   return { usingVars, importDecls, subtreeDecls };

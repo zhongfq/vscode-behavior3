@@ -98,11 +98,24 @@ export const readFile = (filePath: string): Promise<string | null> => {
 
 /** Save a subtree file via extension host */
 export const saveSubtree = (filePath: string, content: string): Promise<void> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const requestId = Math.random().toString(36).slice(2);
+    const timer = window.setTimeout(() => {
+      off();
+      reject(new Error("Save subtree timed out"));
+    }, 15000);
+    const off = onMessage((msg) => {
+      if (msg.type === "saveSubtreeResult" && msg.requestId === requestId) {
+        off();
+        window.clearTimeout(timer);
+        if (msg.success) {
+          resolve();
+          return;
+        }
+        reject(new Error(msg.error ?? "Failed to save subtree"));
+      }
+    });
     postMessage({ type: "saveSubtree", requestId, path: filePath, content });
-    // saveSubtree has no reply, resolve immediately
-    resolve();
   });
 };
 

@@ -29,6 +29,7 @@ function createBuildScopedLogger(prev: Logger): Logger {
 setFs(fs);
 
 const WORKSPACE_STATE_KEY_PREFIX = "behavior3.lastBuildOutputDir:";
+let buildInFlight = false;
 
 function getWorkspaceStateKey(folderUri: vscode.Uri): string {
   return WORKSPACE_STATE_KEY_PREFIX + folderUri.toString();
@@ -114,105 +115,106 @@ function getActiveBehaviorTreeFileUri(): vscode.Uri | undefined {
 }
 
 export async function runBuild(context: vscode.ExtensionContext): Promise<void> {
-  const treeUri = getActiveBehaviorTreeFileUri();
-  let folder: vscode.WorkspaceFolder | undefined;
-  if (treeUri) {
-    folder = vscode.workspace.getWorkspaceFolder(treeUri);
+  if (buildInFlight) {
+    void vscode.window.showWarningMessage("A build is already running. Please wait for it to finish.");
+    return;
+  }
+  buildInFlight = true;
+  try {
+    const treeUri = getActiveBehaviorTreeFileUri();
+    let folder: vscode.WorkspaceFolder | undefined;
+    if (treeUri) {
+      folder = vscode.workspace.getWorkspaceFolder(treeUri);
+      if (!folder) {
+        void vscode.window.showErrorMessage(
+          "The active behavior tree file must belong to an opened workspace folder."
+        );
+        return;
+      }
+    } else {
+      folder = vscode.workspace.workspaceFolders?.[0];
+    }
     if (!folder) {
+      void vscode.window.showErrorMessage("Open a workspace folder before building.");
+      return;
+    }
+
+    const workspaceRoot = folder.uri.fsPath;
+    const walkAnchorUri =
+      treeUri ?? vscode.Uri.file(path.join(workspaceRoot, ".behavior3-build-anchor"));
+    const workspaceFile = findB3WorkspacePath(walkAnchorUri, folder.uri);
+    if (!workspaceFile) {
       void vscode.window.showErrorMessage(
-        "The active behavior tree file must belong to an opened workspace folder."
+        treeUri
+          ? "No .b3-workspace file found when walking up from the active behavior tree file. Add one next to your project (e.g. sample/workspace.b3-workspace)."
+          : "No .b3-workspace file found when walking up from the workspace folder. Add one (e.g. sample/workspace.b3-workspace) or open a behavior tree file first."
       );
       return;
     }
-  } else {
-    folder = vscode.workspace.workspaceFolders?.[0];
-  }
-  if (!folder) {
-    void vscode.window.showErrorMessage("Open a workspace folder before building.");
-    return;
-  }
 
-  const workspaceRoot = folder.uri.fsPath;
-  const walkAnchorUri = treeUri ?? vscode.Uri.file(path.join(workspaceRoot, ".behavior3-build-anchor"));
-  const workspaceFile = findB3WorkspacePath(walkAnchorUri, folder.uri);
-  if (!workspaceFile) {
-    void vscode.window.showErrorMessage(
-      treeUri
-        ? "No .b3-workspace file found when walking up from the active behavior tree file. Add one next to your project (e.g. sample/workspace.b3-workspace)."
-        : "No .b3-workspace file found when walking up from the workspace folder. Add one (e.g. sample/workspace.b3-workspace) or open a behavior tree file first."
+    const settingPath = resolveSettingFilePathSync(
+      workspaceRoot,
+      workspaceFile ? path.dirname(workspaceFile) : undefined
     );
-    return;
-  }
-
-  const settingPath = resolveSettingFilePathSync(
-    workspaceRoot,
-    workspaceFile ? path.dirname(workspaceFile) : undefined
-  );
-  if (!settingPath) {
-    void vscode.window.showErrorMessage(
-      "No .b3-setting file found. Add behavior3.settingFile or place a *.b3-setting in the workspace root."
-    );
-    return;
-  }
-
-  const workdirFs = path.dirname(workspaceFile);
-  const workdirPosix = workdirFs.replace(/\\/g, "/");
-
-  const defaultUri = getLastBuildOutputUri(context, folder.uri) ?? folder.uri;
-
-  const picked = await vscode.window.showOpenDialog({
-    canSelectFiles: false,
-    canSelectFolders: true,
-    canSelectMany: false,
-    defaultUri,
-    openLabel: "Select output folder",
-    title: "Build Behavior Tree — output directory",
-  });
-  if (!picked || picked.length === 0) {
-    return;
-  }
-
-  const outputDirFs = picked[0].fsPath;
-  const outputDirPosix = outputDirFs.replace(/\\/g, "/");
-  await saveLastBuildOutput(context, folder.uri, outputDirFs);
-
-  const config = vscode.workspace.getConfiguration("behavior3");
-  const checkExpr = config.get<boolean>("checkExpr", true);
-
-  const out = getBehavior3OutputChannel();
-  out.show(true);
-  out.info(`Build output → ${outputDirFs}`);
-
-  const prevLogger = getLogger();
-  setLogger(createBuildScopedLogger(prevLogger));
-  const prevCwd = process.cwd();
-  try {
-    // Match desktop behavior3editor: cwd is the project root. Extension host cwd is often not the workspace.
-    process.chdir(workdirFs);
-
-    initWorkdirFromSettingFile(workdirPosix, settingPath.replace(/\\/g, "/"), () => {});
-    setCheckExpr(checkExpr);
-
-    const workspaceFilePosix = workspaceFile.replace(/\\/g, "/");
-    const hasError = await buildProject(workspaceFilePosix, outputDirPosix);
-
-    if (hasError) {
+    if (!settingPath) {
       void vscode.window.showErrorMessage(
-        "Build finished with validation errors. See the Output panel for details."
+        "No .b3-setting file found. Add behavior3.settingFile or place a *.b3-setting in the workspace root."
       );
-    } else {
-      out.info(`Build completed: ${outputDirFs}`);
-      void vscode.window.showInformationMessage(`Build completed: ${outputDirFs}`);
+      return;
     }
-  } catch (e) {
-    logger.error("build failed:", e);
-    void vscode.window.showErrorMessage(`Build failed: ${e}`);
-  } finally {
+
+    const workdirFs = path.dirname(workspaceFile);
+    const workdirPosix = workdirFs.replace(/\\/g, "/");
+
+    const defaultUri = getLastBuildOutputUri(context, folder.uri) ?? folder.uri;
+
+    const picked = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      defaultUri,
+      openLabel: "Select output folder",
+      title: "Build Behavior Tree — output directory",
+    });
+    if (!picked || picked.length === 0) {
+      return;
+    }
+
+    const outputDirFs = picked[0].fsPath;
+    const outputDirPosix = outputDirFs.replace(/\\/g, "/");
+    await saveLastBuildOutput(context, folder.uri, outputDirFs);
+
+    const config = vscode.workspace.getConfiguration("behavior3");
+    const checkExpr = config.get<boolean>("checkExpr", true);
+
+    const out = getBehavior3OutputChannel();
+    out.show(true);
+    out.info(`Build output → ${outputDirFs}`);
+
+    const prevLogger = getLogger();
+    setLogger(createBuildScopedLogger(prevLogger));
     try {
-      process.chdir(prevCwd);
-    } catch {
-      /* ignore chdir restore failure */
+      initWorkdirFromSettingFile(workdirPosix, settingPath.replace(/\\/g, "/"), () => {});
+      setCheckExpr(checkExpr);
+
+      const workspaceFilePosix = workspaceFile.replace(/\\/g, "/");
+      const hasError = await buildProject(workspaceFilePosix, outputDirPosix);
+
+      if (hasError) {
+        void vscode.window.showErrorMessage(
+          "Build finished with validation errors. See the Output panel for details."
+        );
+      } else {
+        out.info(`Build completed: ${outputDirFs}`);
+        void vscode.window.showInformationMessage(`Build completed: ${outputDirFs}`);
+      }
+    } catch (e) {
+      logger.error("build failed:", e);
+      void vscode.window.showErrorMessage(`Build failed: ${e}`);
+    } finally {
+      setLogger(prevLogger);
     }
-    setLogger(prevLogger);
+  } finally {
+    buildInFlight = false;
   }
 }

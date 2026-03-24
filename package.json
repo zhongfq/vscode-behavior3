@@ -17,8 +17,7 @@
   ],
   "icon": "icon.png",
   "activationEvents": [
-    "onLanguage:json",
-    "onStartupFinished"
+    "onLanguage:json"
   ],
   "main": "./dist/extension.js",
   "contributes": {

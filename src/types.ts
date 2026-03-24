@@ -44,6 +44,12 @@ export type HostToEditorMessage =
   | { type: "buildResult"; success: boolean; message: string }
   | { type: "readFileResult"; requestId: string; content: string | null }
   | {
+      type: "saveSubtreeResult";
+      requestId: string;
+      success: boolean;
+      error?: string;
+    }
+  | {
       type: "saveSubtreeAsResult";
       requestId: string;
       savedPath: string | null;
