@@ -241,10 +241,11 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
 
         case "update": {
           if (fileVersionIsNewer) {
+            const fileData = JSON.parse(document.getText()) as { version?: string };
             const errMsg =
               language === "zh"
-                ? `此文件由新版本 Behavior3 创建，已拦截写入操作，请升级到最新版本后再编辑。`
-                : `This file is created by a newer version of Behavior3, write is blocked. Please upgrade to the latest version.`;
+                ? `此文件由新版本 Behavior3(${fileData.version}) 创建，请升级到最新版本后再编辑。`
+                : `This file is created by a newer version of Behavior3(${fileData.version}). Please upgrade to the latest version.`;
             vscode.window.showErrorMessage(errMsg);
             break;
           }

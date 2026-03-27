@@ -777,7 +777,9 @@ export class Graph {
         prefix: this.data.prefix,
         disabled: false,
         subtreeEditable: true,
-        subtreeNode: this._isSubtreeNode(node.id),
+        // subtreeNode: true only when the node is INSIDE a subtree (ancestors have path),
+        // not when the node itself merely references a subtree from the root tree.
+        subtreeNode: this._getAncestors(node.id).some((v) => (v.data as unknown as NodeData)?.path),
         subtreeOriginal: data.$id ? this._subtreeOriginals.get(data.$id) : undefined,
       };
       const prev = useWorkspace.getState().editingNode;
