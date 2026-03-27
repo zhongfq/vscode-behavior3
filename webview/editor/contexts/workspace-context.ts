@@ -94,6 +94,8 @@ export type EditNode = {
   subtreeEditable?: boolean;
   /** True when the node belongs to an external subtree (not the main tree). */
   subtreeNode?: boolean;
+  /** Original subtree node data (before any overrides), used to power reset buttons. */
+  subtreeOriginal?: NodeData;
 };
 
 export type EditNodeDef = {

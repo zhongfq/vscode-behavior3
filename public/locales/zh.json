@@ -44,6 +44,8 @@
   "recent": "最近打开",
   "redo": "重做",
   "reload": "重新加载",
+  "reset": "重置",
+  "reset.confirm": "重置为原始值？",
   "rename": "重命名...",
   "replace": "替换",
   "reportIssue": "问题反馈",

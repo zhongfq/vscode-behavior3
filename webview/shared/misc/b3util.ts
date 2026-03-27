@@ -1028,7 +1028,12 @@ export const refreshNodeData = (
         const overrides = rootOverrides ?? tree.$override;
         id = refreshNodeData(subtree, subtree.root, --id, overrides);
         applySubtreeRootToNode(node, subtree);
-        // Apply any overrides from the main tree onto the loaded subtree nodes
+        // Apply the intermediate subtree's own $override first (e.g. B overrides C's nodes).
+        // This ensures A can see B's layer of changes, not just C's raw values.
+        if (subtree.$override && Object.keys(subtree.$override).length > 0) {
+          applyOverridesToSubtree(node, subtree.$override);
+        }
+        // Apply the root tree's $override last so it always takes highest precedence.
         if (overrides && Object.keys(overrides).length > 0) {
           applyOverridesToSubtree(node, overrides);
         }

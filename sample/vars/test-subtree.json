@@ -1,5 +1,11 @@
 {
   "$override": {
+    "Rc5aDruW5M": {
+      "args": {
+        "x": 4,
+        "y": 5
+      }
+    },
     "z56njSp7U6": {
       "output": [
         "version"
@@ -11,6 +17,7 @@
   "desc": "",
   "export": true,
   "group": [
+    "Client"
   ],
   "import": [
     "vars/declare-core.json"

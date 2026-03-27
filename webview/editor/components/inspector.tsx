@@ -18,6 +18,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Popconfirm,
   Select,
   Space,
   Switch,
@@ -406,6 +407,45 @@ const VarDeclItemFormWrapper: FC<{
   />
 );
 
+// ─── OverrideBar ─────────────────────────────────────────────────────────────
+/** Wraps a form-item row with a clickable right border that resets the override. */
+const OverrideBar: FC<{ active: boolean; onReset: () => void; children: React.ReactNode }> = ({
+  active,
+  onReset,
+  children,
+}) => {
+  const { t } = useTranslation();
+  if (!active) return <>{children}</>;
+  return (
+    <div style={{ position: "relative", paddingRight: 9 }}>
+      <Popconfirm
+        title={t("reset.confirm")}
+        onConfirm={onReset}
+        okText={t("reset")}
+        cancelText={t("cancel")}
+        placement="left"
+        getPopupContainer={(trigger) =>
+          (trigger.closest(".b3-inspector") as HTMLElement) ?? document.body
+        }
+      >
+        <div
+          style={{
+            position: "absolute",
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 6,
+            background: "#d87a16",
+            cursor: "pointer",
+            borderRadius: 2,
+          }}
+        />
+      </Popconfirm>
+      {children}
+    </div>
+  );
+};
+
 // ─── NodeInspector ────────────────────────────────────────────────────────────
 
 const NodeInspector: FC<{
@@ -424,6 +464,8 @@ const NodeInspector: FC<{
   subtreeEditable: boolean;
   /** True when the node belongs to an external subtree (not the main tree). */
   subtreeNode: boolean;
+  /** Original subtree node data (before overrides) — enables reset buttons. */
+  subtreeOriginal?: NodeData;
 }> = ({
   node,
   nodeDefs,
@@ -436,6 +478,7 @@ const NodeInspector: FC<{
   disabled,
   subtreeEditable,
   subtreeNode,
+  subtreeOriginal,
 }) => {
   const { t } = useTranslation();
   const [form] = Form.useForm();
@@ -536,6 +579,85 @@ const NodeInspector: FC<{
     return label.toUpperCase().includes(input.toUpperCase());
   };
 
+  // ── $override helpers ──────────────────────────────────────────────────────
+  /** Override entries for this node (only present when it is a subtree node). */
+  const nodeOverride = subtreeNode ? (editingTree?.$override?.[node.$id ?? ""] ?? null) : null;
+
+  /** Reset a simple scalar field to the original subtree value and save. */
+  const resetScalarField = (key: "desc" | "debug" | "disabled", originalValue: unknown) => {
+    form.setFieldValue(key, originalValue ?? (key === "desc" ? undefined : false));
+    submit();
+  };
+
+  /** Per-field override detection */
+  const isInputFieldOverridden = (i: number, variadic?: boolean): boolean => {
+    if (!nodeOverride?.input || !subtreeOriginal) return false;
+    if (variadic) {
+      return (
+        JSON.stringify(nodeOverride.input.slice(i)) !==
+        JSON.stringify((subtreeOriginal.input ?? []).slice(i))
+      );
+    }
+    return (nodeOverride.input[i] ?? "") !== (subtreeOriginal.input?.[i] ?? "");
+  };
+
+  const isOutputFieldOverridden = (i: number, variadic?: boolean): boolean => {
+    if (!nodeOverride?.output || !subtreeOriginal) return false;
+    if (variadic) {
+      return (
+        JSON.stringify(nodeOverride.output.slice(i)) !==
+        JSON.stringify((subtreeOriginal.output ?? []).slice(i))
+      );
+    }
+    return (nodeOverride.output[i] ?? "") !== (subtreeOriginal.output?.[i] ?? "");
+  };
+
+  const isArgFieldOverridden = (argName: string): boolean => {
+    if (!nodeOverride?.args || !subtreeOriginal) return false;
+    // computeNodeOverride only stores keys that actually differ, so key presence = overridden
+    return Object.prototype.hasOwnProperty.call(nodeOverride.args, argName);
+  };
+
+  const resetInputField = (i: number, variadic?: boolean) => {
+    if (variadic) {
+      form.setFieldValue(`input.${i}`, (subtreeOriginal?.input ?? []).slice(i));
+    } else {
+      form.setFieldValue(`input.${i}`, subtreeOriginal?.input?.[i] ?? "");
+    }
+    submit();
+  };
+
+  const resetOutputField = (i: number, variadic?: boolean) => {
+    if (variadic) {
+      form.setFieldValue(`output.${i}`, (subtreeOriginal?.output ?? []).slice(i));
+    } else {
+      form.setFieldValue(`output.${i}`, subtreeOriginal?.output?.[i] ?? "");
+    }
+    submit();
+  };
+
+  const resetArgField = (arg: NodeArg) => {
+    const type = getNodeArgRawType(arg);
+    const originalValue = subtreeOriginal?.args?.[arg.name];
+    if (isNodeArgArray(arg)) {
+      const arr = (Array.isArray(originalValue) ? originalValue : []).map((item) => {
+        if (isJsonType(type))
+          return item === null ? "null" : JSON.stringify(item ?? arg.default, null, 2);
+        return item;
+      });
+      form.setFieldValue(`args.${arg.name}`, arr);
+    } else if (isJsonType(type)) {
+      form.setFieldValue(
+        `args.${arg.name}`,
+        originalValue === null ? "null" : JSON.stringify(originalValue ?? arg.default, null, 2)
+      );
+    } else {
+      form.setFieldValue(`args.${arg.name}`, originalValue ?? arg.default);
+    }
+    submit();
+  };
+  // ────────────────────────────────────────────────────────────────────────────
+
   return (
     <>
       <div style={{ padding: "12px 24px" }}>
@@ -616,18 +738,39 @@ const NodeInspector: FC<{
               filterOption={filterOption as unknown as boolean}
             />
           </Form.Item>
-          <Form.Item name="desc" label={t("node.desc")}>
-            <TextArea autoSize disabled={disabled} onBlur={submit} />
-          </Form.Item>
-          <Form.Item label={t("node.debug")} name="debug" valuePropName="checked">
-            <Switch disabled={disabled && !node.path} onChange={submit} />
-          </Form.Item>
-          <Form.Item label={t("node.disabled")} name="disabled" valuePropName="checked">
-            <Switch disabled={disabled && !node.path} onChange={submit} />
-          </Form.Item>
+          <OverrideBar
+            active={nodeOverride?.desc !== undefined}
+            onReset={() => resetScalarField("desc", subtreeOriginal!.desc)}
+          >
+            <Form.Item label={t("node.desc")}>
+              <Form.Item name="desc" noStyle>
+                <TextArea autoSize disabled={disabled} onBlur={submit} style={{ width: "100%" }} />
+              </Form.Item>
+            </Form.Item>
+          </OverrideBar>
+          <OverrideBar
+            active={nodeOverride?.debug !== undefined}
+            onReset={() => resetScalarField("debug", subtreeOriginal!.debug)}
+          >
+            <Form.Item label={t("node.debug")}>
+              <Form.Item name="debug" noStyle valuePropName="checked">
+                <Switch disabled={disabled && !node.path} onChange={submit} />
+              </Form.Item>
+            </Form.Item>
+          </OverrideBar>
+          <OverrideBar
+            active={nodeOverride?.disabled !== undefined}
+            onReset={() => resetScalarField("disabled", subtreeOriginal!.disabled)}
+          >
+            <Form.Item label={t("node.disabled")}>
+              <Form.Item name="disabled" noStyle valuePropName="checked">
+                <Switch disabled={disabled && !node.path} onChange={submit} />
+              </Form.Item>
+            </Form.Item>
+          </OverrideBar>
           <Form.Item label={t("node.subtree")} name="path">
             <AutoComplete
-              disabled={disabled && !subtreeEditable}
+              disabled={(disabled && !subtreeEditable) || subtreeNode}
               options={subtreeOptions}
               onBlur={() => changeSubtree()}
               onSelect={(v: string) => changeSubtree(v)}
@@ -649,121 +792,133 @@ const NodeInspector: FC<{
                 const desc = v.replace("?", "");
                 if (isVariadic(def.input!, i)) {
                   return (
-                    <Form.Item label={desc} key={`input.${i}`}>
-                      <Form.List name={`input.${i}`}>
-                        {(fields, { add, remove }, { errors }) => (
-                          <div style={{ display: "flex", rowGap: 0, flexDirection: "column" }}>
-                            {fields.map((field) => (
-                              <Flex key={field.key} gap={4}>
-                                <Form.Item
-                                  name={field.name}
-                                  validateTrigger={["onChange", "onBlur"]}
-                                  style={{ width: "100%", marginBottom: 5 }}
-                                  rules={[
-                                    {
-                                      validator(_, value) {
-                                        if (value && usingVars && !usingVars[value]) {
-                                          return Promise.reject(
-                                            new Error(
-                                              t("node.undefinedVariable", { variable: value })
-                                            )
-                                          );
-                                        }
-                                        if (value && !isValidVariableName(value)) {
-                                          return Promise.reject(
-                                            new Error(t("node.invalidVariableName"))
-                                          );
-                                        }
-                                        return Promise.resolve();
+                    <OverrideBar
+                      key={`input.${i}`}
+                      active={isInputFieldOverridden(i, true)}
+                      onReset={() => resetInputField(i, true)}
+                    >
+                      <Form.Item label={desc}>
+                        <Form.List name={`input.${i}`}>
+                          {(fields, { add, remove }, { errors }) => (
+                            <div style={{ display: "flex", rowGap: 0, flexDirection: "column" }}>
+                              {fields.map((field) => (
+                                <Flex key={field.key} gap={4}>
+                                  <Form.Item
+                                    name={field.name}
+                                    validateTrigger={["onChange", "onBlur"]}
+                                    style={{ width: "100%", marginBottom: 5 }}
+                                    rules={[
+                                      {
+                                        validator(_, value) {
+                                          if (value && usingVars && !usingVars[value]) {
+                                            return Promise.reject(
+                                              new Error(
+                                                t("node.undefinedVariable", { variable: value })
+                                              )
+                                            );
+                                          }
+                                          if (value && !isValidVariableName(value)) {
+                                            return Promise.reject(
+                                              new Error(t("node.invalidVariableName"))
+                                            );
+                                          }
+                                          return Promise.resolve();
+                                        },
                                       },
-                                    },
-                                  ]}
-                                >
-                                  <AutoComplete
-                                    disabled={disabled}
-                                    options={inoutVarOptions}
-                                    onBlur={submit}
-                                    filterOption={filterOption as unknown as boolean}
+                                    ]}
+                                  >
+                                    <AutoComplete
+                                      disabled={disabled}
+                                      options={inoutVarOptions}
+                                      onBlur={submit}
+                                      filterOption={filterOption as unknown as boolean}
+                                    />
+                                  </Form.Item>
+                                  <MinusCircleOutlined
+                                    style={{ marginBottom: "6px" }}
+                                    onClick={() => {
+                                      remove(field.name);
+                                      submit();
+                                    }}
                                   />
-                                </Form.Item>
-                                <MinusCircleOutlined
-                                  style={{ marginBottom: "6px" }}
+                                </Flex>
+                              ))}
+                              <Form.Item>
+                                <Button
+                                  type="dashed"
                                   onClick={() => {
-                                    remove(field.name);
-                                    submit();
+                                    add("");
                                   }}
-                                />
-                              </Flex>
-                            ))}
-                            <Form.Item>
-                              <Button
-                                type="dashed"
-                                onClick={() => {
-                                  add("");
-                                }}
-                                style={{ width: fields.length === 0 ? "100%" : "200px" }}
-                                icon={<PlusOutlined />}
-                              >
-                                {t("add")}
-                              </Button>
-                              <Form.ErrorList errors={errors} />
-                            </Form.Item>
-                          </div>
-                        )}
-                      </Form.List>
-                    </Form.Item>
+                                  style={{ width: fields.length === 0 ? "100%" : "200px" }}
+                                  icon={<PlusOutlined />}
+                                >
+                                  {t("add")}
+                                </Button>
+                                <Form.ErrorList errors={errors} />
+                              </Form.Item>
+                            </div>
+                          )}
+                        </Form.List>
+                      </Form.Item>
+                    </OverrideBar>
                   );
                 }
                 return (
-                  <Form.Item
-                    label={desc}
-                    name={`input.${i}`}
+                  <OverrideBar
                     key={`input.${i}`}
-                    rules={[
-                      { required, message: t("fieldRequired", { field: desc }) },
-                      ({ getFieldValue, setFieldValue, isFieldValidating, validateFields }) => ({
-                        validator(_, value) {
-                          if (value && usingVars && !usingVars[value]) {
-                            return Promise.reject(
-                              new Error(t("node.undefinedVariable", { variable: value }))
-                            );
-                          }
-                          if (value && !isValidVariableName(value)) {
-                            return Promise.reject(new Error(t("node.invalidVariableName")));
-                          }
-                          const arg = def.args?.find(
-                            (a) => a.oneof && v.replace("?", "") === a.oneof
-                          );
-                          if (arg) {
-                            const argName = `args.${arg.name}`;
-                            if (!isFieldValidating(argName)) {
-                              setFieldValue(`input.${i}`, value);
-                              validateFields([argName]);
-                            }
-                            if (!checkOneof(arg, getFieldValue(argName), value)) {
+                    active={isInputFieldOverridden(i)}
+                    onReset={() => resetInputField(i)}
+                  >
+                    <Form.Item
+                      label={desc}
+                      name={`input.${i}`}
+                      style={{ flex: 1 }}
+                      rules={[
+                        { required, message: t("fieldRequired", { field: desc }) },
+                        ({ getFieldValue, setFieldValue, isFieldValidating, validateFields }) => ({
+                          validator(_, value) {
+                            if (value && usingVars && !usingVars[value]) {
                               return Promise.reject(
-                                new Error(
-                                  t("node.oneof.error", {
-                                    input: v,
-                                    arg: arg.name,
-                                    desc: arg.desc ?? "",
-                                  })
-                                )
+                                new Error(t("node.undefinedVariable", { variable: value }))
                               );
                             }
-                          }
-                          return Promise.resolve();
-                        },
-                      }),
-                    ]}
-                  >
-                    <AutoComplete
-                      disabled={disabled}
-                      options={inoutVarOptions}
-                      onBlur={submit}
-                      filterOption={filterOption as unknown as boolean}
-                    />
-                  </Form.Item>
+                            if (value && !isValidVariableName(value)) {
+                              return Promise.reject(new Error(t("node.invalidVariableName")));
+                            }
+                            const arg = def.args?.find(
+                              (a) => a.oneof && v.replace("?", "") === a.oneof
+                            );
+                            if (arg) {
+                              const argName = `args.${arg.name}`;
+                              if (!isFieldValidating(argName)) {
+                                setFieldValue(`input.${i}`, value);
+                                validateFields([argName]);
+                              }
+                              if (!checkOneof(arg, getFieldValue(argName), value)) {
+                                return Promise.reject(
+                                  new Error(
+                                    t("node.oneof.error", {
+                                      input: v,
+                                      arg: arg.name,
+                                      desc: arg.desc ?? "",
+                                    })
+                                  )
+                                );
+                              }
+                            }
+                            return Promise.resolve();
+                          },
+                        }),
+                      ]}
+                    >
+                      <AutoComplete
+                        disabled={disabled}
+                        options={inoutVarOptions}
+                        onBlur={submit}
+                        filterOption={filterOption as unknown as boolean}
+                      />
+                    </Form.Item>
+                  </OverrideBar>
                 );
               })}
             </>
@@ -781,225 +936,247 @@ const NodeInspector: FC<{
 
                 if (isNodeArgArray(arg)) {
                   return (
-                    <Form.List
+                    <OverrideBar
                       key={`args.${arg.name}`}
-                      name={`args.${arg.name}`}
-                      rules={[
-                        {
-                          validator(_, value: unknown[]) {
-                            if (!arg.oneof) return Promise.resolve();
-                            const idx = def.input?.findIndex(
-                              (input) => input.replace("?", "") === arg.oneof
-                            );
-                            if (idx === undefined || idx < 0) {
-                              return Promise.reject(
-                                new Error(t("node.oneof.inputNotfound", { input: arg.oneof }))
-                              );
-                            }
-                            const inputName = `input.${idx}`;
-                            if (!form.isFieldValidating(inputName)) {
-                              form.setFieldValue(`args.${arg.name}`, value);
-                              form.validateFields([inputName]);
-                            }
-                            if (!checkOneof(arg, value, form.getFieldValue(inputName))) {
-                              return Promise.reject(
-                                new Error(
-                                  t("node.oneof.error", {
-                                    input: def.input![idx],
-                                    arg: arg.name,
-                                    desc: arg.desc ?? "",
-                                  })
-                                )
-                              );
-                            }
-                            return Promise.resolve();
-                          },
-                        },
-                      ]}
+                      active={isArgFieldOverridden(arg.name)}
+                      onReset={() => resetArgField(arg)}
                     >
-                      {(items, { add, remove }, { errors }) => (
-                        <div style={{ display: "flex", rowGap: 0, flexDirection: "column" }}>
-                          {items.map((item, idx) => (
-                            <Flex key={item.key} gap={4}>
-                              <Form.Item
-                                name={item.name}
-                                label={idx === 0 ? `${arg.desc}[${idx}]` : `[${idx}]`}
-                                validateTrigger={["onChange", "onBlur"]}
-                                style={{ width: "100%", marginBottom: 5 }}
-                                initialValue={
-                                  isBoolType(type) ? (arg.default ?? false) : arg.default
+                      <div>
+                        <Form.List
+                          name={`args.${arg.name}`}
+                          rules={[
+                            {
+                              validator(_, value: unknown[]) {
+                                if (!arg.oneof) return Promise.resolve();
+                                const idx = def.input?.findIndex(
+                                  (input) => input.replace("?", "") === arg.oneof
+                                );
+                                if (idx === undefined || idx < 0) {
+                                  return Promise.reject(
+                                    new Error(t("node.oneof.inputNotfound", { input: arg.oneof }))
+                                  );
                                 }
-                                valuePropName={isBoolType(type) ? "checked" : undefined}
-                                rules={[
-                                  { required, message: t("fieldRequired", { field: arg.desc }) },
-                                  () => ({
-                                    validator(_, value) {
-                                      return validateArg(
-                                        createNodeFromForm(form, node, nodeDefs),
-                                        arg,
-                                        value,
-                                        usingVars,
-                                        checkExpr
-                                      );
-                                    },
-                                  }),
-                                ]}
-                              >
-                                {!hasArgOptions(arg) && isStringType(type) && (
-                                  <TextArea autoSize disabled={disabled} onBlur={submit} />
-                                )}
-                                {!hasArgOptions(arg) && isJsonType(type) && (
-                                  <TextArea autoSize disabled={disabled} onBlur={submit} />
-                                )}
-                                {!hasArgOptions(arg) && isIntType(type) && (
-                                  <InputNumber disabled={disabled} onBlur={submit} precision={0} />
-                                )}
-                                {!hasArgOptions(arg) && isFloatType(type) && (
-                                  <InputNumber disabled={disabled} onBlur={submit} />
-                                )}
-                                {!hasArgOptions(arg) && isBoolType(type) && (
-                                  <Switch disabled={disabled} onChange={submit} />
-                                )}
-                                {!hasArgOptions(arg) && isExprType(type) && (
-                                  <Input disabled={disabled} onBlur={submit} />
-                                )}
-                                {hasArgOptions(arg) && (
-                                  <Select
-                                    showSearch
-                                    disabled={disabled}
-                                    onBlur={submit}
-                                    onChange={submit}
-                                    options={(getNodeArgOptions(arg, nodeArgs) ?? []).map((o) => ({
-                                      value: o.value,
-                                      label: `${o.name}(${o.value})`,
-                                    }))}
-                                    filterOption={(v, opt) =>
-                                      !!opt?.label.toLocaleUpperCase().includes(v.toUpperCase())
+                                const inputName = `input.${idx}`;
+                                if (!form.isFieldValidating(inputName)) {
+                                  form.setFieldValue(`args.${arg.name}`, value);
+                                  form.validateFields([inputName]);
+                                }
+                                if (!checkOneof(arg, value, form.getFieldValue(inputName))) {
+                                  return Promise.reject(
+                                    new Error(
+                                      t("node.oneof.error", {
+                                        input: def.input![idx],
+                                        arg: arg.name,
+                                        desc: arg.desc ?? "",
+                                      })
+                                    )
+                                  );
+                                }
+                                return Promise.resolve();
+                              },
+                            },
+                          ]}
+                        >
+                          {(items, { add, remove }, { errors }) => (
+                            <div style={{ display: "flex", rowGap: 0, flexDirection: "column" }}>
+                              {items.map((item, idx) => (
+                                <Flex key={item.key} gap={4}>
+                                  <Form.Item
+                                    name={item.name}
+                                    label={idx === 0 ? `${arg.desc}[${idx}]` : `[${idx}]`}
+                                    validateTrigger={["onChange", "onBlur"]}
+                                    style={{ width: "100%", marginBottom: 5 }}
+                                    initialValue={
+                                      isBoolType(type) ? (arg.default ?? false) : arg.default
                                     }
+                                    valuePropName={isBoolType(type) ? "checked" : undefined}
+                                    rules={[
+                                      {
+                                        required,
+                                        message: t("fieldRequired", { field: arg.desc }),
+                                      },
+                                      () => ({
+                                        validator(_, value) {
+                                          return validateArg(
+                                            createNodeFromForm(form, node, nodeDefs),
+                                            arg,
+                                            value,
+                                            usingVars,
+                                            checkExpr
+                                          );
+                                        },
+                                      }),
+                                    ]}
+                                  >
+                                    {!hasArgOptions(arg) && isStringType(type) && (
+                                      <TextArea autoSize disabled={disabled} onBlur={submit} />
+                                    )}
+                                    {!hasArgOptions(arg) && isJsonType(type) && (
+                                      <TextArea autoSize disabled={disabled} onBlur={submit} />
+                                    )}
+                                    {!hasArgOptions(arg) && isIntType(type) && (
+                                      <InputNumber
+                                        disabled={disabled}
+                                        onBlur={submit}
+                                        precision={0}
+                                      />
+                                    )}
+                                    {!hasArgOptions(arg) && isFloatType(type) && (
+                                      <InputNumber disabled={disabled} onBlur={submit} />
+                                    )}
+                                    {!hasArgOptions(arg) && isBoolType(type) && (
+                                      <Switch disabled={disabled} onChange={submit} />
+                                    )}
+                                    {!hasArgOptions(arg) && isExprType(type) && (
+                                      <Input disabled={disabled} onBlur={submit} />
+                                    )}
+                                    {hasArgOptions(arg) && (
+                                      <Select
+                                        showSearch
+                                        disabled={disabled}
+                                        onBlur={submit}
+                                        onChange={submit}
+                                        options={(getNodeArgOptions(arg, nodeArgs) ?? []).map(
+                                          (o) => ({
+                                            value: o.value,
+                                            label: `${o.name}(${o.value})`,
+                                          })
+                                        )}
+                                        filterOption={(v, opt) =>
+                                          !!opt?.label.toLocaleUpperCase().includes(v.toUpperCase())
+                                        }
+                                      />
+                                    )}
+                                  </Form.Item>
+                                  <MinusCircleOutlined
+                                    style={{ marginBottom: "6px" }}
+                                    onClick={() => {
+                                      remove(item.name);
+                                      submit();
+                                    }}
                                   />
-                                )}
-                              </Form.Item>
-                              <MinusCircleOutlined
-                                style={{ marginBottom: "6px" }}
-                                onClick={() => {
-                                  remove(item.name);
-                                  submit();
+                                </Flex>
+                              ))}
+                              <Form.Item
+                                label={items.length === 0 ? arg.desc : undefined}
+                                style={{
+                                  marginLeft: items.length === 0 ? undefined : "100px",
+                                  marginRight: items.length === 0 ? undefined : "18px",
+                                  alignItems: "end",
                                 }}
-                              />
-                            </Flex>
-                          ))}
-                          <Form.Item
-                            label={items.length === 0 ? arg.desc : undefined}
-                            style={{
-                              marginLeft: items.length === 0 ? undefined : "100px",
-                              marginRight: items.length === 0 ? undefined : "18px",
-                              alignItems: "end",
-                            }}
-                          >
-                            <Button
-                              type="dashed"
-                              onClick={() => {
-                                add(arg.default ?? (isBoolType(type) ? false : ""));
-                                if (isBoolType(type)) submit();
-                              }}
-                              style={{ width: "100%" }}
-                              icon={<PlusOutlined />}
-                              danger={items.length === 0 && !isNodeArgOptional(arg)}
-                            >
-                              {t("add")}
-                            </Button>
-                            <Form.ErrorList errors={errors} />
-                          </Form.Item>
-                        </div>
-                      )}
-                    </Form.List>
+                              >
+                                <Button
+                                  type="dashed"
+                                  onClick={() => {
+                                    add(arg.default ?? (isBoolType(type) ? false : ""));
+                                    if (isBoolType(type)) submit();
+                                  }}
+                                  style={{ width: "100%" }}
+                                  icon={<PlusOutlined />}
+                                  danger={items.length === 0 && !isNodeArgOptional(arg)}
+                                >
+                                  {t("add")}
+                                </Button>
+                                <Form.ErrorList errors={errors} />
+                              </Form.Item>
+                            </div>
+                          )}
+                        </Form.List>
+                      </div>
+                    </OverrideBar>
                   );
                 }
 
                 return (
-                  <Form.Item
-                    name={`args.${arg.name}`}
+                  <OverrideBar
                     key={`args.${arg.name}`}
-                    label={arg.desc}
-                    initialValue={isBoolType(type) ? (arg.default ?? false) : arg.default}
-                    valuePropName={isBoolType(type) ? "checked" : undefined}
-                    rules={[
-                      { required, message: t("fieldRequired", { field: arg.desc }) },
-                      ({ getFieldValue, setFieldValue, isFieldValidating, validateFields }) => ({
-                        async validator(_, value) {
-                          return validateArg(
-                            createNodeFromForm(form, node, nodeDefs),
-                            arg,
-                            value,
-                            usingVars,
-                            checkExpr
-                          ).then((result) => {
-                            value = result as typeof value;
-                            if (!arg.oneof) return Promise.resolve();
-                            const idx = def.input?.findIndex(
-                              (input) => input.replace("?", "") === arg.oneof
-                            );
-                            if (idx === undefined || idx < 0) {
-                              return Promise.reject(
-                                new Error(t("node.oneof.inputNotfound", { input: arg.oneof }))
-                              );
-                            }
-                            const inputName = `input.${idx}`;
-                            if (!isFieldValidating(inputName)) {
-                              setFieldValue(`args.${arg.name}`, value);
-                              validateFields([inputName]);
-                            }
-                            if (!checkOneof(arg, value, form.getFieldValue(inputName))) {
-                              return Promise.reject(
-                                new Error(
-                                  t("node.oneof.error", {
-                                    input: def.input![idx],
-                                    arg: arg.name,
-                                    desc: arg.desc ?? "",
-                                  })
-                                )
-                              );
-                            }
-                            return Promise.resolve();
-                          });
-                        },
-                      }),
-                    ]}
+                    active={isArgFieldOverridden(arg.name)}
+                    onReset={() => resetArgField(arg)}
                   >
-                    {!hasArgOptions(arg) && isStringType(type) && (
-                      <TextArea autoSize disabled={disabled} onBlur={submit} />
-                    )}
-                    {!hasArgOptions(arg) && isJsonType(type) && (
-                      <TextArea autoSize disabled={disabled} onBlur={submit} />
-                    )}
-                    {!hasArgOptions(arg) && isIntType(type) && (
-                      <InputNumber disabled={disabled} onBlur={submit} precision={0} />
-                    )}
-                    {!hasArgOptions(arg) && isFloatType(type) && (
-                      <InputNumber disabled={disabled} onBlur={submit} />
-                    )}
-                    {!hasArgOptions(arg) && isBoolType(type) && (
-                      <Switch disabled={disabled} onChange={submit} />
-                    )}
-                    {!hasArgOptions(arg) && isExprType(type) && (
-                      <Input disabled={disabled} onBlur={submit} />
-                    )}
-                    {hasArgOptions(arg) && (
-                      <Select
-                        showSearch
-                        disabled={disabled}
-                        onBlur={submit}
-                        onChange={submit}
-                        options={(getNodeArgOptions(arg, nodeArgs) ?? []).map((o) => ({
-                          value: o.value,
-                          label: `${o.name}(${o.value})`,
-                        }))}
-                        filterOption={(v, opt) =>
-                          !!opt?.label.toLocaleUpperCase().includes(v.toUpperCase())
-                        }
-                      />
-                    )}
-                  </Form.Item>
+                    <Form.Item
+                      name={`args.${arg.name}`}
+                      style={{ flex: 1 }}
+                      label={arg.desc}
+                      initialValue={isBoolType(type) ? (arg.default ?? false) : arg.default}
+                      valuePropName={isBoolType(type) ? "checked" : undefined}
+                      rules={[
+                        { required, message: t("fieldRequired", { field: arg.desc }) },
+                        ({ getFieldValue, setFieldValue, isFieldValidating, validateFields }) => ({
+                          async validator(_, value) {
+                            return validateArg(
+                              createNodeFromForm(form, node, nodeDefs),
+                              arg,
+                              value,
+                              usingVars,
+                              checkExpr
+                            ).then((result) => {
+                              value = result as typeof value;
+                              if (!arg.oneof) return Promise.resolve();
+                              const idx = def.input?.findIndex(
+                                (input) => input.replace("?", "") === arg.oneof
+                              );
+                              if (idx === undefined || idx < 0) {
+                                return Promise.reject(
+                                  new Error(t("node.oneof.inputNotfound", { input: arg.oneof }))
+                                );
+                              }
+                              const inputName = `input.${idx}`;
+                              if (!isFieldValidating(inputName)) {
+                                setFieldValue(`args.${arg.name}`, value);
+                                validateFields([inputName]);
+                              }
+                              if (!checkOneof(arg, value, form.getFieldValue(inputName))) {
+                                return Promise.reject(
+                                  new Error(
+                                    t("node.oneof.error", {
+                                      input: def.input![idx],
+                                      arg: arg.name,
+                                      desc: arg.desc ?? "",
+                                    })
+                                  )
+                                );
+                              }
+                              return Promise.resolve();
+                            });
+                          },
+                        }),
+                      ]}
+                    >
+                      {!hasArgOptions(arg) && isStringType(type) && (
+                        <TextArea autoSize disabled={disabled} onBlur={submit} />
+                      )}
+                      {!hasArgOptions(arg) && isJsonType(type) && (
+                        <TextArea autoSize disabled={disabled} onBlur={submit} />
+                      )}
+                      {!hasArgOptions(arg) && isIntType(type) && (
+                        <InputNumber disabled={disabled} onBlur={submit} precision={0} />
+                      )}
+                      {!hasArgOptions(arg) && isFloatType(type) && (
+                        <InputNumber disabled={disabled} onBlur={submit} />
+                      )}
+                      {!hasArgOptions(arg) && isBoolType(type) && (
+                        <Switch disabled={disabled} onChange={submit} />
+                      )}
+                      {!hasArgOptions(arg) && isExprType(type) && (
+                        <Input disabled={disabled} onBlur={submit} />
+                      )}
+                      {hasArgOptions(arg) && (
+                        <Select
+                          showSearch
+                          disabled={disabled}
+                          onBlur={submit}
+                          onChange={submit}
+                          options={(getNodeArgOptions(arg, nodeArgs) ?? []).map((o) => ({
+                            value: o.value,
+                            label: `${o.name}(${o.value})`,
+                          }))}
+                          filterOption={(v, opt) =>
+                            !!opt?.label.toLocaleUpperCase().includes(v.toUpperCase())
+                          }
+                        />
+                      )}
+                    </Form.Item>
+                  </OverrideBar>
                 );
               })}
             </>
@@ -1016,98 +1193,110 @@ const NodeInspector: FC<{
                 const desc = v.replace("?", "");
                 if (isVariadic(def.output!, i)) {
                   return (
-                    <Form.Item label={desc} key={`output.${i}`}>
-                      <Form.List name={`output.${i}`}>
-                        {(fields, { add, remove }, { errors }) => (
-                          <div style={{ display: "flex", rowGap: 0, flexDirection: "column" }}>
-                            {fields.map((field) => (
-                              <Flex key={field.key} gap={4}>
-                                <Form.Item
-                                  name={field.name}
-                                  validateTrigger={["onChange", "onBlur"]}
-                                  style={{ width: "100%", marginBottom: 5 }}
-                                  rules={[
-                                    {
-                                      validator(_, value) {
-                                        if (value && usingVars && !usingVars[value]) {
-                                          return Promise.reject(
-                                            new Error(
-                                              t("node.undefinedVariable", { variable: value })
-                                            )
-                                          );
-                                        }
-                                        if (value && !isValidVariableName(value)) {
-                                          return Promise.reject(
-                                            new Error(t("node.invalidVariableName"))
-                                          );
-                                        }
-                                        return Promise.resolve();
+                    <OverrideBar
+                      key={`output.${i}`}
+                      active={isOutputFieldOverridden(i, true)}
+                      onReset={() => resetOutputField(i, true)}
+                    >
+                      <Form.Item label={desc}>
+                        <Form.List name={`output.${i}`}>
+                          {(fields, { add, remove }, { errors }) => (
+                            <div style={{ display: "flex", rowGap: 0, flexDirection: "column" }}>
+                              {fields.map((field) => (
+                                <Flex key={field.key} gap={4}>
+                                  <Form.Item
+                                    name={field.name}
+                                    validateTrigger={["onChange", "onBlur"]}
+                                    style={{ width: "100%", marginBottom: 5 }}
+                                    rules={[
+                                      {
+                                        validator(_, value) {
+                                          if (value && usingVars && !usingVars[value]) {
+                                            return Promise.reject(
+                                              new Error(
+                                                t("node.undefinedVariable", { variable: value })
+                                              )
+                                            );
+                                          }
+                                          if (value && !isValidVariableName(value)) {
+                                            return Promise.reject(
+                                              new Error(t("node.invalidVariableName"))
+                                            );
+                                          }
+                                          return Promise.resolve();
+                                        },
                                       },
-                                    },
-                                  ]}
-                                >
-                                  <AutoComplete
-                                    disabled={disabled}
-                                    options={inoutVarOptions}
-                                    onBlur={submit}
-                                    filterOption={filterOption as unknown as boolean}
+                                    ]}
+                                  >
+                                    <AutoComplete
+                                      disabled={disabled}
+                                      options={inoutVarOptions}
+                                      onBlur={submit}
+                                      filterOption={filterOption as unknown as boolean}
+                                    />
+                                  </Form.Item>
+                                  <MinusCircleOutlined
+                                    style={{ marginBottom: "6px" }}
+                                    onClick={() => {
+                                      remove(field.name);
+                                      submit();
+                                    }}
                                   />
-                                </Form.Item>
-                                <MinusCircleOutlined
-                                  style={{ marginBottom: "6px" }}
-                                  onClick={() => {
-                                    remove(field.name);
-                                    submit();
-                                  }}
-                                />
-                              </Flex>
-                            ))}
-                            <Form.Item>
-                              <Button
-                                type="dashed"
-                                onClick={() => add("")}
-                                style={{ width: fields.length === 0 ? "100%" : "200px" }}
-                                icon={<PlusOutlined />}
-                              >
-                                {t("add")}
-                              </Button>
-                              <Form.ErrorList errors={errors} />
-                            </Form.Item>
-                          </div>
-                        )}
-                      </Form.List>
-                    </Form.Item>
+                                </Flex>
+                              ))}
+                              <Form.Item>
+                                <Button
+                                  type="dashed"
+                                  onClick={() => add("")}
+                                  style={{ width: fields.length === 0 ? "100%" : "200px" }}
+                                  icon={<PlusOutlined />}
+                                >
+                                  {t("add")}
+                                </Button>
+                                <Form.ErrorList errors={errors} />
+                              </Form.Item>
+                            </div>
+                          )}
+                        </Form.List>
+                      </Form.Item>
+                    </OverrideBar>
                   );
                 }
                 return (
-                  <Form.Item
-                    label={desc}
-                    name={`output.${i}`}
+                  <OverrideBar
                     key={`output.${i}`}
-                    rules={[
-                      { required, message: t("fieldRequired", { field: desc }) },
-                      {
-                        validator(_, value) {
-                          if (value && usingVars && !usingVars[value]) {
-                            return Promise.reject(
-                              new Error(t("node.undefinedVariable", { variable: value }))
-                            );
-                          }
-                          if (value && !isValidVariableName(value)) {
-                            return Promise.reject(new Error(t("node.invalidVariableName")));
-                          }
-                          return Promise.resolve();
-                        },
-                      },
-                    ]}
+                    active={isOutputFieldOverridden(i)}
+                    onReset={() => resetOutputField(i)}
                   >
-                    <AutoComplete
-                      disabled={disabled}
-                      options={inoutVarOptions}
-                      onBlur={submit}
-                      filterOption={filterOption as unknown as boolean}
-                    />
-                  </Form.Item>
+                    <Form.Item
+                      label={desc}
+                      name={`output.${i}`}
+                      style={{ flex: 1 }}
+                      rules={[
+                        { required, message: t("fieldRequired", { field: desc }) },
+                        {
+                          validator(_, value) {
+                            if (value && usingVars && !usingVars[value]) {
+                              return Promise.reject(
+                                new Error(t("node.undefinedVariable", { variable: value }))
+                              );
+                            }
+                            if (value && !isValidVariableName(value)) {
+                              return Promise.reject(new Error(t("node.invalidVariableName")));
+                            }
+                            return Promise.resolve();
+                          },
+                        },
+                      ]}
+                    >
+                      <AutoComplete
+                        disabled={disabled}
+                        options={inoutVarOptions}
+                        onBlur={submit}
+                        filterOption={filterOption as unknown as boolean}
+                      />
+                    </Form.Item>
+                  </OverrideBar>
                 );
               })}
             </>
@@ -1642,6 +1831,7 @@ export const Inspector: FC = () => {
           disabled={editingNode.disabled}
           subtreeEditable={editingNode.subtreeEditable ?? true}
           subtreeNode={editingNode.subtreeNode ?? false}
+          subtreeOriginal={editingNode.subtreeOriginal}
         />
       </div>
     );
@@ -1667,20 +1857,4 @@ export const Inspector: FC = () => {
       </div>
     );
   }
-
-  return (
-    <div className="b3-inspector" style={{ height: "100%" }}>
-      <div
-        style={{
-          padding: 16,
-          color: "#666",
-          fontSize: 13,
-          textAlign: "center",
-          marginTop: 40,
-        }}
-      >
-        {t("node.noNodeSelected")}
-      </div>
-    </div>
-  );
 };

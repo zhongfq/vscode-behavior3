@@ -44,6 +44,8 @@
   "recent": "Recent",
   "redo": "Redo",
   "reload": "Reload",
+  "reset": "Reset",
+  "reset.confirm": "Reset to original value?",
   "rename": "Rename...",
   "replace": "Replace",
   "reportIssue": "Report Issue",

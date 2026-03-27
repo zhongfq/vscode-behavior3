@@ -237,12 +237,36 @@ export class Graph {
       }
     }
     b3util.setWebviewSubtreeReads(reads);
-    // Rebuild the subtree originals map for override diffing
+    // Rebuild the subtree originals map for override diffing.
+    // First pass: store raw disk node values (later entries in reads overwrite earlier ones,
+    // which is fine — the second pass corrects values to the effective "B-layer" baseline).
     this._subtreeOriginals.clear();
     for (const sub of reads.values()) {
       b3util.dfs(sub.root, (node) => {
-        if (node.$id) this._subtreeOriginals.set(node.$id, node);
+        if (node.$id) {
+          this._subtreeOriginals.set(node.$id, JSON.parse(JSON.stringify(node)) as NodeData);
+        }
       });
+    }
+    // Second pass: apply each subtree's own $override in REVERSE insertion order
+    // (deepest subtree first, immediate parent of A last) so that the closer ancestor
+    // wins.  Example: A→B→C→D — apply D.$override, then C.$override, then B.$override;
+    // B's value of d1 (x=3) correctly overrides C's value (x=2) for A's baseline.
+    const subsReversed = Array.from(reads.values()).reverse();
+    for (const sub of subsReversed) {
+      if (!sub.$override || Object.keys(sub.$override).length === 0) continue;
+      for (const [id, patch] of Object.entries(sub.$override)) {
+        const original = this._subtreeOriginals.get(id);
+        if (!original) continue;
+        if (patch.desc !== undefined) original.desc = patch.desc;
+        if (patch.debug !== undefined) original.debug = patch.debug;
+        if (patch.disabled !== undefined) original.disabled = patch.disabled;
+        if (patch.args !== undefined) {
+          original.args = { ...(original.args ?? {}), ...patch.args };
+        }
+        if (patch.input !== undefined) original.input = patch.input;
+        if (patch.output !== undefined) original.output = patch.output;
+      }
     }
   }
 
@@ -754,6 +778,7 @@ export class Graph {
         disabled: false,
         subtreeEditable: true,
         subtreeNode: this._isSubtreeNode(node.id),
+        subtreeOriginal: data.$id ? this._subtreeOriginals.get(data.$id) : undefined,
       };
       const prev = useWorkspace.getState().editingNode;
       if (

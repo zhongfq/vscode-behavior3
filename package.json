@@ -2,7 +2,7 @@
   "name": "vscode-behavior3",
   "displayName": "Behavior Tree Editor",
   "description": "Visual behavior tree editor for game development",
-  "version": "0.1.7",
+  "version": "2.0.0",
   "publisher": "codetypes",
   "repository": {
     "type": "git",
