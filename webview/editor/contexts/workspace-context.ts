@@ -259,6 +259,8 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
       nodeDefs: b3util.nodeDefs,
       groupDefs: b3util.groupDefs,
       settings,
+      checkExpr: settings.checkExpr,
+      editSubtreeNodeProps: settings.editSubtreeNodeProps,
       allFiles: allFiles ?? [],
       editor,
       hostSubtreeRefreshSeq: 0,

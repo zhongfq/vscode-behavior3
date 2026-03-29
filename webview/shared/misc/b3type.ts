@@ -4,7 +4,7 @@ export type { NodeDef };
 export type NodeType = NodeDef["type"] | "Other" | "Error";
 export type NodeArg = Exclude<NodeDef["args"], undefined>[number];
 
-export const VERSION = "1.9.0";
+export const VERSION = "2.0.0";
 
 export const keyWords = ["true", "false", "null", "undefined", "NaN", "Infinity"];
 

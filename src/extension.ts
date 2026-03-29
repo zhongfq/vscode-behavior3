@@ -198,6 +198,75 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Command: create a new behavior tree JSON file
+  context.subscriptions.push(
+    vscode.commands.registerCommand("behavior3.createTree", async (uri?: vscode.Uri) => {
+      let folderUri: vscode.Uri | undefined;
+      if (uri?.scheme === "file") {
+        try {
+          const stat = await vscode.workspace.fs.stat(uri);
+          folderUri =
+            stat.type === vscode.FileType.Directory
+              ? uri
+              : vscode.Uri.file(path.dirname(uri.fsPath));
+        } catch {
+          folderUri = undefined;
+        }
+      }
+      folderUri ??= vscode.workspace.workspaceFolders?.[0]?.uri;
+      if (!folderUri) {
+        void vscode.window.showErrorMessage("Please open a workspace folder first.");
+        return;
+      }
+
+      const fileName = await vscode.window.showInputBox({
+        prompt: "Enter behavior tree file name (without extension)",
+        placeHolder: "my-tree",
+        validateInput: (v) => {
+          if (!v.trim()) return "Name cannot be empty";
+          if (/[/\\:*?"<>|]/.test(v)) return "Name contains invalid characters";
+          return null;
+        },
+      });
+      if (!fileName) {
+        return;
+      }
+
+      const treeName = fileName.trim();
+      const fileUri = vscode.Uri.file(path.join(folderUri.fsPath, `${treeName}.json`));
+      if (fs.existsSync(fileUri.fsPath)) {
+        void vscode.window.showErrorMessage(`File already exists: ${treeName}.json`);
+        return;
+      }
+
+      const template = JSON.stringify(
+        {
+          name: treeName,
+          root: {
+            id: 1,
+            name: "Sequence",
+            children: [],
+          },
+        },
+        null,
+        2
+      );
+
+      try {
+        await fs.promises.writeFile(fileUri.fsPath, template, "utf-8");
+        await vscode.commands.executeCommand(
+          "vscode.openWith",
+          fileUri,
+          TreeEditorProvider.viewType
+        );
+      } catch (e) {
+        void vscode.window.showErrorMessage(
+          `Failed to create file: ${e instanceof Error ? e.message : e}`
+        );
+      }
+    })
+  );
+
   // Command: open node settings
   context.subscriptions.push(
     vscode.commands.registerCommand("behavior3.openSettings", async () => {

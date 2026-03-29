@@ -2,7 +2,7 @@
   "name": "vscode-behavior3",
   "displayName": "Behavior Tree Editor",
   "description": "Visual behavior tree editor for game development",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "publisher": "codetypes",
   "repository": {
     "type": "git",
@@ -51,6 +51,11 @@
         "category": "Behavior Tree"
       },
       {
+        "command": "behavior3.createTree",
+        "title": "Create Behavior3 File",
+        "category": "Behavior Tree"
+      },
+      {
         "command": "behavior3.openWithEditor",
         "title": "Open with Behavior3",
         "category": "Behavior Tree"
@@ -89,6 +94,11 @@
         }
       ],
       "explorer/context": [
+        {
+          "command": "behavior3.createTree",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@45"
+        },
         {
           "command": "behavior3.openWithEditor",
           "when": "resourceExtname == .json && !explorerResourceIsFolder",
