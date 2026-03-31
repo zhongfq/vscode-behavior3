@@ -4,6 +4,7 @@ src/**
 webview/**
 behavior3/**
 public/**
+!public/images/**
 **/*.ts
 **/*.tsx
 **/*.scss
