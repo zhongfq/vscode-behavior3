@@ -1,6 +1,10 @@
 import type { StoreApi } from "zustand/vanilla";
 import { VERSION } from "../../shared/misc/b3type";
 import { computeNodeOverride } from "../../shared/misc/b3util";
+import { message } from "../../shared/misc/hooks";
+import i18n from "../../shared/misc/i18n";
+import { stringifyJson } from "../../shared/misc/stringify";
+import { nanoid } from "../../shared/misc/util";
 import type {
   DocumentState,
   DropIntent,
@@ -98,6 +102,92 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
 
   const getNodeDef = (name: string): NodeDef | null => {
     return deps.workspaceStore.getState().nodeDefs.find((def) => def.name === name) ?? null;
+  };
+
+  const clonePersistedNodeDeep = (node: PersistedNodeModel): PersistedNodeModel =>
+    JSON.parse(JSON.stringify(node)) as PersistedNodeModel;
+
+  const assignFreshStableIds = (node: PersistedNodeModel) => {
+    node.$id = nanoid();
+    for (const child of node.children ?? []) {
+      assignFreshStableIds(child);
+    }
+  };
+
+  const buildPendingSelectionRef = (stableId: string): NodeInstanceRef => ({
+    instanceKey: stableId,
+    displayId: "",
+    structuralStableId: stableId,
+    sourceStableId: stableId,
+    sourceTreePath: null,
+    subtreeStack: [],
+  });
+
+  const getSelectedResolvedNode = () => {
+    const ref = deps.selectionStore.getState().selectedNodeRef;
+    if (!ref || !resolvedGraph) {
+      return null;
+    }
+    return resolvedGraph.nodesByInstanceKey[ref.instanceKey] ?? null;
+  };
+
+  const isSubtreeStructureLocked = (node: ReturnType<typeof getSelectedResolvedNode>) => {
+    return Boolean(node?.subtreeNode || node?.path);
+  };
+
+  const normalizeClipboardNode = (value: unknown): PersistedNodeModel => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("invalid clipboard node");
+    }
+
+    const candidate = value as Partial<PersistedNodeModel>;
+    if (typeof candidate.name !== "string" || !candidate.name.trim()) {
+      throw new Error("invalid clipboard node");
+    }
+
+    const normalized: PersistedNodeModel = {
+      $id: typeof candidate.$id === "string" && candidate.$id ? candidate.$id : nanoid(),
+      id: typeof candidate.id === "string" ? candidate.id : "",
+      name: candidate.name,
+      desc: typeof candidate.desc === "string" ? candidate.desc : undefined,
+      args:
+        candidate.args && typeof candidate.args === "object" && !Array.isArray(candidate.args)
+          ? JSON.parse(JSON.stringify(candidate.args))
+          : undefined,
+      input: Array.isArray(candidate.input) ? candidate.input.map((entry) => String(entry ?? "")) : undefined,
+      output: Array.isArray(candidate.output)
+        ? candidate.output.map((entry) => String(entry ?? ""))
+        : undefined,
+      children: Array.isArray(candidate.children)
+        ? candidate.children.map((child) => normalizeClipboardNode(child))
+        : undefined,
+      debug: typeof candidate.debug === "boolean" ? candidate.debug : undefined,
+      disabled: typeof candidate.disabled === "boolean" ? candidate.disabled : undefined,
+      path:
+        typeof candidate.path === "string" && candidate.path.trim()
+          ? normalizeWorkdirRelativePath(candidate.path)
+          : undefined,
+    };
+
+    if (normalized.path) {
+      normalized.children = undefined;
+    }
+
+    return normalized;
+  };
+
+  const readClipboardNode = async (): Promise<PersistedNodeModel | null> => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        return null;
+      }
+      return normalizeClipboardNode(JSON.parse(text) as unknown);
+    } catch (error) {
+      deps.hostAdapter.log("warn", `[v2] clipboard read failed: ${String(error)}`);
+      message.error(i18n.t("node.pasteDataError"));
+      return null;
+    }
   };
 
   const findPersistedNodeLocationByStableId = (
@@ -559,7 +649,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
       scheduleTreeSelected(true);
     },
 
-    async selectNode(nodeKey: string, opts?: { force?: boolean }) {
+    async selectNode(nodeKey: string, opts?: { force?: boolean; clearVariableFocus?: boolean }) {
       if (!resolvedGraph) {
         return;
       }
@@ -573,6 +663,10 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         return;
       }
 
+      const shouldClearVariableFocus =
+        Boolean(opts?.clearVariableFocus) &&
+        deps.selectionStore.getState().activeVariableNames.length > 0;
+
       deps.selectionStore.setState((state) => ({
         ...state,
         selectedTree: null,
@@ -580,9 +674,14 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         selectedNodeRef: node.ref,
         selectedNodeSnapshot: buildSelectedNodeSnapshot(node.ref.instanceKey),
         selectedNodeDef: buildSelectedNodeDef(node.ref.instanceKey),
+        activeVariableNames: shouldClearVariableFocus ? [] : state.activeVariableNames,
       }));
 
-      await deps.graphAdapter.applySelection({ selectedNodeKey: node.ref.instanceKey });
+      if (shouldClearVariableFocus) {
+        await applyVisualState();
+      } else {
+        await deps.graphAdapter.applySelection({ selectedNodeKey: node.ref.instanceKey });
+      }
     },
 
     async focusVariable(names: string[]) {
@@ -868,11 +967,203 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
       }
     },
 
-    copyNode: createUnimplemented("copyNode"),
-    pasteNode: createUnimplemented("pasteNode"),
-    insertNode: createUnimplemented("insertNode"),
-    replaceNode: createUnimplemented("replaceNode"),
-    deleteNode: createUnimplemented("deleteNode"),
+    async copyNode() {
+      const selected = getSelectedResolvedNode();
+      if (!selected) {
+        message.error(i18n.t("node.noNodeSelected"));
+        return;
+      }
+
+      const snapshot = buildPersistedNodeFromResolved(selected.ref.instanceKey, {
+        clearPathOnRoot: true,
+      });
+      if (!snapshot) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(stringifyJson(snapshot, { indent: 2 }));
+      } catch (error) {
+        deps.hostAdapter.log("warn", `[v2] clipboard write failed: ${String(error)}`);
+      }
+    },
+
+    async pasteNode() {
+      const currentTree = deps.documentStore.getState().persistedTree;
+      const selected = getSelectedResolvedNode();
+      if (!currentTree || !selected) {
+        message.error(i18n.t("node.noNodeSelected"));
+        return;
+      }
+      if (isSubtreeStructureLocked(selected)) {
+        message.error(i18n.t("node.editSubtreeDenied"));
+        return;
+      }
+
+      const snapshot = await readClipboardNode();
+      if (!snapshot) {
+        return;
+      }
+
+      const tree = clonePersistedTree(currentTree);
+      const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+      if (!targetNode) {
+        return;
+      }
+
+      const nextNode = clonePersistedNodeDeep(snapshot);
+      assignFreshStableIds(nextNode);
+      targetNode.children ||= [];
+      targetNode.children.push(nextNode);
+
+      deps.selectionStore.setState((state) => ({
+        ...state,
+        selectedTree: null,
+        selectedNodeKey: nextNode.$id,
+        selectedNodeRef: buildPendingSelectionRef(nextNode.$id),
+        selectedNodeSnapshot: null,
+        selectedNodeDef: null,
+      }));
+
+      setDocumentTree(tree);
+      await syncReachableSubtreeSources();
+      await rebuildGraph({ preserveSelection: true });
+      pushHistorySnapshot(serializePersistedTree(deps.documentStore.getState().persistedTree!));
+      scheduleTreeSelected();
+    },
+
+    async insertNode() {
+      const currentTree = deps.documentStore.getState().persistedTree;
+      const selected = getSelectedResolvedNode();
+      if (!currentTree || !selected) {
+        message.error(i18n.t("node.noNodeSelected"));
+        return;
+      }
+      if (isSubtreeStructureLocked(selected)) {
+        message.error(i18n.t("node.editSubtreeDenied"));
+        return;
+      }
+
+      const defaultNodeName =
+        getNodeDef("Sequence")?.name ?? deps.workspaceStore.getState().nodeDefs[0]?.name ?? "unknown";
+      const tree = clonePersistedTree(currentTree);
+      const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+      if (!targetNode) {
+        return;
+      }
+
+      const nextNode: PersistedNodeModel = {
+        $id: nanoid(),
+        id: "",
+        name: defaultNodeName,
+      };
+      targetNode.children ||= [];
+      targetNode.children.push(nextNode);
+
+      deps.selectionStore.setState((state) => ({
+        ...state,
+        selectedTree: null,
+        selectedNodeKey: nextNode.$id,
+        selectedNodeRef: buildPendingSelectionRef(nextNode.$id),
+        selectedNodeSnapshot: null,
+        selectedNodeDef: null,
+      }));
+
+      setDocumentTree(tree);
+      await syncReachableSubtreeSources();
+      await rebuildGraph({ preserveSelection: true });
+      pushHistorySnapshot(serializePersistedTree(deps.documentStore.getState().persistedTree!));
+      scheduleTreeSelected();
+    },
+
+    async replaceNode() {
+      const currentTree = deps.documentStore.getState().persistedTree;
+      const selected = getSelectedResolvedNode();
+      if (!currentTree || !selected) {
+        message.error(i18n.t("node.noNodeSelected"));
+        return;
+      }
+      if (isSubtreeStructureLocked(selected)) {
+        message.error(i18n.t("node.editSubtreeDenied"));
+        return;
+      }
+
+      const snapshot = await readClipboardNode();
+      if (!snapshot) {
+        return;
+      }
+
+      const tree = clonePersistedTree(currentTree);
+      const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+      if (!targetNode) {
+        return;
+      }
+
+      const replacement = clonePersistedNodeDeep(snapshot);
+      replacement.$id = targetNode.$id;
+      for (const child of replacement.children ?? []) {
+        assignFreshStableIds(child);
+      }
+      if (replacement.path) {
+        replacement.children = undefined;
+      }
+      overwritePersistedNode(targetNode, replacement);
+
+      deps.selectionStore.setState((state) => ({
+        ...state,
+        selectedTree: null,
+        selectedNodeKey: replacement.$id,
+        selectedNodeRef: buildPendingSelectionRef(replacement.$id),
+        selectedNodeSnapshot: null,
+        selectedNodeDef: null,
+      }));
+
+      setDocumentTree(tree);
+      await syncReachableSubtreeSources();
+      await rebuildGraph({ preserveSelection: true });
+      pushHistorySnapshot(serializePersistedTree(deps.documentStore.getState().persistedTree!));
+      scheduleTreeSelected();
+    },
+
+    async deleteNode() {
+      const currentTree = deps.documentStore.getState().persistedTree;
+      const selected = getSelectedResolvedNode();
+      if (!currentTree || !selected) {
+        return;
+      }
+      if (selected.parentKey === null) {
+        message.error(i18n.t("node.deleteRootNodeDenied"));
+        return;
+      }
+      if (selected.subtreeNode) {
+        message.error(i18n.t("node.editSubtreeDenied"));
+        return;
+      }
+
+      const tree = clonePersistedTree(currentTree);
+      const location = findPersistedNodeLocationByStableId(tree.root, selected.ref.structuralStableId);
+      if (!location?.parent?.children) {
+        return;
+      }
+
+      location.parent.children = location.parent.children.filter((entry) => entry.$id !== location.node.$id);
+      const nextSelection = location.parent.$id;
+
+      deps.selectionStore.setState((state) => ({
+        ...state,
+        selectedTree: null,
+        selectedNodeKey: nextSelection,
+        selectedNodeRef: buildPendingSelectionRef(nextSelection),
+        selectedNodeSnapshot: null,
+        selectedNodeDef: null,
+      }));
+
+      setDocumentTree(tree);
+      await syncReachableSubtreeSources();
+      await rebuildGraph({ preserveSelection: true });
+      pushHistorySnapshot(serializePersistedTree(deps.documentStore.getState().persistedTree!));
+      scheduleTreeSelected();
+    },
     async undo() {
       const current = deps.documentStore.getState();
       if (current.historyIndex <= 0) {
@@ -931,7 +1222,75 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
     },
 
     async saveSelectedAsSubtree() {
-      await createUnimplemented("saveSelectedAsSubtree")();
+      const currentTree = deps.documentStore.getState().persistedTree;
+      const selected = getSelectedResolvedNode();
+      if (!currentTree || !selected) {
+        message.error(i18n.t("node.noNodeSelected"));
+        return;
+      }
+      if (selected.parentKey === null) {
+        message.error(i18n.t("node.subtreeSaveRootError"));
+        return;
+      }
+      if (isSubtreeStructureLocked(selected)) {
+        message.error(i18n.t("node.editSubtreeDenied"));
+        return;
+      }
+
+      const subtreeRoot = buildPersistedNodeFromResolved(selected.ref.instanceKey, {
+        clearPathOnRoot: true,
+      });
+      if (!subtreeRoot) {
+        return;
+      }
+
+      const subtreeModel: PersistedTreeModel = {
+        version: VERSION,
+        name: "subtree",
+        prefix: "",
+        desc: subtreeRoot.desc,
+        export: true,
+        group: [],
+        import: [],
+        vars: [],
+        custom: {},
+        $override: {},
+        root: subtreeRoot,
+      };
+
+      const suggestedBaseName = subtreeRoot.name?.trim() || "subtree";
+      const result = await deps.hostAdapter.saveSubtreeAs(
+        serializePersistedTree(subtreeModel),
+        suggestedBaseName
+      );
+      if (!result.savedPath) {
+        return;
+      }
+
+      const tree = clonePersistedTree(currentTree);
+      const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+      if (!targetNode) {
+        return;
+      }
+
+      targetNode.path = normalizeWorkdirRelativePath(result.savedPath);
+      targetNode.children = undefined;
+
+      deps.selectionStore.setState((state) => ({
+        ...state,
+        selectedTree: null,
+        selectedNodeKey: targetNode.$id,
+        selectedNodeRef: buildPendingSelectionRef(targetNode.$id),
+        selectedNodeSnapshot: null,
+        selectedNodeDef: null,
+      }));
+
+      setDocumentTree(tree);
+      await syncReachableSubtreeSources();
+      await rebuildGraph({ preserveSelection: true });
+      pushHistorySnapshot(serializePersistedTree(deps.documentStore.getState().persistedTree!));
+      scheduleTreeSelected();
+      message.success(i18n.t("node.subtreeSaveSuccess", { path: targetNode.path }));
     },
   };
 

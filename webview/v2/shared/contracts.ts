@@ -282,7 +282,7 @@ export interface GraphEventHandlers {
   onCanvasSelected(): void;
   onNodeSelected(
     node: NodeInstanceRef,
-    opts?: { force?: boolean; via?: "click" | "contextMenu" | "restore" }
+    opts?: { force?: boolean; via?: "click" | "contextMenu" | "restore"; clearVariableFocus?: boolean }
   ): void;
   onNodeDoubleClicked(node: NodeInstanceRef): void;
   onVariableHotspotClicked(node: NodeInstanceRef, payload: VariableHotspotClick): void;
@@ -327,7 +327,7 @@ export interface EditorCommand {
   applyHostVars(payload: HostVarsPayload): Promise<void>;
   markSubtreeChanged(): Promise<void>;
   selectTree(): Promise<void>;
-  selectNode(nodeKey: string, opts?: { force?: boolean }): Promise<void>;
+  selectNode(nodeKey: string, opts?: { force?: boolean; clearVariableFocus?: boolean }): Promise<void>;
   focusVariable(names: string[]): Promise<void>;
   updateTreeMeta(payload: UpdateTreeMetaInput): Promise<void>;
   updateNode(payload: UpdateNodeInput): Promise<void>;

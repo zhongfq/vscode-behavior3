@@ -137,6 +137,13 @@ export class G6GraphAdapter implements GraphAdapter {
   private getNodeStates(node: GraphNodeVM): VectorTreeNodeState[] {
     const states: VectorTreeNodeState[] = [];
     const nodeKey = node.ref.instanceKey;
+    const variableHits = this.highlights.variableHits[nodeKey] ?? [];
+    const shouldGrayForVariableHighlight =
+      this.highlights.activeVariableNames.length > 0 && variableHits.length === 0;
+    const shouldGrayForSearch =
+      this.search.focusOnly &&
+      this.search.query.length > 0 &&
+      !this.search.resultKeys.includes(nodeKey);
 
     if (this.selection.selectedNodeKey === nodeKey) {
       states.push("selected");
@@ -144,15 +151,10 @@ export class G6GraphAdapter implements GraphAdapter {
     if (this.focusedNodeKey === nodeKey) {
       states.push("focused");
     }
-    if (
-      this.search.focusOnly &&
-      this.search.query &&
-      !this.search.resultKeys.includes(nodeKey)
-    ) {
+    if (shouldGrayForVariableHighlight || shouldGrayForSearch) {
       states.push("highlightgray");
     }
 
-    const variableHits = this.highlights.variableHits[nodeKey] ?? [];
     if (variableHits.includes("args")) {
       states.push("highlightargs");
     }
@@ -382,11 +384,13 @@ export class G6GraphAdapter implements GraphAdapter {
     }
 
     const shapeClassName = getOriginalShapeClassName(event);
+    let keepVariableFocus = false;
     if (shapeClassName === "input-text") {
       const variableNames = node.inputs
         .map((entry) => entry.variable)
         .filter((value): value is string => Boolean(value));
       if (variableNames.length > 0) {
+        keepVariableFocus = true;
         this.handlers?.onVariableHotspotClicked(node.ref, {
           kind: "input",
           variableNames,
@@ -397,6 +401,7 @@ export class G6GraphAdapter implements GraphAdapter {
         .map((entry) => entry.variable)
         .filter((value): value is string => Boolean(value));
       if (variableNames.length > 0) {
+        keepVariableFocus = true;
         this.handlers?.onVariableHotspotClicked(node.ref, {
           kind: "output",
           variableNames,
@@ -404,7 +409,10 @@ export class G6GraphAdapter implements GraphAdapter {
       }
     }
 
-    this.handlers?.onNodeSelected(node.ref, { via: "click" });
+    this.handlers?.onNodeSelected(node.ref, {
+      via: "click",
+      clearVariableFocus: !keepVariableFocus,
+    });
   };
 
   private readonly handleNodeDoubleClick = (event: G6PointerEvent<any>) => {

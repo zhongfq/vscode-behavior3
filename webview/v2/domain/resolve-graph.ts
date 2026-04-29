@@ -25,6 +25,14 @@ interface ResolveContext {
   insideExternalSubtree: boolean;
 }
 
+const enum StatusFlag {
+  SUCCESS = 2,
+  FAILURE = 1,
+  RUNNING = 0,
+  SUCCESS_ZERO = 5,
+  FAILURE_ZERO = 4,
+}
+
 const applyPatchIfAny = (
   node: PersistedNodeModel,
   patch:
@@ -66,6 +74,87 @@ const buildResolvedExternalNode = (
   const subtreeOriginal = clonePersistedNode(value);
   applyPatchIfAny(value, rootOverride[sourceNode.$id]);
   return { value, subtreeOriginal };
+};
+
+const toStatusFlag = (nodeName: string, defsByName: Map<string, NodeDef>) => {
+  let status = 0;
+  const def = defsByName.get(nodeName);
+  def?.status?.forEach((entry) => {
+    switch (entry) {
+      case "success":
+        status |= 1 << StatusFlag.SUCCESS;
+        break;
+      case "failure":
+        status |= 1 << StatusFlag.FAILURE;
+        break;
+      case "running":
+        status |= 1 << StatusFlag.RUNNING;
+        break;
+    }
+  });
+  return status;
+};
+
+const appendStatusFlag = (status: number, childStatus: number) => {
+  const childSuccess = (childStatus >> StatusFlag.SUCCESS) & 1;
+  const childFailure = (childStatus >> StatusFlag.FAILURE) & 1;
+  if (childSuccess === 0) {
+    status |= 1 << StatusFlag.SUCCESS_ZERO;
+  }
+  if (childFailure === 0) {
+    status |= 1 << StatusFlag.FAILURE_ZERO;
+  }
+  status |= childStatus;
+  return status;
+};
+
+const buildStatusFlag = (status: number, nodeName: string, childStatus: number, defsByName: Map<string, NodeDef>) => {
+  const def = defsByName.get(nodeName);
+  if (def?.status?.length) {
+    const childSuccess = (childStatus >> StatusFlag.SUCCESS) & 1;
+    const childFailure = (childStatus >> StatusFlag.FAILURE) & 1;
+    const childRunning = (childStatus >> StatusFlag.RUNNING) & 1;
+    const childHasZeroSuccess = (childStatus >> StatusFlag.SUCCESS_ZERO) & 1;
+    const childHasZeroFailure = (childStatus >> StatusFlag.FAILURE_ZERO) & 1;
+
+    def.status.forEach((entry) => {
+      switch (entry) {
+        case "!success":
+          status |= childFailure << StatusFlag.SUCCESS;
+          break;
+        case "!failure":
+          status |= childSuccess << StatusFlag.FAILURE;
+          break;
+        case "|success":
+          status |= childSuccess << StatusFlag.SUCCESS;
+          break;
+        case "|failure":
+          status |= childFailure << StatusFlag.FAILURE;
+          break;
+        case "|running":
+          status |= childRunning << StatusFlag.RUNNING;
+          break;
+        case "&success":
+          if (childHasZeroSuccess) {
+            status &= ~(1 << StatusFlag.SUCCESS);
+          } else {
+            status |= childSuccess << StatusFlag.SUCCESS;
+          }
+          break;
+        case "&failure":
+          if (childHasZeroFailure) {
+            status &= ~(1 << StatusFlag.FAILURE);
+          } else {
+            status |= childFailure << StatusFlag.FAILURE;
+          }
+          break;
+      }
+    });
+
+    return status;
+  }
+
+  return status | childStatus;
 };
 
 export const resolveDocumentGraph = (params: {
@@ -213,6 +302,19 @@ export const resolveDocumentGraph = (params: {
       nextId = resolvedChild.nextDisplayId;
       node.childKeys.push(resolvedChild.node.ref.instanceKey);
     }
+
+    let status = toStatusFlag(node.name, defsByName);
+    if (node.childKeys.length > 0) {
+      let childStatus = 0;
+      for (const childKey of node.childKeys) {
+        const childNode = cursor.nodesByInstanceKey[childKey];
+        if (childNode?.$status && !childNode.disabled) {
+          childStatus = appendStatusFlag(childStatus, childNode.$status);
+        }
+      }
+      status = buildStatusFlag(status, node.name, childStatus, defsByName);
+    }
+    node.$status = status;
 
     return {
       node,
