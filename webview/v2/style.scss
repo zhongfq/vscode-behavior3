@@ -83,6 +83,41 @@ body {
     padding: 20px 12px;
 }
 
+.b3-v2-inspector-skeleton-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.b3-v2-inspector-skeleton-title.ant-skeleton.ant-skeleton-element,
+.b3-v2-inspector-skeleton-title .ant-skeleton-input {
+    width: 120px;
+}
+
+.b3-v2-inspector-skeleton-row {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    column-gap: 8px;
+    align-items: center;
+}
+
+.b3-v2-inspector-skeleton-label.ant-skeleton.ant-skeleton-element,
+.b3-v2-inspector-skeleton-label .ant-skeleton-input {
+    width: 72px;
+    justify-self: end;
+}
+
+.b3-v2-inspector-skeleton-field.ant-skeleton.ant-skeleton-element,
+.b3-v2-inspector-skeleton-field .ant-skeleton-input {
+    width: 100%;
+}
+
+.b3-v2-inspector-skeleton-section.ant-skeleton.ant-skeleton-element,
+.b3-v2-inspector-skeleton-section .ant-skeleton-input {
+    width: 96px;
+    margin-top: 4px;
+}
+
 .b3-v2-inspector-form .ant-form-item {
     margin-bottom: 8px;
 }

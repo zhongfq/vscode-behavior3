@@ -121,6 +121,7 @@ Domain
 - webview 与 extension host 的消息协议
 - 文件读取、子树保存、构建请求、日志
 - 将 wire messages 归一化成 V2 DTO
+- 把宿主配置源变化统一折叠成 `settingLoaded`
 
 ## G6 方向约束
 
@@ -142,6 +143,14 @@ Domain
 4. resolve 当前文档得到 `ResolvedDocumentGraph`
 5. `graphAdapter.render(...)`
 6. `graphAdapter.applySelection/applySearch/applyHighlights(...)`
+
+### 设置热更新
+
+1. 宿主监听 `.b3-setting`、`.b3-workspace` 与 `behavior3.*` 配置变化
+2. 宿主重新解析 node defs 与当前会话相关设置切片
+3. 通过 `settingLoaded` 推送给 webview
+4. webview 更新 `workspaceStore.settings`
+5. 必要时重建 resolved graph，并让依赖该设置的 UI 重新读取 store
 
 ### 文档修改
 
@@ -192,3 +201,4 @@ webview/v2/
 - search/highlight/selection 的业务规则不写在 G6 事件里
 - subtree resolve 与 override diff 不依赖图引擎
 - 任一跨层行为都能指出唯一责任层
+- 宿主配置变化不会要求组件直接触碰 wire message 或 VS Code API

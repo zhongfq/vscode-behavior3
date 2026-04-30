@@ -9,6 +9,7 @@ import {
     resolveNodeDefs,
     resolveWorkspaceNodeColors,
     watchSettingFile,
+    watchWorkspaceFile,
 } from "./settingResolver";
 import type { EditorToHostMessage, HostToEditorMessage, NodeDef } from "./types";
 import { VERSION, type NodeLayout } from "../webview/shared/misc/b3type";
@@ -104,16 +105,39 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             getBehaviorProjectRootFsPath(document.uri, workspaceFolderUri)
         );
         const nodeDefs = await resolveNodeDefs(workspaceFolderUri, document.uri);
-        const settingDir = await getResolvedB3SettingDir(workspaceFolderUri, document.uri);
-        let nodeColors = await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri);
-        const config = vscode.workspace.getConfiguration("behavior3");
-        const checkExpr = config.get<boolean>("checkExpr", true);
-        const editSubtreeNodeProps = config.get<boolean>("editSubtreeNodeProps", true);
-        const language = getEditorLanguage(config.get<string>("language", "auto"));
-        const nlayout = getNodeLayout(config.get<string>("layout", "normal"));
+        let settingDir = await getResolvedB3SettingDir(workspaceFolderUri, document.uri);
+
+        const resolveLiveSettings = async () => {
+            const config = vscode.workspace.getConfiguration("behavior3");
+            return {
+                checkExpr: config.get<boolean>("checkExpr", true),
+                editSubtreeNodeProps: config.get<boolean>("editSubtreeNodeProps", true),
+                language: getEditorLanguage(config.get<string>("language", "auto")),
+                layout: getNodeLayout(config.get<string>("layout", "normal")),
+                nodeColors: await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri),
+            };
+        };
+
+        let currentSettings = await resolveLiveSettings();
 
         const mapDefsForWebview = (defs: NodeDef[]) =>
             mapNodeDefsIconsForWebview(webviewPanel.webview, workspaceFolderUri, settingDir, defs);
+
+        const pushSettingLoaded = async (opts?: { refreshDefs?: boolean }) => {
+            if (opts?.refreshDefs) {
+                const freshDefs = await resolveNodeDefs(workspaceFolderUri, document.uri);
+                settingDir = await getResolvedB3SettingDir(workspaceFolderUri, document.uri);
+                nodeDefs.splice(0, nodeDefs.length, ...freshDefs);
+            }
+
+            currentSettings = await resolveLiveSettings();
+            const message: HostToEditorMessage = {
+                type: "settingLoaded",
+                nodeDefs: mapDefsForWebview(nodeDefs),
+                settings: currentSettings,
+            };
+            webviewPanel.webview.postMessage(message);
+        };
 
         webviewPanel.webview.options = {
             enableScripts: true,
@@ -165,14 +189,19 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         };
 
         // Watch .b3-setting for changes
-        const settingWatcher = watchSettingFile(workspaceFolderUri, document.uri, (newDefs) => {
-            nodeDefs.splice(0, nodeDefs.length, ...newDefs);
-            const msg: HostToEditorMessage = {
-                type: "settingLoaded",
-                nodeDefs: mapDefsForWebview(newDefs),
-                nodeColors,
-            };
-            webviewPanel.webview.postMessage(msg);
+        const settingWatcher = watchSettingFile(workspaceFolderUri, () => {
+            void pushSettingLoaded({ refreshDefs: true });
+        });
+        const workspaceWatcher = watchWorkspaceFile(workspaceFolderUri, () => {
+            void pushSettingLoaded();
+        });
+        const configurationDisposable = vscode.workspace.onDidChangeConfiguration((event) => {
+            if (!event.affectsConfiguration("behavior3")) {
+                return;
+            }
+            void pushSettingLoaded({
+                refreshDefs: event.affectsConfiguration("behavior3.settingFile"),
+            });
         });
 
         // Main document → webview; subtree documents → debounced refresh parent canvas
@@ -234,7 +263,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         if (fv && isFileVersionNewer(fv)) {
                             fileVersionIsNewer = true;
                             const warnMsg =
-                                language === "zh"
+                                currentSettings.language === "zh"
                                     ? `此文件由新版本 Behavior3(${fv}) 创建，请升级到最新版本。`
                                     : `This file is created by a newer version of Behavior3(${fv}), please upgrade to the latest version.`;
                             vscode.window.showWarningMessage(warnMsg);
@@ -260,13 +289,13 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         filePath: document.uri.fsPath,
                         workdir: projectRootUri.fsPath,
                         nodeDefs: mapDefsForWebview(nodeDefs),
-                        checkExpr,
-                        editSubtreeNodeProps,
-                        language,
-                        layout: nlayout,
+                        checkExpr: currentSettings.checkExpr,
+                        editSubtreeNodeProps: currentSettings.editSubtreeNodeProps,
+                        language: currentSettings.language,
+                        layout: currentSettings.layout,
                         theme,
                         allFiles,
-                        nodeColors,
+                        nodeColors: currentSettings.nodeColors,
                     };
                     webviewPanel.webview.postMessage(initMsg);
 
@@ -288,7 +317,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                     if (fileVersionIsNewer) {
                         const fileData = JSON.parse(document.getText()) as { version?: string };
                         const errMsg =
-                            language === "zh"
+                            currentSettings.language === "zh"
                                 ? `此文件由新版本 Behavior3(${fileData.version}) 创建，请升级到最新版本后再编辑。`
                                 : `This file is created by a newer version of Behavior3(${fileData.version}). Please upgrade to the latest version.`;
                         vscode.window.showErrorMessage(errMsg);
@@ -325,15 +354,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                 }
 
                 case "requestSetting": {
-                    const freshDefs = await resolveNodeDefs(workspaceFolderUri, document.uri);
-                    nodeColors = await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri);
-                    nodeDefs.splice(0, nodeDefs.length, ...freshDefs);
-                    const replyMsg: HostToEditorMessage = {
-                        type: "settingLoaded",
-                        nodeDefs: mapDefsForWebview(freshDefs),
-                        nodeColors,
-                    };
-                    webviewPanel.webview.postMessage(replyMsg);
+                    await pushSettingLoaded({ refreshDefs: true });
                     break;
                 }
 
@@ -531,6 +552,8 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             }
             TreeEditorProvider.activeWebviews.delete(activeWebviewEntry);
             settingWatcher.dispose();
+            workspaceWatcher.dispose();
+            configurationDisposable.dispose();
             docChangeDisposable.dispose();
             subtreeSaveDisposable.dispose();
             themeChangeDisposable.dispose();

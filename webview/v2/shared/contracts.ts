@@ -182,7 +182,7 @@ export type HostEvent =
     | { type: "fileChanged"; content: string }
     | { type: "themeChanged"; theme: Settings["theme"] }
     | { type: "subtreeFileChanged" }
-    | { type: "settingLoaded"; nodeDefs: NodeDef[]; nodeColors?: Record<string, string> }
+    | { type: "settingLoaded"; nodeDefs: NodeDef[]; settings?: Partial<Settings> }
     | { type: "varDeclLoaded"; payload: HostVarsPayload }
     | { type: "buildResult"; success: boolean; message: string };
 

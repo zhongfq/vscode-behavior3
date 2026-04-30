@@ -143,7 +143,7 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
                     onMessage({
                         type: "settingLoaded",
                         nodeDefs: message.nodeDefs,
-                        nodeColors: message.nodeColors,
+                        settings: message.settings,
                     });
                     return;
                 }

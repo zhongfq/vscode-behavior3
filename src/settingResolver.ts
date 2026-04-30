@@ -218,20 +218,32 @@ export async function resolveWorkspaceNodeColors(
  */
 export function watchSettingFile(
     workspaceFolder: vscode.Uri,
-    documentUri: vscode.Uri | undefined,
-    callback: (defs: NodeDef[]) => void
+    callback: () => void
 ): vscode.Disposable {
     const pattern = new vscode.RelativePattern(workspaceFolder.fsPath, "**/*.b3-setting");
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-    const handler = async () => {
-        const defs = await resolveNodeDefs(workspaceFolder, documentUri);
-        callback(defs);
-    };
+    watcher.onDidChange(callback);
+    watcher.onDidCreate(callback);
+    watcher.onDidDelete(callback);
 
-    watcher.onDidChange(handler);
-    watcher.onDidCreate(handler);
-    watcher.onDidDelete(handler);
+    return watcher;
+}
+
+/**
+ * Watch any `*.b3-workspace` under the workspace folder so settings such as `settings.nodeColors`
+ * can be refreshed without reopening the editor.
+ */
+export function watchWorkspaceFile(
+    workspaceFolder: vscode.Uri,
+    callback: () => void
+): vscode.Disposable {
+    const pattern = new vscode.RelativePattern(workspaceFolder.fsPath, "**/*.b3-workspace");
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+    watcher.onDidChange(callback);
+    watcher.onDidCreate(callback);
+    watcher.onDidDelete(callback);
 
     return watcher;
 }

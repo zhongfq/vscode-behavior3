@@ -1,4 +1,4 @@
-import { Alert, Button, Empty, Flex } from "antd";
+import { Alert, Button, Flex, Skeleton } from "antd";
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { useDocumentStore, useRuntime, useSelectionStore } from "../../app/runtime";
@@ -15,8 +15,86 @@ export const InspectorPane: React.FC = () => {
 
     if (!document) {
         return (
-            <div className="b3-v2-inspector">
-                <Empty description="Waiting for host init" />
+            <div className="b3-v2-inspector b3-v2-inspector-skeleton">
+                <div className="b3-v2-inspector-header">
+                    <Skeleton.Input
+                        active
+                        size="small"
+                        className="b3-v2-inspector-skeleton-title"
+                    />
+                </div>
+                <div className="b3-v2-inspector-content b3-v2-inspector-skeleton-content">
+                    <div className="b3-v2-inspector-skeleton-row">
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            className="b3-v2-inspector-skeleton-label"
+                        />
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            block
+                            className="b3-v2-inspector-skeleton-field"
+                        />
+                    </div>
+                    <div className="b3-v2-inspector-skeleton-row">
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            className="b3-v2-inspector-skeleton-label"
+                        />
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            block
+                            className="b3-v2-inspector-skeleton-field"
+                        />
+                    </div>
+                    <div className="b3-v2-inspector-skeleton-row">
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            className="b3-v2-inspector-skeleton-label"
+                        />
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            block
+                            className="b3-v2-inspector-skeleton-field"
+                        />
+                    </div>
+                    <Skeleton.Input
+                        active
+                        size="small"
+                        className="b3-v2-inspector-skeleton-section"
+                    />
+                    <div className="b3-v2-inspector-skeleton-row">
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            className="b3-v2-inspector-skeleton-label"
+                        />
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            block
+                            className="b3-v2-inspector-skeleton-field"
+                        />
+                    </div>
+                    <div className="b3-v2-inspector-skeleton-row">
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            className="b3-v2-inspector-skeleton-label"
+                        />
+                        <Skeleton.Input
+                            active
+                            size="small"
+                            block
+                            className="b3-v2-inspector-skeleton-field"
+                        />
+                    </div>
+                </div>
             </div>
         );
     }

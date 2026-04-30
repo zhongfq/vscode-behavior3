@@ -42,7 +42,17 @@ export type HostToEditorMessage =
     | { type: "fileChanged"; content: string }
     /** A referenced subtree file was saved or edited; parent canvas should reload subtree data. */
     | { type: "subtreeFileChanged" }
-    | { type: "settingLoaded"; nodeDefs: NodeDef[]; nodeColors?: Record<string, string> }
+    | {
+          type: "settingLoaded";
+          nodeDefs: NodeDef[];
+          settings?: {
+              checkExpr?: boolean;
+              editSubtreeNodeProps?: boolean;
+              language?: "zh" | "en";
+              layout?: NodeLayout;
+              nodeColors?: Record<string, string>;
+          };
+      }
     | { type: "buildResult"; success: boolean; message: string }
     | { type: "readFileResult"; requestId: string; content: string | null }
     | {

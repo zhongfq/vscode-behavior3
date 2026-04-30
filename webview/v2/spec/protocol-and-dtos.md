@@ -39,6 +39,7 @@ V2 内部只承认两类路径：
 - `treeSelected`
     - payload: `{ tree: PersistedTreeModel }`
 - `requestSetting`
+    - 请求宿主重新解析当前会话相关设置，并推送最新 `settingLoaded`
 - `build`
 - `readFile`
     - payload: `{ path: WorkdirRelativeJsonPath, openIfSubtree?: boolean }`
@@ -55,7 +56,7 @@ V2 内部只承认两类路径：
     - payload: `{ content: string }`
 - `subtreeFileChanged`
 - `settingLoaded`
-    - payload: `{ nodeDefs: NodeDef[] }`
+    - payload: `{ nodeDefs: NodeDef[]; settings?: Partial<Settings> }`
 - `varDeclLoaded`
     - payload: `HostVarsPayload`
 - `buildResult`
@@ -79,6 +80,7 @@ V2 内部只承认两类路径：
     - 工作区内可见文件列表
 - `settings`
     - 当前 editor settings
+    - 作为首包完整设置快照；后续增量刷新走 `settingLoaded`
 
 ### HostVarsPayload
 
@@ -151,6 +153,16 @@ V2 内部只承认两类路径：
 
 - raw wire protocol 的奇怪字段、路径差异、时序差异，只能在这里被吸收
 - `commandController` 只接收归一化后的 DTO
+
+补充：
+
+- `settingLoaded` 除了显式响应 `requestSetting`，宿主也可以在相关配置源变化时主动推送
+- 当前优先用于热更新的设置切片包括：
+    - `checkExpr`
+    - `editSubtreeNodeProps`
+    - `language`
+    - `nodeColors`
+- `.b3-setting`、`.b3-workspace` 与 `behavior3.*` 配置变化都属于允许触发 `settingLoaded` 的宿主事件源
 
 ## DTO 设计原则
 

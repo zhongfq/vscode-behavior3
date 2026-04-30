@@ -48,7 +48,7 @@ const AppShell: React.FC = () => {
                     ...state,
                     settings: {
                         ...state.settings,
-                        nodeColors: message.nodeColors,
+                        ...(message.settings ?? {}),
                     },
                 }));
                 void runtime.controller.applyNodeDefs(message.nodeDefs);
