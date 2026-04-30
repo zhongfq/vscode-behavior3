@@ -44,7 +44,7 @@ export const normalizeHostInitMessage = (
 ): HostInitPayload => {
     const settings: Settings = {
         checkExpr: message.checkExpr,
-        editSubtreeNodeProps: message.editSubtreeNodeProps,
+        subtreeEditable: message.subtreeEditable,
         language: message.language,
         theme: message.theme,
         nodeColors: message.nodeColors,

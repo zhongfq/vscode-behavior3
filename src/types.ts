@@ -31,7 +31,7 @@ export type HostToEditorMessage =
           workdir: string;
           nodeDefs: NodeDef[];
           checkExpr: boolean;
-          editSubtreeNodeProps: boolean;
+          subtreeEditable: boolean;
           language: "zh" | "en";
           theme: "dark" | "light";
           allFiles: string[];
@@ -45,7 +45,7 @@ export type HostToEditorMessage =
           nodeDefs: NodeDef[];
           settings?: {
               checkExpr?: boolean;
-              editSubtreeNodeProps?: boolean;
+              subtreeEditable?: boolean;
               language?: "zh" | "en";
               nodeColors?: Record<string, string>;
           };

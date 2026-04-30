@@ -1,7 +1,7 @@
 {
   "name": "vscode-behavior3",
-  "displayName": "Behavior3 Editor",
-  "description": "Visual Behavior3 Editor for game development",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "version": "2.0.4",
   "publisher": "codetypess",
   "repository": {
@@ -24,7 +24,7 @@
     "customEditors": [
       {
         "viewType": "behavior3.treeEditor",
-        "displayName": "Behavior3 Editor",
+        "displayName": "%extension.editor.displayName%",
         "selector": [
           {
             "filenamePattern": "*.json"
@@ -36,34 +36,34 @@
     "commands": [
       {
         "command": "behavior3.build",
-        "title": "Build Behavior Tree",
-        "category": "Behavior Tree",
+        "title": "%command.build.title%",
+        "category": "%command.category%",
         "icon": "$(tools)"
       },
       {
         "command": "behavior3.createProject",
-        "title": "Create Project",
-        "category": "Behavior Tree"
+        "title": "%command.createProject.title%",
+        "category": "%command.category%"
       },
       {
         "command": "behavior3.openSettings",
-        "title": "Open Node Config (.b3-setting)",
-        "category": "Behavior Tree"
+        "title": "%command.openSettings.title%",
+        "category": "%command.category%"
       },
       {
         "command": "behavior3.createTree",
-        "title": "Create Behavior3 File",
-        "category": "Behavior Tree"
+        "title": "%command.createTree.title%",
+        "category": "%command.category%"
       },
       {
         "command": "behavior3.openWithEditor",
-        "title": "Open with Behavior3",
-        "category": "Behavior Tree"
+        "title": "%command.openWithEditor.title%",
+        "category": "%command.category%"
       },
       {
         "command": "behavior3.toggleEditorMode",
-        "title": "Toggle Text / Behavior3",
-        "category": "Behavior Tree",
+        "title": "%command.toggleEditorMode.title%",
+        "category": "%command.category%",
         "icon": "$(edit)"
       }
     ],
@@ -107,17 +107,12 @@
       ]
     },
     "configuration": {
-      "title": "Behavior3 Editor",
+      "title": "%configuration.title%",
       "properties": {
-        "behavior3.settingFile": {
-          "type": "string",
-          "default": "",
-          "description": "节点定义配置文件路径（相对工作区根目录）。留空时从当前打开的树文件所在目录向父级搜索到工作区根目录，使用第一个 *.b3-setting；若仍无则回退到工作区根目录下的 *.b3-setting"
-        },
         "behavior3.checkExpr": {
           "type": "boolean",
           "default": true,
-          "description": "启用表达式校验"
+          "description": "%configuration.checkExpr.description%"
         },
         "behavior3.language": {
           "type": "string",
@@ -128,16 +123,16 @@
             "en"
           ],
           "enumDescriptions": [
-            "跟随 VS Code 显示语言",
-            "强制中文",
-            "Force English"
+            "%configuration.language.auto%",
+            "%configuration.language.zh%",
+            "%configuration.language.en%"
           ],
-          "description": "编辑器界面语言。默认跟随 VS Code，也可手动指定。"
+          "description": "%configuration.language.description%"
         },
-        "behavior3.editSubtreeNodeProps": {
+        "behavior3.subtreeEditable": {
           "type": "boolean",
           "default": true,
-          "description": "是否允许在 Inspector 中编辑子树节点的属性（输入/输出/参数等）。启用时可通过 $override 覆盖子树中的节点属性；禁用时子树内部节点为只读。"
+          "description": "%configuration.subtreeEditable.description%"
         }
       }
     }
@@ -163,7 +158,7 @@
     "autoprefixer": "^10.4.20",
     "esbuild": "^0.24.0",
     "postcss": "^8.4.49",
-    "prettier": "^3.8.1",
+    "prettier": "^3.8.3",
     "sass": "^1.77.8",
     "tailwindcss": "^3.4.15",
     "vite": "^6.3.5"
@@ -174,7 +169,6 @@
     "ahooks": "^3.8.0",
     "antd": "^6.3.4",
     "i18next": "^23.12.2",
-    "i18next-browser-languagedetector": "^7.2.1",
     "nanoid": "^5.1.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

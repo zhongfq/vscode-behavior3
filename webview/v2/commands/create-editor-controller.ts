@@ -459,7 +459,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             persistedTree: tree,
             subtreeSources: workspace.subtreeSources,
             nodeDefs: workspace.nodeDefs,
-            editSubtreeNodeProps: workspace.settings.editSubtreeNodeProps,
+            subtreeEditable: workspace.settings.subtreeEditable,
         });
 
         resolvedGraph = result.graph;
@@ -858,22 +858,22 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             }
 
             if (sourceResolved.subtreeNode) {
-                throw new Error("Cannot move nodes inside a subtree");
+                throw new Error(i18n.t("node.moveSubtreeDenied"));
             }
 
             if (targetResolved.subtreeNode) {
-                throw new Error("Cannot drop onto a subtree internal node");
+                throw new Error(i18n.t("node.dropSubtreeInternalDenied"));
             }
 
             if (sourceResolved.parentKey === null) {
-                throw new Error("Cannot move the root node");
+                throw new Error(i18n.t("node.moveRootDenied"));
             }
 
             if (
                 (intent.position === "before" || intent.position === "after") &&
                 targetResolved.parentKey === null
             ) {
-                throw new Error("Cannot place a node before or after the root");
+                throw new Error(i18n.t("node.dropAroundRootDenied"));
             }
 
             if (
@@ -881,13 +881,13 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 targetResolved.ref.sourceTreePath !== null &&
                 !targetResolved.subtreeNode
             ) {
-                throw new Error("Cannot add child nodes to a subtree reference");
+                throw new Error(i18n.t("node.addChildToSubtreeRefDenied"));
             }
 
             if (
                 isDescendantInstance(sourceResolved.ref.instanceKey, targetResolved.ref.instanceKey)
             ) {
-                throw new Error("Cannot move a node into its own descendant");
+                throw new Error(i18n.t("node.moveIntoDescendantDenied"));
             }
 
             const tree = clonePersistedTree(currentTree);

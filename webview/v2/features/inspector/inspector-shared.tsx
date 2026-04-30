@@ -2,6 +2,7 @@ import { AimOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import { Divider, Flex, Input, Popconfirm, Space } from "antd";
 import type { FormInstance } from "antd/es/form";
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ExpressionEvaluator } from "../../../../behavior3/src/behavior3/evaluator";
 import {
     hasArgOptions,
@@ -23,6 +24,7 @@ import {
     isVariadic,
     parseExpr,
 } from "../../../shared/misc/b3util";
+import i18n from "../../../shared/misc/i18n";
 
 export type VariableOption = {
     label: string;
@@ -179,7 +181,7 @@ export const formatChildrenLabel = (nodeDef: NodeDef | null) => {
         return "-";
     }
     if (nodeDef.children === undefined || nodeDef.children === -1) {
-        return "unlimited";
+        return i18n.t("node.children.unlimited");
     }
     return String(nodeDef.children);
 };
@@ -227,7 +229,7 @@ export const parseArgSubmitValue = (arg: NodeArg, raw: unknown): unknown => {
         }
         const parsed = JSON.parse(text);
         if (!Array.isArray(parsed)) {
-            throw new Error(`${arg.name} must be a JSON array`);
+            throw new Error(i18n.t("validation.jsonArray", { name: arg.name }));
         }
         return parsed;
     }
@@ -276,10 +278,10 @@ export const validateVariableValue = (
         return null;
     }
     if (!isValidVariableName(value)) {
-        return "Invalid variable name";
+        return i18n.t("node.invalidVariableName");
     }
     if (usingVars && !usingVars[value]) {
-        return `Undefined variable: ${value}`;
+        return i18n.t("node.undefinedVariable", { variable: value });
     }
     return null;
 };
@@ -297,17 +299,17 @@ export const validateExpressionValues = (
         const variables = parseExpr(entry);
         for (const variable of variables) {
             if (usingVars && !usingVars[variable]) {
-                return `Undefined variable: ${variable}`;
+                return i18n.t("node.undefinedVariable", { variable });
             }
         }
 
         if (checkExpr) {
             try {
                 if (!new ExpressionEvaluator(entry).dryRun()) {
-                    return "Invalid expression";
+                    return i18n.t("node.invalidExpression");
                 }
             } catch {
-                return "Invalid expression";
+                return i18n.t("node.invalidExpression");
             }
         }
     }
@@ -329,6 +331,8 @@ export const OverrideBar: React.FC<{
     onReset: () => void;
     children: React.ReactNode;
 }> = ({ active, onReset, children }) => {
+    const { t } = useTranslation();
+
     if (!active) {
         return <>{children}</>;
     }
@@ -336,9 +340,9 @@ export const OverrideBar: React.FC<{
     return (
         <div className="b3-v2-override-bar">
             <Popconfirm
-                title="Reset this override?"
-                okText="Reset"
-                cancelText="Cancel"
+                title={t("override.resetTitle")}
+                okText={t("reset")}
+                cancelText={t("cancel")}
                 placement="left"
                 onConfirm={onReset}
                 getPopupContainer={getOverridePopupContainer}
@@ -386,6 +390,7 @@ export const VariableDeclRow: React.FC<{
     onSubmit?: () => void;
     onFocusVariable?: (name: string) => void;
 }> = ({ value, disabled = false, onChange, onRemove, onSubmit, onFocusVariable }) => {
+    const { t } = useTranslation();
     const [localValue, setLocalValue] = useState<VariableRowValue>(value ?? { name: "", desc: "" });
 
     useEffect(() => {
@@ -414,7 +419,7 @@ export const VariableDeclRow: React.FC<{
                 <Input
                     disabled={disabled}
                     value={localValue.name}
-                    placeholder="name"
+                    placeholder={t("tree.vars.name")}
                     onChange={(event) =>
                         setLocalValue((current) => ({
                             ...current,
@@ -426,7 +431,7 @@ export const VariableDeclRow: React.FC<{
                 <Input
                     disabled={disabled}
                     value={localValue.desc}
-                    placeholder="description"
+                    placeholder={t("tree.vars.desc")}
                     onChange={(event) =>
                         setLocalValue((current) => ({
                             ...current,

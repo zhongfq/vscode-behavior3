@@ -112,19 +112,6 @@ async function resolveB3SettingFilePath(
     workspaceFolder: vscode.Uri,
     documentUri?: vscode.Uri
 ): Promise<string | undefined> {
-    const config = vscode.workspace.getConfiguration("behavior3");
-    const settingFileRel = config.get<string>("settingFile", "");
-
-    if (settingFileRel) {
-        const uri = vscode.Uri.joinPath(workspaceFolder, settingFileRel);
-        try {
-            await vscode.workspace.fs.stat(uri);
-            return uri.fsPath;
-        } catch {
-            // fall through
-        }
-    }
-
     if (documentUri) {
         const wf = vscode.workspace.getWorkspaceFolder(documentUri);
         const foundFs = findB3SettingPath(documentUri, wf?.uri);
@@ -156,9 +143,8 @@ async function resolveB3SettingFilePath(
  * Load node definitions from `.b3-setting`.
  *
  * Priority:
- *   1. `behavior3.settingFile` relative to workspace folder (if set and readable)
- *   2. Walk upward from the opened tree file's directory to workspace root; first `*.b3-setting` per directory
- *   3. Any `*.b3-setting` directly in the workspace folder (legacy)
+ *   1. Walk upward from the opened tree file's directory to workspace root; first `*.b3-setting` per directory
+ *   2. Any `*.b3-setting` directly in the workspace folder (legacy)
  */
 export async function resolveNodeDefs(
     workspaceFolder: vscode.Uri,

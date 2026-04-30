@@ -101,11 +101,10 @@ For TypeScript authoring hints, see:
 
 ## Extension Settings
 
-| Setting                 | Type    | Default  | Description                                                                   |
-| ----------------------- | ------- | -------- | ----------------------------------------------------------------------------- |
-| `behavior3.settingFile` | string  | `""`     | Path to `.b3-setting` relative to workspace root. Empty means auto-discovery. |
-| `behavior3.checkExpr`   | boolean | `true`   | Enable expression syntax validation for expression-type args.                 |
-| `behavior3.language`    | string  | `"auto"` | Editor UI language. Options:`auto` (follow VS Code), `zh`, `en`.              |
+| Setting               | Type    | Default  | Description                                                      |
+| --------------------- | ------- | -------- | ---------------------------------------------------------------- |
+| `behavior3.checkExpr` | boolean | `true`   | Enable expression syntax validation for expression-type args.    |
+| `behavior3.language`  | string  | `"auto"` | Editor UI language. Options:`auto` (follow VS Code), `zh`, `en`. |
 
 ## Inspector
 

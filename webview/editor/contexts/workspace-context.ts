@@ -117,7 +117,7 @@ export type EditTree = {
 
 export type Settings = {
     checkExpr: boolean;
-    editSubtreeNodeProps: boolean;
+    subtreeEditable: boolean;
     lang: string;
     theme: "dark" | "light";
     /** Override default node-type colors. Keys: "Composite" | "Decorator" | "Condition" | "Action" | "Other" | "Error" */
@@ -152,7 +152,7 @@ export type WorkspaceStore = {
     nodeDefs: b3util.NodeDefs;
     groupDefs: string[];
     checkExpr: boolean;
-    editSubtreeNodeProps: boolean;
+    subtreeEditable: boolean;
     theme: "dark" | "light";
     allFiles: string[];
 
@@ -181,6 +181,7 @@ export type WorkspaceStore = {
 
     // update node defs (from setting file change)
     updateNodeDefs: (defs: NodeDef[]) => void;
+    updateSettings: (settings: Settings) => void;
 
     // reload content when file changed externally
     reloadContent: (content: string) => void;
@@ -224,7 +225,7 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
     nodeDefs: new b3util.NodeDefs(),
     groupDefs: [],
     checkExpr: true,
-    editSubtreeNodeProps: true,
+    subtreeEditable: true,
     theme: detectInitialThemeMode(),
     allFiles: [],
     editor: undefined,
@@ -236,7 +237,7 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
 
     settings: {
         checkExpr: true,
-        editSubtreeNodeProps: true,
+        subtreeEditable: true,
         theme: "dark",
         lang: "en",
     },
@@ -260,7 +261,7 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
             groupDefs: b3util.groupDefs,
             settings,
             checkExpr: settings.checkExpr,
-            editSubtreeNodeProps: settings.editSubtreeNodeProps,
+            subtreeEditable: settings.subtreeEditable,
             allFiles: allFiles ?? [],
             editor,
             hostSubtreeRefreshSeq: 0,
@@ -275,6 +276,18 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
         b3util.initWithNodeDefs(defs, (msg) => message.error(msg), get().checkExpr);
         const editor = get().editor;
         set({ nodeDefs: b3util.nodeDefs, groupDefs: b3util.groupDefs });
+        editor?.dispatch?.("refresh", { preserveSelection: true });
+    },
+
+    updateSettings: (settings) => {
+        b3util.setCheckExpr(settings.checkExpr);
+        const editor = get().editor;
+        set({
+            settings,
+            checkExpr: settings.checkExpr,
+            subtreeEditable: settings.subtreeEditable,
+            theme: settings.theme,
+        });
         editor?.dispatch?.("refresh", { preserveSelection: true });
     },
 

@@ -727,7 +727,7 @@ class VectorTreeNode extends Rect {
 
     private drawWarningText(container: Group) {
         const text = isWarningNode(this.node)
-            ? cutWordTo(`Type:${this.node.typeLabel}`, CONTENT_WIDTH)
+            ? cutWordTo(`${i18n.t("node.type")}:${this.node.typeLabel}`, CONTENT_WIDTH)
             : "";
 
         this.upsert(

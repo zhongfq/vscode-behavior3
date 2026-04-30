@@ -95,7 +95,7 @@ export const TreeInspectorForm: React.FC = () => {
         <>
             <div className="b3-v2-inspector-header">
                 <Typography.Title level={5} style={{ margin: 0 }}>
-                    Tree Overview
+                    {t("tree.overview")}
                 </Typography.Title>
             </div>
             <div className="b3-v2-inspector-content">
@@ -124,17 +124,17 @@ export const TreeInspectorForm: React.FC = () => {
                         });
                     }}
                 >
-                    <Form.Item {...createInspectorLabelProps("Name")} name="name">
+                    <Form.Item {...createInspectorLabelProps(t("tree.name"))} name="name">
                         <Input disabled />
                     </Form.Item>
-                    <Form.Item {...createInspectorLabelProps("Description")} name="desc">
+                    <Form.Item {...createInspectorLabelProps(t("tree.desc"))} name="desc">
                         <TextArea autoSize={{ minRows: 1 }} onBlur={() => void form.submit()} />
                     </Form.Item>
-                    <Form.Item {...createInspectorLabelProps("ID Prefix")} name="prefix">
+                    <Form.Item {...createInspectorLabelProps(t("tree.prefix"))} name="prefix">
                         <Input onBlur={() => void form.submit()} />
                     </Form.Item>
                     <Form.Item
-                        {...createInspectorLabelProps("Export")}
+                        {...createInspectorLabelProps(t("tree.export"))}
                         name="export"
                         valuePropName="checked"
                     >
@@ -143,11 +143,11 @@ export const TreeInspectorForm: React.FC = () => {
 
                     {groupDefs.length > 0 ? (
                         <>
-                            <SectionDivider>Groups</SectionDivider>
+                            <SectionDivider>{t("tree.group")}</SectionDivider>
                             <Form.Item name="group">
                                 <Select
                                     mode="multiple"
-                                    placeholder="Select groups"
+                                    placeholder={t("tree.group.placeholder")}
                                     options={groupDefs.map((group) => ({
                                         label: group,
                                         value: group,
@@ -158,7 +158,7 @@ export const TreeInspectorForm: React.FC = () => {
                         </>
                     ) : null}
 
-                    <SectionDivider>Local Vars</SectionDivider>
+                    <SectionDivider>{t("tree.vars.local")}</SectionDivider>
                     <Form.List name="vars">
                         {(fields, { add, remove }, { errors }) => (
                             <div className="b3-v2-list-block">
@@ -175,11 +175,13 @@ export const TreeInspectorForm: React.FC = () => {
                                                         !value?.name ||
                                                         !isValidVariableName(value.name)
                                                     ) {
-                                                        throw new Error("Invalid variable name");
+                                                        throw new Error(t("tree.vars.invalidName"));
                                                     }
                                                     if (!value.desc?.trim()) {
                                                         throw new Error(
-                                                            "Variable description is required"
+                                                            t(
+                                                                "validation.variableDescriptionRequired"
+                                                            )
                                                         );
                                                     }
                                                 },
@@ -205,7 +207,7 @@ export const TreeInspectorForm: React.FC = () => {
                                         icon={<PlusOutlined />}
                                         onClick={() => add({ name: "", desc: "" })}
                                     >
-                                        Add Variable
+                                        {t("tree.vars.add")}
                                     </Button>
                                     <Form.ErrorList errors={errors} />
                                 </Form.Item>
@@ -215,7 +217,7 @@ export const TreeInspectorForm: React.FC = () => {
 
                     {subtreeRows.length > 0 ? (
                         <>
-                            <SectionDivider>Subtree Vars</SectionDivider>
+                            <SectionDivider>{t("tree.vars.subtree")}</SectionDivider>
                             <div className="b3-v2-list-block">
                                 {subtreeRows.map((entry) => (
                                     <div key={entry.path} className="b3-v2-decl-group">
@@ -265,7 +267,7 @@ export const TreeInspectorForm: React.FC = () => {
                         </>
                     ) : null}
 
-                    <SectionDivider>Import Vars</SectionDivider>
+                    <SectionDivider>{t("tree.vars.imports")}</SectionDivider>
                     <Form.List name="importRefs">
                         {(fields, { add, remove }, { errors }) => (
                             <div className="b3-v2-list-block">
@@ -325,7 +327,7 @@ export const TreeInspectorForm: React.FC = () => {
                                         icon={<PlusOutlined />}
                                         onClick={() => add({ path: "" })}
                                     >
-                                        Add Import
+                                        {t("tree.import.add")}
                                     </Button>
                                     <Form.ErrorList errors={errors} />
                                 </Form.Item>

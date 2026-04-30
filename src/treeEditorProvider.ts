@@ -111,7 +111,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             const config = vscode.workspace.getConfiguration("behavior3");
             return {
                 checkExpr: config.get<boolean>("checkExpr", true),
-                editSubtreeNodeProps: config.get<boolean>("editSubtreeNodeProps", true),
+                subtreeEditable: config.get<boolean>("subtreeEditable", true),
                 language: getEditorLanguage(config.get<string>("language", "auto")),
                 nodeColors: await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri),
             };
@@ -198,9 +198,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             if (!event.affectsConfiguration("behavior3")) {
                 return;
             }
-            void pushSettingLoaded({
-                refreshDefs: event.affectsConfiguration("behavior3.settingFile"),
-            });
+            void pushSettingLoaded();
         });
 
         // Main document → webview; subtree documents → debounced refresh parent canvas
@@ -289,7 +287,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         workdir: projectRootUri.fsPath,
                         nodeDefs: mapDefsForWebview(nodeDefs),
                         checkExpr: currentSettings.checkExpr,
-                        editSubtreeNodeProps: currentSettings.editSubtreeNodeProps,
+                        subtreeEditable: currentSettings.subtreeEditable,
                         language: currentSettings.language,
                         theme,
                         allFiles,

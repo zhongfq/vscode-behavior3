@@ -1,0 +1,19 @@
+{
+  "extension.displayName": "Behavior3 编辑器",
+  "extension.description": "面向游戏开发的可视化 Behavior3 编辑器",
+  "extension.editor.displayName": "Behavior3 编辑器",
+  "command.category": "行为树",
+  "command.build.title": "构建行为树",
+  "command.createProject.title": "创建项目",
+  "command.openSettings.title": "打开节点配置 (.b3-setting)",
+  "command.createTree.title": "创建 Behavior3 文件",
+  "command.openWithEditor.title": "使用 Behavior3 打开",
+  "command.toggleEditorMode.title": "切换文本 / Behavior3",
+  "configuration.title": "Behavior3 编辑器",
+  "configuration.checkExpr.description": "启用表达式校验。",
+  "configuration.language.description": "编辑器界面语言。默认跟随 VS Code 显示语言，也可手动指定。",
+  "configuration.language.auto": "跟随 VS Code 显示语言",
+  "configuration.language.zh": "强制中文",
+  "configuration.language.en": "强制英文",
+  "configuration.subtreeEditable.description": "允许在 Inspector 中编辑子树节点的属性，包括输入、输出和参数。启用时可通过 $override 覆盖子树中的节点属性；禁用时子树内部节点为只读。"
+}

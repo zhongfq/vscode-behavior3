@@ -12,6 +12,7 @@ import {
 } from "antd";
 import type { FormInstance } from "antd/es/form";
 import React, { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import {
     hasArgOptions,
@@ -67,6 +68,7 @@ const NodeArgField: React.FC<{
     disabled: boolean;
     onCommit: () => void;
 }> = ({ form, arg, nodeDef, usingVars, checkExpr, disabled, onCommit }) => {
+    const { t } = useTranslation();
     const argsValue = (Form.useWatch("args", form) as Record<string, unknown> | undefined) ?? {};
     const type = getNodeArgRawType(arg);
     const options = useMemo(() => getNodeArgOptions(arg, argsValue) ?? [], [arg, argsValue]);
@@ -90,7 +92,7 @@ const NodeArgField: React.FC<{
         }
 
         if (empty && required && !isBoolType(type)) {
-            throw new Error(`${arg.desc || arg.name} is required`);
+            throw new Error(t("fieldRequired", { field: arg.desc || arg.name }));
         }
 
         let parsedValue: unknown = value;
@@ -101,13 +103,13 @@ const NodeArgField: React.FC<{
 
         if (isIntType(type) && value !== undefined && value !== "") {
             if (!Number.isInteger(Number(value))) {
-                throw new Error(`${arg.desc || arg.name} must be an integer`);
+                throw new Error(t("validation.integer", { field: arg.desc || arg.name }));
             }
         }
 
         if (isFloatType(type) && value !== undefined && value !== "") {
             if (!Number.isFinite(Number(value))) {
-                throw new Error(`${arg.desc || arg.name} must be a number`);
+                throw new Error(t("validation.number", { field: arg.desc || arg.name }));
             }
         }
 
@@ -128,12 +130,12 @@ const NodeArgField: React.FC<{
                 nodeDef.input?.findIndex((input) => cleanSlotLabel(input) === arg.oneof) ?? -1;
 
             if (relatedInputIndex < 0) {
-                throw new Error(`Missing input slot for oneof '${arg.oneof}'`);
+                throw new Error(t("validation.missingOneofInput", { input: arg.oneof }));
             }
 
             const relatedInputValue = form.getFieldValue(["inputSlots", relatedInputIndex]);
             if (!checkOneof(arg, parsedValue, relatedInputValue)) {
-                throw new Error(`Only one of '${arg.name}' and '${arg.oneof}' can be set`);
+                throw new Error(t("validation.oneof", { left: arg.name, right: arg.oneof }));
             }
         }
     };
@@ -171,7 +173,9 @@ const NodeArgField: React.FC<{
                 <TextArea
                     autoSize={{ minRows: 1 }}
                     disabled={disabled}
-                    placeholder={isNodeArgArray(arg) ? "Enter JSON array" : "Enter JSON value"}
+                    placeholder={
+                        isNodeArgArray(arg) ? t("form.enterJsonArray") : t("form.enterJsonValue")
+                    }
                     onBlur={onCommit}
                 />
             </Form.Item>
@@ -191,9 +195,9 @@ const NodeArgField: React.FC<{
                         allowClear={false}
                         onChange={() => queueSubmit(form)}
                         options={[
-                            { label: "Unset", value: "__unset__" },
-                            { label: "True", value: true },
-                            { label: "False", value: false },
+                            { label: t("form.unset"), value: "__unset__" },
+                            { label: t("form.true"), value: true },
+                            { label: t("form.false"), value: false },
                         ]}
                     />
                 </Form.Item>
@@ -254,6 +258,7 @@ const NodeArgField: React.FC<{
 
 export const NodeInspectorForm: React.FC = () => {
     const runtime = useRuntime();
+    const { t } = useTranslation();
     const document = useDocumentStore((state) => state.persistedTree);
     const selectedNode = useSelectionStore((state) => state.selectedNodeSnapshot);
     const nodeDefs = useWorkspaceStore((state) => state.nodeDefs);
@@ -273,7 +278,7 @@ export const NodeInspectorForm: React.FC = () => {
         (watchedName ?? selectedNode?.data.name ?? "").trim() || selectedNode?.data.name || "";
     const nodeDef = nodeDefs.find((entry) => entry.name === effectiveName) ?? null;
     const fieldEditDisabled = selectedNode?.disabled ?? false;
-    const title = nodeDef?.desc || effectiveName || "Unknown Node";
+    const title = nodeDef?.desc || effectiveName || t("node.unknown.title");
     const structuredArgs = nodeDef?.args ?? [];
     const hasStructuredArgs = structuredArgs.length > 0;
     const shouldShowRawNodeJson = nodeDef === null;
@@ -287,7 +292,7 @@ export const NodeInspectorForm: React.FC = () => {
 
         form.setFieldsValue({
             id: selectedNode.ref.displayId,
-            type: currentNodeDef?.type ?? "Unknown",
+            type: currentNodeDef?.type ?? t("node.unknownType"),
             children: formatChildrenLabel(currentNodeDef),
             group: currentNodeDef?.group ?? [],
             name: selectedNode.data.name,
@@ -313,7 +318,7 @@ export const NodeInspectorForm: React.FC = () => {
             ),
             rawNodeJson: JSON.stringify(selectedNode.data ?? {}, null, 2),
         });
-    }, [form, nodeDefMap, selectedNode]);
+    }, [form, nodeDefMap, selectedNode, t]);
 
     if (!selectedNode) {
         return null;
@@ -514,14 +519,14 @@ export const NodeInspectorForm: React.FC = () => {
                         }
                     }}
                 >
-                    <Form.Item {...createInspectorLabelProps("ID")} name="id">
+                    <Form.Item {...createInspectorLabelProps(t("node.id"))} name="id">
                         <Input disabled />
                     </Form.Item>
-                    <Form.Item {...createInspectorLabelProps("Type")} name="type">
+                    <Form.Item {...createInspectorLabelProps(t("node.type"))} name="type">
                         <Input disabled />
                     </Form.Item>
                     {nodeDef?.group?.length ? (
-                        <Form.Item {...createInspectorLabelProps("Group")} name="group">
+                        <Form.Item {...createInspectorLabelProps(t("node.group"))} name="group">
                             <Select
                                 mode="multiple"
                                 disabled
@@ -532,26 +537,30 @@ export const NodeInspectorForm: React.FC = () => {
                             />
                         </Form.Item>
                     ) : null}
-                    <Form.Item {...createInspectorLabelProps("Children")} name="children">
+                    <Form.Item {...createInspectorLabelProps(t("node.children"))} name="children">
                         <Input disabled />
                     </Form.Item>
 
                     <Form.Item
-                        {...createInspectorLabelProps("Name")}
+                        {...createInspectorLabelProps(t("node.name"))}
                         name="name"
                         rules={[
                             {
                                 validator: async (_, value) => {
                                     const nextName = String(value ?? "").trim();
                                     if (!nextName) {
-                                        throw new Error(`Unknown node: ${selectedNode.data.name}`);
+                                        throw new Error(
+                                            t("node.notFound", { name: selectedNode.data.name })
+                                        );
                                     }
                                     if (nextName === selectedNode.data.name) {
                                         return;
                                     }
                                     if (!nodeDefMap.has(nextName)) {
                                         throw new Error(
-                                            `Unknown node: ${nextName || selectedNode.data.name}`
+                                            t("node.notFound", {
+                                                name: nextName || selectedNode.data.name,
+                                            })
                                         );
                                     }
                                 },
@@ -580,7 +589,7 @@ export const NodeInspectorForm: React.FC = () => {
                             queueSubmit(form);
                         }}
                     >
-                        <Form.Item {...createInspectorLabelProps("Description")} name="desc">
+                        <Form.Item {...createInspectorLabelProps(t("node.desc"))} name="desc">
                             <TextArea
                                 autoSize={{ minRows: 1 }}
                                 disabled={fieldEditDisabled}
@@ -600,7 +609,7 @@ export const NodeInspectorForm: React.FC = () => {
                         }}
                     >
                         <Form.Item
-                            {...createInspectorLabelProps("Debug")}
+                            {...createInspectorLabelProps(t("node.debug"))}
                             name="debug"
                             valuePropName="checked"
                         >
@@ -623,7 +632,7 @@ export const NodeInspectorForm: React.FC = () => {
                         }}
                     >
                         <Form.Item
-                            {...createInspectorLabelProps("Disabled")}
+                            {...createInspectorLabelProps(t("node.disabled"))}
                             name="disabled"
                             valuePropName="checked"
                         >
@@ -634,7 +643,7 @@ export const NodeInspectorForm: React.FC = () => {
                         </Form.Item>
                     </OverrideBar>
 
-                    <Form.Item {...createInspectorLabelProps("Subtree")} name="path">
+                    <Form.Item {...createInspectorLabelProps(t("node.subtree"))} name="path">
                         <AutoComplete
                             disabled={fieldEditDisabled || selectedNode.subtreeNode}
                             options={allFiles.map((path) => ({ label: path, value: path }))}
@@ -650,7 +659,7 @@ export const NodeInspectorForm: React.FC = () => {
 
                     {nodeDef?.input?.length ? (
                         <>
-                            <SectionDivider>Input Variables</SectionDivider>
+                            <SectionDivider>{t("node.inputVariable")}</SectionDivider>
                             {nodeDef.input.map((slot, index) => {
                                 const slotLabel = cleanSlotLabel(slot);
                                 const relatedArg = relatedArgForInput(nodeDef, index);
@@ -719,7 +728,13 @@ export const NodeInspectorForm: React.FC = () => {
                                                                                         )
                                                                                     ) {
                                                                                         throw new Error(
-                                                                                            `Only one of '${relatedArg.name}' and '${slotLabel}' can be set`
+                                                                                            t(
+                                                                                                "validation.oneof",
+                                                                                                {
+                                                                                                    left: relatedArg.name,
+                                                                                                    right: slotLabel,
+                                                                                                }
+                                                                                            )
                                                                                         );
                                                                                     }
                                                                                 },
@@ -760,7 +775,7 @@ export const NodeInspectorForm: React.FC = () => {
                                                                     icon={<PlusOutlined />}
                                                                     onClick={() => add("")}
                                                                 >
-                                                                    Add
+                                                                    {t("add")}
                                                                 </Button>
                                                                 <Form.ErrorList errors={errors} />
                                                             </Form.Item>
@@ -787,7 +802,9 @@ export const NodeInspectorForm: React.FC = () => {
                                             rules={[
                                                 {
                                                     required: !slot.includes("?"),
-                                                    message: `${slotLabel} is required`,
+                                                    message: t("fieldRequired", {
+                                                        field: slotLabel,
+                                                    }),
                                                 },
                                                 {
                                                     validator: async (
@@ -813,7 +830,10 @@ export const NodeInspectorForm: React.FC = () => {
                                                             )
                                                         ) {
                                                             throw new Error(
-                                                                `Only one of '${relatedArg.name}' and '${slotLabel}' can be set`
+                                                                t("validation.oneof", {
+                                                                    left: relatedArg.name,
+                                                                    right: slotLabel,
+                                                                })
                                                             );
                                                         }
                                                     },
@@ -835,7 +855,7 @@ export const NodeInspectorForm: React.FC = () => {
 
                     {hasStructuredArgs && nodeDef ? (
                         <>
-                            <SectionDivider>Args</SectionDivider>
+                            <SectionDivider>{t("node.args")}</SectionDivider>
                             {structuredArgs.map((arg) => (
                                 <OverrideBar
                                     key={`arg-${arg.name}`}
@@ -856,8 +876,11 @@ export const NodeInspectorForm: React.FC = () => {
                         </>
                     ) : shouldShowRawNodeJson ? (
                         <>
-                            <SectionDivider>Node JSON</SectionDivider>
-                            <Form.Item {...createInspectorLabelProps("Node")} name="rawNodeJson">
+                            <SectionDivider>{t("node.jsonData")}</SectionDivider>
+                            <Form.Item
+                                {...createInspectorLabelProps(t("node.jsonData"))}
+                                name="rawNodeJson"
+                            >
                                 <TextArea autoSize={{ minRows: 1 }} disabled />
                             </Form.Item>
                         </>
@@ -865,7 +888,7 @@ export const NodeInspectorForm: React.FC = () => {
 
                     {nodeDef?.output?.length ? (
                         <>
-                            <SectionDivider>Output Variables</SectionDivider>
+                            <SectionDivider>{t("node.outputVariable")}</SectionDivider>
                             {nodeDef.output.map((slot, index) => {
                                 const slotLabel = cleanSlotLabel(slot);
 
@@ -957,7 +980,7 @@ export const NodeInspectorForm: React.FC = () => {
                                                                     icon={<PlusOutlined />}
                                                                     onClick={() => add("")}
                                                                 >
-                                                                    Add
+                                                                    {t("add")}
                                                                 </Button>
                                                                 <Form.ErrorList errors={errors} />
                                                             </Form.Item>
@@ -984,7 +1007,9 @@ export const NodeInspectorForm: React.FC = () => {
                                             rules={[
                                                 {
                                                     required: !slot.includes("?"),
-                                                    message: `${slotLabel} is required`,
+                                                    message: t("fieldRequired", {
+                                                        field: slotLabel,
+                                                    }),
                                                 },
                                                 {
                                                     validator: async (

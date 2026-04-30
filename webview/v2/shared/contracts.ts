@@ -39,7 +39,7 @@ export interface PersistedTreeModel {
 
 export interface Settings {
     checkExpr: boolean;
-    editSubtreeNodeProps: boolean;
+    subtreeEditable: boolean;
     language: "zh" | "en";
     theme: "dark" | "light";
     nodeColors?: Record<string, string>;

@@ -1,6 +1,8 @@
 import { App as AntdApp, ConfigProvider, Flex, Layout, Typography } from "antd";
 import React, { useEffect, useLayoutEffect } from "react";
-import i18n from "../../shared/misc/i18n";
+import { useTranslation } from "react-i18next";
+import { getAntdLocale } from "../../shared/misc/antd-locale";
+import i18n, { setI18nLanguage } from "../../shared/misc/i18n";
 import { getThemeConfig } from "../../shared/misc/theme";
 import { GraphPane } from "../features/graph/graph-pane";
 import { InspectorPane } from "../features/inspector/inspector-pane";
@@ -13,6 +15,7 @@ const { Content, Sider } = Layout;
 const AppShell: React.FC = () => {
     const runtime = useRuntime();
     const { message: messageApi } = AntdApp.useApp();
+    const { t } = useTranslation();
     const theme = useWorkspaceStore((state) => state.settings.theme);
     const language = useWorkspaceStore((state) => state.settings.language);
     const hasDocument = useDocumentStore((state) => state.persistedTree !== null);
@@ -21,7 +24,10 @@ const AppShell: React.FC = () => {
     useEffect(() => {
         const off = runtime.hostAdapter.connect((message) => {
             if (message.type === "init") {
-                void runtime.controller.initFromHost(message.payload);
+                void (async () => {
+                    await setI18nLanguage(message.payload.settings.language);
+                    await runtime.controller.initFromHost(message.payload);
+                })();
                 return;
             }
             if (message.type === "fileChanged") {
@@ -44,14 +50,19 @@ const AppShell: React.FC = () => {
                 return;
             }
             if (message.type === "settingLoaded") {
-                runtime.workspaceStore.setState((state) => ({
-                    ...state,
-                    settings: {
-                        ...state.settings,
-                        ...(message.settings ?? {}),
-                    },
-                }));
-                void runtime.controller.applyNodeDefs(message.nodeDefs);
+                void (async () => {
+                    if (message.settings?.language) {
+                        await setI18nLanguage(message.settings.language);
+                    }
+                    runtime.workspaceStore.setState((state) => ({
+                        ...state,
+                        settings: {
+                            ...state.settings,
+                            ...(message.settings ?? {}),
+                        },
+                    }));
+                    await runtime.controller.applyNodeDefs(message.nodeDefs);
+                })();
                 return;
             }
             if (message.type === "varDeclLoaded") {
@@ -83,7 +94,7 @@ const AppShell: React.FC = () => {
     }, [theme]);
 
     useEffect(() => {
-        void i18n.changeLanguage(language);
+        void setI18nLanguage(language);
     }, [language]);
 
     return (
@@ -94,7 +105,9 @@ const AppShell: React.FC = () => {
                         <GraphPane />
                     ) : (
                         <Flex className="b3-v2-loading" justify="center" align="center">
-                            <Typography.Text type="secondary">Loading V2 editor...</Typography.Text>
+                            <Typography.Text type="secondary">
+                                {t("editor.loading")}
+                            </Typography.Text>
                         </Flex>
                     )}
                 </Content>
@@ -116,9 +129,10 @@ const AppShell: React.FC = () => {
 
 export const App: React.FC = () => {
     const theme = useWorkspaceStore((state) => state.settings.theme);
+    const language = useWorkspaceStore((state) => state.settings.language);
 
     return (
-        <ConfigProvider theme={getThemeConfig(theme)}>
+        <ConfigProvider locale={getAntdLocale(language)} theme={getThemeConfig(theme)}>
             <AntdApp style={{ height: "100%" }}>
                 <GlobalHooksBridge />
                 <AppShell />

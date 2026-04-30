@@ -11,7 +11,7 @@ export const createWorkspaceStore = (): StoreApi<WorkspaceState> => {
         allFiles: [],
         settings: {
             checkExpr: true,
-            editSubtreeNodeProps: true,
+            subtreeEditable: true,
             language: "zh",
             theme: detectInitialThemeMode(),
         },

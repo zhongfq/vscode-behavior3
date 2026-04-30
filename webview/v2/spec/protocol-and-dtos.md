@@ -159,7 +159,7 @@ V2 内部只承认两类路径：
 - `settingLoaded` 除了显式响应 `requestSetting`，宿主也可以在相关配置源变化时主动推送
 - 当前优先用于热更新的设置切片包括：
     - `checkExpr`
-    - `editSubtreeNodeProps`
+    - `subtreeEditable`
     - `language`
     - `nodeColors`
 - `.b3-setting`、`.b3-workspace` 与 `behavior3.*` 配置变化都属于允许触发 `settingLoaded` 的宿主事件源

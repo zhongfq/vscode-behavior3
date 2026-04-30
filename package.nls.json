@@ -1,0 +1,19 @@
+{
+  "extension.displayName": "Behavior3 Editor",
+  "extension.description": "Visual Behavior3 Editor for game development",
+  "extension.editor.displayName": "Behavior3 Editor",
+  "command.category": "Behavior Tree",
+  "command.build.title": "Build Behavior Tree",
+  "command.createProject.title": "Create Project",
+  "command.openSettings.title": "Open Node Config (.b3-setting)",
+  "command.createTree.title": "Create Behavior3 File",
+  "command.openWithEditor.title": "Open with Behavior3",
+  "command.toggleEditorMode.title": "Toggle Text / Behavior3",
+  "configuration.title": "Behavior3 Editor",
+  "configuration.checkExpr.description": "Enable expression validation.",
+  "configuration.language.description": "Editor UI language. The default follows the VS Code display language; you can also force a language.",
+  "configuration.language.auto": "Follow VS Code display language",
+  "configuration.language.zh": "Force Chinese",
+  "configuration.language.en": "Force English",
+  "configuration.subtreeEditable.description": "Allow editing subtree node properties in the Inspector, including input, output, and arguments. When enabled, $override can override node properties inside subtrees. When disabled, subtree internal nodes are read-only."
+}

@@ -299,7 +299,7 @@ export function activate(context: vscode.ExtensionContext) {
                 await vscode.window.showTextDocument(vscode.Uri.file(fsPath));
             } else {
                 void vscode.window.showInformationMessage(
-                    "No .b3-setting file found. Place one next to your trees or under a parent folder, or set behavior3.settingFile."
+                    "No .b3-setting file found. Place one next to your trees or under a parent folder."
                 );
             }
         })

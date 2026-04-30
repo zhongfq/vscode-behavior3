@@ -1,10 +1,12 @@
 import { App, ConfigProvider } from "antd";
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { useTranslation } from "react-i18next";
 import * as vscodeApi from "./vscodeApi";
 import { setGlobalHooks } from "../shared/misc/hooks";
 import "../shared/misc/i18n";
-import i18n from "../shared/misc/i18n";
+import { getAntdLocale } from "../shared/misc/antd-locale";
+import { setI18nLanguage } from "../shared/misc/i18n";
 import { getThemeConfig } from "../shared/misc/theme";
 import { detectInitialThemeMode, useWorkspace } from "./contexts/workspace-context";
 import { writeTree } from "../shared/misc/util";
@@ -24,6 +26,7 @@ const GlobalHooksBridge = () => {
 const EditorApp = () => {
     const [ready, setReady] = useState(false);
     const workspace = useWorkspace();
+    const { t } = useTranslation();
 
     useEffect(() => {
         document.documentElement.setAttribute("data-theme", workspace.theme);
@@ -33,22 +36,24 @@ const EditorApp = () => {
     useEffect(() => {
         const off = vscodeApi.onMessage((msg) => {
             if (msg.type === "init") {
-                void i18n.changeLanguage(msg.language);
-                workspace.init({
-                    content: msg.content,
-                    filePath: msg.filePath,
-                    workdir: msg.workdir,
-                    nodeDefs: msg.nodeDefs,
-                    allFiles: msg.allFiles ?? [],
-                    settings: {
-                        editSubtreeNodeProps: msg.editSubtreeNodeProps ?? true,
-                        theme: msg.theme,
-                        checkExpr: msg.checkExpr,
-                        lang: msg.language,
-                        nodeColors: msg.nodeColors,
-                    },
-                });
-                setReady(true);
+                void (async () => {
+                    await setI18nLanguage(msg.language);
+                    workspace.init({
+                        content: msg.content,
+                        filePath: msg.filePath,
+                        workdir: msg.workdir,
+                        nodeDefs: msg.nodeDefs,
+                        allFiles: msg.allFiles ?? [],
+                        settings: {
+                            subtreeEditable: msg.subtreeEditable ?? true,
+                            theme: msg.theme,
+                            checkExpr: msg.checkExpr,
+                            lang: msg.language,
+                            nodeColors: msg.nodeColors,
+                        },
+                    });
+                    setReady(true);
+                })();
             } else if (msg.type === "fileChanged") {
                 if (workspace.editor?.changed) {
                     if (workspace.editor) {
@@ -58,6 +63,17 @@ const EditorApp = () => {
                     workspace.reloadContent(msg.content);
                 }
             } else if (msg.type === "settingLoaded") {
+                if (msg.settings) {
+                    const current = useWorkspace.getState();
+                    void setI18nLanguage(msg.settings.language);
+                    workspace.updateSettings({
+                        checkExpr: msg.settings.checkExpr ?? current.checkExpr,
+                        subtreeEditable: msg.settings.subtreeEditable ?? current.subtreeEditable,
+                        lang: msg.settings.language ?? current.settings.lang,
+                        theme: current.theme,
+                        nodeColors: msg.settings.nodeColors ?? current.settings.nodeColors,
+                    });
+                }
                 workspace.updateNodeDefs(msg.nodeDefs);
             } else if (msg.type === "varDeclLoaded") {
                 workspace.applyHostVars(
@@ -78,10 +94,11 @@ const EditorApp = () => {
     }, []);
 
     const theme = getThemeConfig(workspace.theme);
+    const language = workspace.settings.lang;
 
     return (
         <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-            <ConfigProvider theme={theme}>
+            <ConfigProvider locale={getAntdLocale(language)} theme={theme}>
                 <App style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                     <GlobalHooksBridge />
                     {ready && workspace.editor ? (
@@ -109,7 +126,7 @@ const EditorApp = () => {
                                 fontSize: 14,
                             }}
                         >
-                            Loading...
+                            {t("editor.loading")}
                         </div>
                     )}
                 </App>

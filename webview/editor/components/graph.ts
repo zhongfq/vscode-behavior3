@@ -786,11 +786,11 @@ export class Graph {
             const isSubtreeNode = this._getAncestors(node.id).some(
                 (v) => (v.data as unknown as NodeData)?.path
             );
-            const editSubtreeNodeProps = useWorkspace.getState().editSubtreeNodeProps;
+            const subtreeEditable = useWorkspace.getState().subtreeEditable;
             const payload = {
                 data: { ...data },
                 prefix: this.data.prefix,
-                disabled: isSubtreeNode && !editSubtreeNodeProps,
+                disabled: isSubtreeNode && !subtreeEditable,
                 subtreeEditable: true,
                 // subtreeNode: true only when the node is INSIDE a subtree (ancestors have path),
                 // not when the node itself merely references a subtree from the root tree.

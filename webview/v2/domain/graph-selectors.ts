@@ -1,5 +1,6 @@
 import { getNodeType, isExprType, type NodeDef } from "../../shared/misc/b3type";
 import { parseExpr } from "../../shared/misc/b3util";
+import i18n from "../../shared/misc/i18n";
 import type {
     GraphHighlightState,
     GraphNodeVM,
@@ -61,7 +62,11 @@ export const buildResolvedGraphModel = (
             renderedIdLabel: node.renderedIdLabel,
             title: node.name,
             subtitle: pickNodeSubtitle(node.desc, def?.desc),
-            typeLabel: def?.type ?? (node.resolutionError ? "ResolutionError" : "Unknown"),
+            typeLabel:
+                def?.type ??
+                (node.resolutionError
+                    ? i18n.t("node.resolutionError")
+                    : i18n.t("node.unknownType")),
             icon: def?.icon,
             nodeStyleKind,
             accentColor: nodeColors?.[nodeStyleKind] ?? DEFAULT_NODE_COLORS[nodeStyleKind],

@@ -24,7 +24,7 @@ resolved graph 是图层唯一可信输入。
 - 主文档 `persistedTree`
 - subtree source cache
 - node defs
-- `editSubtreeNodeProps`
+- `subtreeEditable`
 
 ### 输出
 
@@ -241,7 +241,7 @@ override 规则：
 
 ### Step 4. 应用 override
 
-当 `editSubtreeNodeProps === true` 且当前实例来自 subtree source 时：
+当 `subtreeEditable === true` 且当前实例来自 subtree source 时：
 
 - 查找当前主文档 `$override[sourceStableId]`
 - 覆盖允许编辑的字段

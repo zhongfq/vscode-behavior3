@@ -74,14 +74,6 @@ export function resolveSettingFilePathSync(
     workspaceRootFsPath: string,
     searchFromDir?: string
 ): string | undefined {
-    const config = vscode.workspace.getConfiguration("behavior3");
-    const settingFile = config.get<string>("settingFile", "");
-    if (settingFile) {
-        const p = path.join(workspaceRootFsPath, settingFile);
-        if (fs.existsSync(p)) {
-            return p;
-        }
-    }
     const start = searchFromDir ?? workspaceRootFsPath;
     const anchor = vscode.Uri.file(path.join(path.resolve(start), ".behavior3-anchor"));
     const rootUri = vscode.Uri.file(path.resolve(workspaceRootFsPath));
@@ -164,7 +156,7 @@ export async function runBuild(context: vscode.ExtensionContext): Promise<void> 
         );
         if (!settingPath) {
             void vscode.window.showErrorMessage(
-                "No .b3-setting file found. Add behavior3.settingFile or place a *.b3-setting in the workspace root."
+                "No .b3-setting file found. Place a *.b3-setting next to your behavior trees or in a parent folder."
             );
             return;
         }

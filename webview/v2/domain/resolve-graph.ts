@@ -166,7 +166,7 @@ export const resolveDocumentGraph = (params: {
     persistedTree: PersistedTreeModel;
     subtreeSources: Record<WorkdirRelativeJsonPath, PersistedTreeModel | null>;
     nodeDefs: NodeDef[];
-    editSubtreeNodeProps: boolean;
+    subtreeEditable: boolean;
 }): ResolveGraphResult => {
     const defsByName = new Map(params.nodeDefs.map((def) => [def.name, def] as const));
     const cursor: ResolveCursor = {
@@ -255,7 +255,7 @@ export const resolveDocumentGraph = (params: {
             path: sourceNode.path,
             $status: sourceNode.$status,
             subtreeNode: context.insideExternalSubtree,
-            subtreeEditable: !context.insideExternalSubtree || params.editSubtreeNodeProps,
+            subtreeEditable: !context.insideExternalSubtree || params.subtreeEditable,
             subtreeOriginal,
             resolutionError,
         };
