@@ -352,11 +352,31 @@ export const OverrideBar: React.FC<{
 
 export const SectionDivider: React.FC<React.PropsWithChildren> = ({ children }) => {
     return (
-        <Divider titlePlacement="start" orientation="horizontal">
+        <Divider className="b3-v2-section-divider" titlePlacement="start" orientation="horizontal">
             <h4 className="b3-v2-section-title">{children}</h4>
         </Divider>
     );
 };
+
+export const InspectorLabel: React.FC<{ text: string; required?: boolean }> = ({
+    text,
+    required,
+}) => {
+    return (
+        <span className="b3-v2-form-label">
+            <span className="b3-v2-form-label-text">
+                {required ? <span className="b3-v2-form-required-mark">*</span> : null}
+                {text}
+            </span>
+            <span className="b3-v2-form-label-colon">:</span>
+        </span>
+    );
+};
+
+export const createInspectorLabelProps = (text: string, required = false) => ({
+    label: <InspectorLabel text={text} required={required} />,
+    colon: false as const,
+});
 
 export const VariableDeclRow: React.FC<{
     value?: VariableRowValue;

@@ -50,12 +50,8 @@ body {
     flex-direction: column;
 }
 
-.b3-v2-inspector-banner {
-    margin: 12px 20px 0 12px;
-}
-
 .b3-v2-inspector-header {
-    padding: 12px 28px 12px 24px;
+    padding: 12px;
     border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -69,23 +65,57 @@ body {
     min-height: 0;
     flex: 1;
     overflow: auto;
-    padding: 20px 28px 20px 20px;
+    padding: 20px 12px;
 }
 
 .b3-v2-inspector-form .ant-form-item {
-    margin-bottom: 10px;
-}
-
-.b3-v2-inspector-form .ant-form-item-row {
-    flex-wrap: nowrap;
-    align-items: flex-start;
+    margin-bottom: 8px;
 }
 
 .b3-v2-inspector-form .ant-form-item-label {
-    min-width: 100px;
-    max-width: 100px;
-    flex: 0 0 100px;
-    padding-right: 10px;
+    min-width: 110px;
+    max-width: 110px;
+    flex: 0 0 110px;
+    padding-right: 0;
+}
+
+.b3-v2-inspector-form .ant-form-item-label > label {
+    width: 100%;
+    height: auto;
+    min-height: 32px;
+    align-items: flex-start;
+    justify-content: flex-end;
+    line-height: 1.35;
+}
+
+.b3-v2-form-label {
+    display: inline-flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding-top: calc((32px - 1.35em) / 2);
+}
+
+.b3-v2-form-label-text {
+    min-width: 0;
+    flex: 1 1 auto;
+    text-align: right;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.b3-v2-form-required-mark {
+    color: var(--ant-color-error);
+    margin-right: 4px;
+}
+
+.b3-v2-form-label-colon {
+    flex: 0 0 auto;
+    padding-left: 2px;
+    white-space: nowrap;
 }
 
 .b3-v2-inspector-form .ant-form-item-control {
@@ -103,8 +133,14 @@ body {
     word-break: break-word;
 }
 
-.b3-v2-inspector-form .ant-divider-horizontal.ant-divider-with-text {
+.b3-v2-inspector-form .b3-v2-section-divider.ant-divider-horizontal.ant-divider-with-text {
     margin-bottom: 0;
+}
+
+.b3-v2-inspector-form .b3-v2-section-divider + .ant-form-item,
+.b3-v2-inspector-form .b3-v2-section-divider + .b3-v2-list-block,
+.b3-v2-inspector-form .b3-v2-section-divider + .b3-v2-override-bar {
+    margin-top: 6px;
 }
 
 .b3-v2-section-title {
@@ -132,7 +168,7 @@ body {
 .b3-v2-decl-vars {
     display: flex;
     flex-direction: column;
-    row-gap: 0;
+    row-gap: 2px;
 }
 
 .b3-v2-var-row {
@@ -166,6 +202,24 @@ body {
 
 .b3-v2-inline-remove:hover {
     color: var(--ant-color-error);
+}
+
+.b3-v2-inline-remove-compact {
+    color: var(--ant-color-text-tertiary);
+    cursor: pointer;
+}
+
+.b3-v2-inline-remove-compact:hover {
+    color: var(--ant-color-error);
+}
+
+.b3-v2-inline-action {
+    color: var(--ant-color-text-tertiary);
+    cursor: pointer;
+}
+
+.b3-v2-inline-action:hover {
+    color: var(--ant-color-text);
 }
 
 .b3-v2-row-spacer {

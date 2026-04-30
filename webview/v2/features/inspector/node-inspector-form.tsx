@@ -1,6 +1,5 @@
 import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import {
-    Alert,
     AutoComplete,
     Button,
     Flex,
@@ -45,6 +44,7 @@ import {
     SectionDivider,
     cleanSlotLabel,
     compareJsonValue,
+    createInspectorLabelProps,
     createNodeDefMap,
     createVariableOptions,
     filterOptionByLabel,
@@ -71,6 +71,11 @@ const NodeArgField: React.FC<{
     const type = getNodeArgRawType(arg);
     const options = useMemo(() => getNodeArgOptions(arg, argsValue) ?? [], [arg, argsValue]);
     const required = !isNodeArgOptional(arg);
+    const argLabel = arg.desc || arg.name;
+    const argLabelProps = {
+        ...createInspectorLabelProps(argLabel, required),
+        required,
+    };
 
     const validateField = async (_: unknown, value: unknown) => {
         const empty =
@@ -136,7 +141,7 @@ const NodeArgField: React.FC<{
     if (hasArgOptions(arg)) {
         return (
             <Form.Item
-                label={arg.desc || arg.name}
+                {...argLabelProps}
                 name={["args", arg.name]}
                 rules={[{ validator: validateField }]}
             >
@@ -159,12 +164,12 @@ const NodeArgField: React.FC<{
     if (isNodeArgArray(arg) || isJsonType(type)) {
         return (
             <Form.Item
-                label={arg.desc || arg.name}
+                {...argLabelProps}
                 name={["args", arg.name]}
                 rules={[{ validator: validateField }]}
             >
                 <TextArea
-                    autoSize={{ minRows: 3, maxRows: 8 }}
+                    autoSize={{ minRows: 1 }}
                     disabled={disabled}
                     placeholder={isNodeArgArray(arg) ? "Enter JSON array" : "Enter JSON value"}
                     onBlur={onCommit}
@@ -177,7 +182,7 @@ const NodeArgField: React.FC<{
         if (isNodeArgOptional(arg)) {
             return (
                 <Form.Item
-                    label={arg.desc || arg.name}
+                    {...argLabelProps}
                     name={["args", arg.name]}
                     rules={[{ validator: validateField }]}
                 >
@@ -197,7 +202,7 @@ const NodeArgField: React.FC<{
 
         return (
             <Form.Item
-                label={arg.desc || arg.name}
+                {...argLabelProps}
                 name={["args", arg.name]}
                 valuePropName="checked"
                 rules={[{ validator: validateField }]}
@@ -210,7 +215,7 @@ const NodeArgField: React.FC<{
     if (isIntType(type) || isFloatType(type)) {
         return (
             <Form.Item
-                label={arg.desc || arg.name}
+                {...argLabelProps}
                 name={["args", arg.name]}
                 rules={[{ validator: validateField }]}
             >
@@ -227,22 +232,18 @@ const NodeArgField: React.FC<{
     if (isStringType(type)) {
         return (
             <Form.Item
-                label={arg.desc || arg.name}
+                {...argLabelProps}
                 name={["args", arg.name]}
                 rules={[{ validator: validateField }]}
             >
-                <TextArea
-                    autoSize={{ minRows: 2, maxRows: 5 }}
-                    disabled={disabled}
-                    onBlur={onCommit}
-                />
+                <TextArea autoSize={{ minRows: 1 }} disabled={disabled} onBlur={onCommit} />
             </Form.Item>
         );
     }
 
     return (
         <Form.Item
-            label={arg.desc || arg.name}
+            {...argLabelProps}
             name={["args", arg.name]}
             rules={[{ validator: validateField }]}
         >
@@ -468,7 +469,8 @@ export const NodeInspectorForm: React.FC = () => {
                     className="b3-v2-inspector-form"
                     labelCol={{ span: "auto" }}
                     wrapperCol={{ span: "auto" }}
-                    labelAlign="left"
+                    labelAlign="right"
+                    requiredMark={false}
                     onFinish={(values) => {
                         try {
                             const currentNodeDef =
@@ -512,23 +514,14 @@ export const NodeInspectorForm: React.FC = () => {
                         }
                     }}
                 >
-                    {selectedNode.subtreeNode ? (
-                        <Alert
-                            type="info"
-                            showIcon
-                            className="b3-v2-inspector-banner"
-                            message="Editing a subtree internal node through override"
-                        />
-                    ) : null}
-
-                    <Form.Item label="ID" name="id">
+                    <Form.Item {...createInspectorLabelProps("ID")} name="id">
                         <Input disabled />
                     </Form.Item>
-                    <Form.Item label="Type" name="type">
+                    <Form.Item {...createInspectorLabelProps("Type")} name="type">
                         <Input disabled />
                     </Form.Item>
                     {nodeDef?.group?.length ? (
-                        <Form.Item label="Group" name="group">
+                        <Form.Item {...createInspectorLabelProps("Group")} name="group">
                             <Select
                                 mode="multiple"
                                 disabled
@@ -539,12 +532,12 @@ export const NodeInspectorForm: React.FC = () => {
                             />
                         </Form.Item>
                     ) : null}
-                    <Form.Item label="Children" name="children">
+                    <Form.Item {...createInspectorLabelProps("Children")} name="children">
                         <Input disabled />
                     </Form.Item>
 
                     <Form.Item
-                        label="Name"
+                        {...createInspectorLabelProps("Name")}
                         name="name"
                         rules={[
                             {
@@ -587,9 +580,9 @@ export const NodeInspectorForm: React.FC = () => {
                             queueSubmit(form);
                         }}
                     >
-                        <Form.Item label="Description" name="desc">
+                        <Form.Item {...createInspectorLabelProps("Description")} name="desc">
                             <TextArea
-                                autoSize={{ minRows: 2, maxRows: 5 }}
+                                autoSize={{ minRows: 1 }}
                                 disabled={fieldEditDisabled}
                                 onBlur={submitNodeForm}
                             />
@@ -606,7 +599,11 @@ export const NodeInspectorForm: React.FC = () => {
                             queueSubmit(form);
                         }}
                     >
-                        <Form.Item label="Debug" name="debug" valuePropName="checked">
+                        <Form.Item
+                            {...createInspectorLabelProps("Debug")}
+                            name="debug"
+                            valuePropName="checked"
+                        >
                             <Switch
                                 disabled={fieldEditDisabled && !selectedNode.data.path}
                                 onChange={() => queueSubmit(form)}
@@ -625,7 +622,11 @@ export const NodeInspectorForm: React.FC = () => {
                             queueSubmit(form);
                         }}
                     >
-                        <Form.Item label="Disabled" name="disabled" valuePropName="checked">
+                        <Form.Item
+                            {...createInspectorLabelProps("Disabled")}
+                            name="disabled"
+                            valuePropName="checked"
+                        >
                             <Switch
                                 disabled={fieldEditDisabled && !selectedNode.data.path}
                                 onChange={() => queueSubmit(form)}
@@ -633,7 +634,7 @@ export const NodeInspectorForm: React.FC = () => {
                         </Form.Item>
                     </OverrideBar>
 
-                    <Form.Item label="Subtree Path" name="path">
+                    <Form.Item {...createInspectorLabelProps("Subtree")} name="path">
                         <AutoComplete
                             disabled={fieldEditDisabled || selectedNode.subtreeNode}
                             options={allFiles.map((path) => ({ label: path, value: path }))}
@@ -661,7 +662,12 @@ export const NodeInspectorForm: React.FC = () => {
                                             active={isInputOverridden(index, true)}
                                             onReset={() => resetInputField(index, true)}
                                         >
-                                            <Form.Item label={slotLabel}>
+                                            <Form.Item
+                                                {...createInspectorLabelProps(
+                                                    slotLabel,
+                                                    !slot.includes("?")
+                                                )}
+                                            >
                                                 <Form.List name={["inputSlots", index]}>
                                                     {(fields, { add, remove }, { errors }) => (
                                                         <div className="b3-v2-list-block">
@@ -773,7 +779,10 @@ export const NodeInspectorForm: React.FC = () => {
                                         onReset={() => resetInputField(index)}
                                     >
                                         <Form.Item
-                                            label={slotLabel}
+                                            {...createInspectorLabelProps(
+                                                slotLabel,
+                                                !slot.includes("?")
+                                            )}
                                             name={["inputSlots", index]}
                                             rules={[
                                                 {
@@ -848,8 +857,8 @@ export const NodeInspectorForm: React.FC = () => {
                     ) : shouldShowRawNodeJson ? (
                         <>
                             <SectionDivider>Node JSON</SectionDivider>
-                            <Form.Item label="Node" name="rawNodeJson">
-                                <TextArea autoSize={{ minRows: 6, maxRows: 14 }} disabled />
+                            <Form.Item {...createInspectorLabelProps("Node")} name="rawNodeJson">
+                                <TextArea autoSize={{ minRows: 1 }} disabled />
                             </Form.Item>
                         </>
                     ) : null}
@@ -867,7 +876,12 @@ export const NodeInspectorForm: React.FC = () => {
                                             active={isOutputOverridden(index, true)}
                                             onReset={() => resetOutputField(index, true)}
                                         >
-                                            <Form.Item label={slotLabel}>
+                                            <Form.Item
+                                                {...createInspectorLabelProps(
+                                                    slotLabel,
+                                                    !slot.includes("?")
+                                                )}
+                                            >
                                                 <Form.List name={["outputSlots", index]}>
                                                     {(fields, { add, remove }, { errors }) => (
                                                         <div className="b3-v2-list-block">
@@ -962,7 +976,10 @@ export const NodeInspectorForm: React.FC = () => {
                                         onReset={() => resetOutputField(index)}
                                     >
                                         <Form.Item
-                                            label={slotLabel}
+                                            {...createInspectorLabelProps(
+                                                slotLabel,
+                                                !slot.includes("?")
+                                            )}
                                             name={["outputSlots", index]}
                                             rules={[
                                                 {

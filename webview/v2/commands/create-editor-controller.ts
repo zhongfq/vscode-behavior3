@@ -648,6 +648,8 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
 
         async selectTree() {
             const filePath = deps.workspaceStore.getState().filePath;
+            const shouldClearVariableFocus =
+                deps.selectionStore.getState().activeVariableNames.length > 0;
             deps.selectionStore.setState((state) => ({
                 ...state,
                 selectedTree: filePath ? { filePath } : null,
@@ -655,8 +657,13 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 selectedNodeRef: null,
                 selectedNodeSnapshot: null,
                 selectedNodeDef: null,
+                activeVariableNames: shouldClearVariableFocus ? [] : state.activeVariableNames,
             }));
-            await deps.graphAdapter.applySelection({ selectedNodeKey: null });
+            if (shouldClearVariableFocus) {
+                await applyVisualState();
+            } else {
+                await deps.graphAdapter.applySelection({ selectedNodeKey: null });
+            }
             scheduleTreeSelected(true);
         },
 
@@ -672,14 +679,22 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
 
-            const previous = deps.selectionStore.getState().selectedNodeKey;
-            if (previous === nodeKey && !opts?.force) {
-                return;
-            }
-
             const shouldClearVariableFocus =
                 Boolean(opts?.clearVariableFocus) &&
                 deps.selectionStore.getState().activeVariableNames.length > 0;
+            const previous = deps.selectionStore.getState().selectedNodeKey;
+            if (previous === nodeKey && !opts?.force) {
+                if (!shouldClearVariableFocus) {
+                    return;
+                }
+
+                deps.selectionStore.setState((state) => ({
+                    ...state,
+                    activeVariableNames: [],
+                }));
+                await applyVisualState();
+                return;
+            }
 
             deps.selectionStore.setState((state) => ({
                 ...state,

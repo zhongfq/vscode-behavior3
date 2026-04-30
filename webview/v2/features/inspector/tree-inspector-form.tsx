@@ -1,4 +1,4 @@
-import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import { FormOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { AutoComplete, Button, Flex, Form, Input, Select, Switch, Typography } from "antd";
 import React, { useEffect, useMemo } from "react";
 import { isValidVariableName } from "../../../shared/misc/b3util";
@@ -8,6 +8,7 @@ import {
     VariableDeclRow,
     type VariableRowValue,
     buildVariableUsageCount,
+    createInspectorLabelProps,
     createNodeDefMap,
     filterOptionByLabel,
     queueSubmit,
@@ -100,7 +101,8 @@ export const TreeInspectorForm: React.FC = () => {
                     className="b3-v2-inspector-form"
                     labelCol={{ span: "auto" }}
                     wrapperCol={{ span: "auto" }}
-                    labelAlign="left"
+                    labelAlign="right"
+                    requiredMark={false}
                     onFinish={(values) => {
                         void runtime.controller.updateTreeMeta({
                             desc: values.desc?.trim() || undefined,
@@ -119,26 +121,27 @@ export const TreeInspectorForm: React.FC = () => {
                         });
                     }}
                 >
-                    <Form.Item label="Name" name="name">
+                    <Form.Item {...createInspectorLabelProps("Name")} name="name">
                         <Input disabled />
                     </Form.Item>
-                    <Form.Item label="Description" name="desc">
-                        <TextArea
-                            autoSize={{ minRows: 2, maxRows: 5 }}
-                            onBlur={() => void form.submit()}
-                        />
+                    <Form.Item {...createInspectorLabelProps("Description")} name="desc">
+                        <TextArea autoSize={{ minRows: 1 }} onBlur={() => void form.submit()} />
                     </Form.Item>
-                    <Form.Item label="ID Prefix" name="prefix">
+                    <Form.Item {...createInspectorLabelProps("ID Prefix")} name="prefix">
                         <Input onBlur={() => void form.submit()} />
                     </Form.Item>
-                    <Form.Item label="Export" name="export" valuePropName="checked">
+                    <Form.Item
+                        {...createInspectorLabelProps("Export")}
+                        name="export"
+                        valuePropName="checked"
+                    >
                         <Switch onChange={() => queueSubmit(form)} />
                     </Form.Item>
 
                     {groupDefs.length > 0 ? (
                         <>
                             <SectionDivider>Groups</SectionDivider>
-                            <Form.Item label="Group" name="group">
+                            <Form.Item name="group">
                                 <Select
                                     mode="multiple"
                                     placeholder="Select groups"
@@ -213,9 +216,19 @@ export const TreeInspectorForm: React.FC = () => {
                             <div className="b3-v2-list-block">
                                 {subtreeRows.map((entry) => (
                                     <div key={entry.path} className="b3-v2-decl-group">
-                                        <Form.Item label="Path" style={{ marginBottom: 2 }}>
-                                            <Input value={entry.path} disabled />
-                                        </Form.Item>
+                                        <Flex gap={4} align="center">
+                                            <Form.Item style={{ flex: 1, marginBottom: 2 }}>
+                                                <Input value={entry.path} disabled />
+                                            </Form.Item>
+                                            <FormOutlined
+                                                className="b3-v2-inline-action"
+                                                onClick={() => {
+                                                    void runtime.hostAdapter.readFile(entry.path, {
+                                                        openIfSubtree: true,
+                                                    });
+                                                }}
+                                            />
+                                        </Flex>
                                         <div className="b3-v2-decl-vars">
                                             {entry.vars.map((variable) => (
                                                 <VariableDeclRow
@@ -249,9 +262,8 @@ export const TreeInspectorForm: React.FC = () => {
 
                                     return (
                                         <div key={field.key} className="b3-v2-decl-group">
-                                            <Flex gap={4} align="start">
+                                            <Flex gap={4} align="center">
                                                 <Form.Item
-                                                    label="Path"
                                                     name={[field.name, "path"]}
                                                     style={{ flex: 1, marginBottom: 2 }}
                                                 >
@@ -266,7 +278,7 @@ export const TreeInspectorForm: React.FC = () => {
                                                     />
                                                 </Form.Item>
                                                 <MinusCircleOutlined
-                                                    className="b3-v2-inline-remove"
+                                                    className="b3-v2-inline-remove-compact"
                                                     onClick={() => {
                                                         remove(field.name);
                                                         queueSubmit(form);
