@@ -1,9 +1,10 @@
 import { App, Dropdown, Flex } from "antd";
 import type { MenuProps } from "antd";
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Hotkey, isMacos, useKeyPress } from "../../../shared/misc/keys";
 import { useDocumentStore, useRuntime, useSelectionStore } from "../../app/runtime";
+import { SearchBar } from "../search/search-bar";
 
 const hotkeyMap: Record<
     string,
@@ -39,8 +40,11 @@ export const GraphPane: React.FC = () => {
     const { t } = useTranslation();
     const adapter = runtime.graphAdapter;
     const mountRef = useRef<HTMLDivElement | null>(null);
+    const shellRef = useRef<HTMLDivElement | null>(null);
+    const [searchFocusToken, setSearchFocusToken] = useState(0);
     const selectedNode = useSelectionStore((state) => state.selectedNodeSnapshot);
     const selectedNodeRef = useSelectionStore((state) => state.selectedNodeRef);
+    const searchOpen = useSelectionStore((state) => state.search.open);
     const rootStableId = useDocumentStore((state) => state.persistedTree?.root.$id ?? null);
 
     const structureLocked = Boolean(selectedNode?.subtreeNode || selectedNode?.data.path);
@@ -136,6 +140,7 @@ export const GraphPane: React.FC = () => {
         }
         event.preventDefault();
         event.stopPropagation();
+        setSearchFocusToken((value) => value + 1);
         void runtime.controller.openSearch(key === Hotkey.JumpNode ? "id" : "content");
     });
 
@@ -234,11 +239,19 @@ export const GraphPane: React.FC = () => {
     }, [adapter, message, runtime.controller]);
 
     return (
-        <Dropdown
-            menu={{ items: menuItems, onClick: ({ key }) => void runMenuCommand(String(key)) }}
-            trigger={["contextMenu"]}
-        >
-            <div ref={mountRef} className="b3-v2-graph" tabIndex={-1} />
-        </Dropdown>
+        <div ref={shellRef} className="b3-v2-graph-shell" tabIndex={-1}>
+            {searchOpen ? (
+                <SearchBar
+                    focusToken={searchFocusToken}
+                    onClose={() => shellRef.current?.focus({ preventScroll: true })}
+                />
+            ) : null}
+            <Dropdown
+                menu={{ items: menuItems, onClick: ({ key }) => void runMenuCommand(String(key)) }}
+                trigger={["contextMenu"]}
+            >
+                <div ref={mountRef} className="b3-v2-graph" tabIndex={-1} />
+            </Dropdown>
+        </div>
     );
 };

@@ -11,18 +11,29 @@ body {
     overflow: hidden;
 }
 
+:root[data-theme="dark"] {
+    --b3-text-muted: #8b949e;
+    --b3-filter-hover-bg: #30363d;
+    --b3-filter-selected-bg: #2f81f7;
+    --b3-filter-selected-hover-bg: #388bfd;
+    --b3-search-bg: #161b22;
+    --b3-search-border-accent: #f78166;
+    --b3-search-shadow: #0000005c;
+}
+
+:root[data-theme="light"] {
+    --b3-text-muted: #6b7280;
+    --b3-filter-hover-bg: #e5e7eb;
+    --b3-filter-selected-bg: #1677ff;
+    --b3-filter-selected-hover-bg: #4096ff;
+    --b3-search-bg: #ffffff;
+    --b3-search-border-accent: #1677ff;
+    --b3-search-shadow: #00000026;
+}
+
 .b3-v2-shell {
     height: 100%;
     background: transparent;
-}
-
-.b3-v2-header {
-    height: auto;
-    line-height: normal;
-    padding: 10px 16px;
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .b3-v2-body {
@@ -257,8 +268,64 @@ body {
     white-space: break-spaces;
 }
 
-.b3-v2-search {
+.b3-v2-search-overlay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 100;
     width: 100%;
+    justify-content: flex-end;
+    padding: 10px 10px 0 0;
+}
+
+.b3-v2-search-box {
+    align-items: center;
+    padding: 4px 10px;
+    border-left: 3px solid var(--b3-search-border-accent);
+    border-radius: 4px;
+    background: var(--b3-search-bg);
+    box-shadow: 0 0 8px 2px var(--b3-search-shadow);
+}
+
+.b3-v2-search-input {
+    width: 220px;
+}
+
+.b3-v2-search-input.ant-input-affix-wrapper.ant-input-affix-wrapper-sm {
+    border-radius: 2px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+}
+
+.b3-v2-search-suffix {
+    align-items: center;
+}
+
+.b3-v2-search-counter {
+    min-width: 40px;
+    padding: 0 10px 0 5px;
+    color: var(--b3-text-muted);
+}
+
+.b3-v2-search-filter {
+    &:hover {
+        background-color: var(--b3-filter-hover-bg) !important;
+    }
+}
+
+.b3-v2-search-filter-selected {
+    background-color: var(--b3-filter-selected-bg) !important;
+
+    &:hover {
+        background-color: var(--b3-filter-selected-hover-bg) !important;
+    }
+}
+
+.b3-v2-graph-shell {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
 }
 
 .b3-v2-graph {

@@ -1,91 +1,172 @@
-import {
-    ArrowDownOutlined,
-    ArrowUpOutlined,
-    CloseOutlined,
-    SearchOutlined,
-} from "@ant-design/icons";
-import { Button, Flex, Input, Segmented, Switch, Typography } from "antd";
-import React from "react";
+import { ArrowDownOutlined, ArrowUpOutlined, CloseOutlined } from "@ant-design/icons";
+import { Button, Flex, Input, type InputRef } from "antd";
+import React, { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import { RiFocus3Line } from "react-icons/ri";
+import { VscCaseSensitive } from "react-icons/vsc";
+import { Hotkey } from "../../../shared/misc/keys";
+import { mergeClassNames } from "../../../shared/misc/util";
 import { useRuntime, useSelectionStore } from "../../app/runtime";
 
-export const SearchBar: React.FC = () => {
+interface SearchBarProps {
+    focusToken: number;
+    onClose?: () => void;
+}
+
+const createDefaultSearchState = () => ({
+    open: false,
+    mode: "content" as const,
+    query: "",
+    caseSensitive: false,
+    focusOnly: true,
+    results: [] as string[],
+    index: 0,
+});
+
+export const SearchBar: React.FC<SearchBarProps> = ({ focusToken, onClose }) => {
     const runtime = useRuntime();
+    const { t } = useTranslation();
     const search = useSelectionStore((state) => state.search);
+    const searchInputRef = useRef<InputRef | null>(null);
+
+    useEffect(() => {
+        if (!search.open) {
+            return;
+        }
+
+        const frame = requestAnimationFrame(() => {
+            searchInputRef.current?.focus();
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [focusToken, search.mode, search.open]);
 
     if (!search.open) {
         return null;
     }
 
+    const reapplySearch = () => {
+        void runtime.controller.updateSearch(search.query);
+    };
+
+    const handleClose = () => {
+        runtime.selectionStore.setState((state) => ({
+            ...state,
+            search: createDefaultSearchState(),
+        }));
+        void runtime.controller.updateSearch("");
+        onClose?.();
+    };
+
+    const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.code === Hotkey.Enter) {
+            event.preventDefault();
+            void runtime.controller.nextSearchResult();
+        } else if ((event.ctrlKey || event.metaKey) && event.code === "KeyF") {
+            event.preventDefault();
+            void runtime.controller.openSearch("content");
+        } else if ((event.ctrlKey || event.metaKey) && event.code === "KeyG") {
+            event.preventDefault();
+            void runtime.controller.openSearch("id");
+        }
+        event.stopPropagation();
+    };
+
     return (
-        <Flex className="b3-v2-search" gap={8} align="center">
-            <Segmented
-                size="small"
-                value={search.mode}
-                options={[
-                    { label: "Content", value: "content" },
-                    { label: "Id", value: "id" },
-                ]}
-                onChange={(value) => {
-                    void runtime.controller.openSearch(value as "content" | "id");
-                }}
-            />
-            <Input
-                allowClear
-                size="small"
-                prefix={<SearchOutlined />}
-                value={search.query}
-                placeholder={search.mode === "id" ? "Jump by node id" : "Search nodes"}
-                onChange={(event) => {
-                    void runtime.controller.updateSearch(event.target.value);
-                }}
-            />
-            <Typography.Text type="secondary">
-                {search.results.length === 0 ? "0" : `${search.index + 1}/${search.results.length}`}
-            </Typography.Text>
-            <Button
-                size="small"
-                icon={<ArrowUpOutlined />}
-                onClick={() => void runtime.controller.prevSearchResult()}
-            />
-            <Button
-                size="small"
-                icon={<ArrowDownOutlined />}
-                onClick={() => void runtime.controller.nextSearchResult()}
-            />
-            <Flex align="center" gap={4}>
-                <Typography.Text type="secondary">Focus</Typography.Text>
-                <Switch
+        <Flex className="b3-v2-search-overlay">
+            <Flex className="b3-v2-search-box">
+                <Input
+                    key={search.mode}
+                    ref={searchInputRef}
                     size="small"
-                    checked={search.focusOnly}
-                    onChange={(checked) => {
-                        runtime.selectionStore.setState((state) => ({
-                            ...state,
-                            search: {
-                                ...state.search,
-                                focusOnly: checked,
-                            },
-                        }));
-                        void runtime.controller.updateSearch(search.query);
+                    className="b3-v2-search-input"
+                    value={search.query}
+                    placeholder={search.mode === "id" ? t("jumpNode") : t("searchNode")}
+                    onChange={(event) => {
+                        void runtime.controller.updateSearch(event.target.value);
                     }}
+                    onKeyDownCapture={handleInputKeyDown}
+                    suffix={
+                        <Flex gap={2} className="b3-v2-search-suffix">
+                            {search.mode !== "id" ? (
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    className={mergeClassNames(
+                                        "b3-v2-search-filter",
+                                        search.caseSensitive && "b3-v2-search-filter-selected"
+                                    )}
+                                    icon={
+                                        <VscCaseSensitive
+                                            style={{ width: "18px", height: "18px" }}
+                                        />
+                                    }
+                                    onClick={() => {
+                                        runtime.selectionStore.setState((state) => ({
+                                            ...state,
+                                            search: {
+                                                ...state.search,
+                                                caseSensitive: !state.search.caseSensitive,
+                                            },
+                                        }));
+                                        reapplySearch();
+                                    }}
+                                />
+                            ) : null}
+                            <Button
+                                type="text"
+                                size="small"
+                                className={mergeClassNames(
+                                    "b3-v2-search-filter",
+                                    search.focusOnly && "b3-v2-search-filter-selected"
+                                )}
+                                icon={<RiFocus3Line />}
+                                onClick={() => {
+                                    runtime.selectionStore.setState((state) => ({
+                                        ...state,
+                                        search: {
+                                            ...state.search,
+                                            focusOnly: !state.search.focusOnly,
+                                        },
+                                    }));
+                                    reapplySearch();
+                                }}
+                            />
+                        </Flex>
+                    }
+                />
+                <div className="b3-v2-search-counter">
+                    {search.results.length > 0
+                        ? `${search.index + 1}/${search.results.length}`
+                        : ""}
+                </div>
+                {search.mode !== "id" ? (
+                    <Button
+                        icon={<ArrowDownOutlined />}
+                        type="text"
+                        size="small"
+                        style={{ width: "30px" }}
+                        disabled={search.results.length === 0}
+                        onClick={() => void runtime.controller.nextSearchResult()}
+                    />
+                ) : null}
+                {search.mode !== "id" ? (
+                    <Button
+                        icon={<ArrowUpOutlined />}
+                        type="text"
+                        size="small"
+                        style={{ width: "30px" }}
+                        disabled={search.results.length === 0}
+                        onClick={() => void runtime.controller.prevSearchResult()}
+                    />
+                ) : null}
+                <Button
+                    icon={<CloseOutlined />}
+                    type="text"
+                    size="small"
+                    style={{ width: "30px" }}
+                    onClick={handleClose}
                 />
             </Flex>
-            <Button
-                size="small"
-                icon={<CloseOutlined />}
-                onClick={() => {
-                    runtime.selectionStore.setState((state) => ({
-                        ...state,
-                        search: {
-                            ...state.search,
-                            open: false,
-                            query: "",
-                            results: [],
-                            index: 0,
-                        },
-                    }));
-                    void runtime.controller.updateSearch("");
-                }}
-            />
         </Flex>
     );
 };

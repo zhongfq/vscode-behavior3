@@ -4,19 +4,17 @@ import i18n from "../../shared/misc/i18n";
 import { getThemeConfig } from "../../shared/misc/theme";
 import { GraphPane } from "../features/graph/graph-pane";
 import { InspectorPane } from "../features/inspector/inspector-pane";
-import { SearchBar } from "../features/search/search-bar";
 import { applyDocumentTheme } from "../shared/theme-mode";
 import { GlobalHooksBridge } from "./global-hooks-bridge";
 import { useDocumentStore, useRuntime, useSelectionStore, useWorkspaceStore } from "./runtime";
 
-const { Header, Content, Sider } = Layout;
+const { Content, Sider } = Layout;
 
 export const App: React.FC = () => {
     const runtime = useRuntime();
     const theme = useWorkspaceStore((state) => state.settings.theme);
     const language = useWorkspaceStore((state) => state.settings.language);
     const hasDocument = useDocumentStore((state) => state.persistedTree !== null);
-    const searchOpen = useSelectionStore((state) => state.search.open);
     const inspectorPanelWidth = useSelectionStore((state) => state.inspector.panelWidth);
 
     useEffect(() => {
@@ -81,11 +79,6 @@ export const App: React.FC = () => {
             <AntdApp style={{ height: "100%" }}>
                 <GlobalHooksBridge />
                 <Layout className="b3-v2-shell">
-                    {searchOpen ? (
-                        <Header className="b3-v2-header">
-                            <SearchBar />
-                        </Header>
-                    ) : null}
                     <Layout hasSider className="b3-v2-body">
                         <Content className="b3-v2-content">
                             {hasDocument ? (
