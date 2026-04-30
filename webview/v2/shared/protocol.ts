@@ -47,7 +47,6 @@ export const normalizeHostInitMessage = (
         editSubtreeNodeProps: message.editSubtreeNodeProps,
         language: message.language,
         theme: message.theme,
-        layout: message.layout,
         nodeColors: message.nodeColors,
     };
 

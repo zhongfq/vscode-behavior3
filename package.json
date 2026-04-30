@@ -134,19 +134,6 @@
           ],
           "description": "编辑器界面语言。默认跟随 VS Code，也可手动指定。"
         },
-        "behavior3.layout": {
-          "type": "string",
-          "default": "normal",
-          "enum": [
-            "normal",
-            "compact"
-          ],
-          "enumDescriptions": [
-            "标准布局",
-            "紧凑布局"
-          ],
-          "description": "Behavior Tree 节点布局样式。"
-        },
         "behavior3.editSubtreeNodeProps": {
           "type": "boolean",
           "default": true,

@@ -6,8 +6,8 @@
 import React from "react";
 import { create } from "zustand";
 import * as vscodeApi from "../vscodeApi";
-import { NodeDef, NodeLayout } from "../../shared/misc/b3type";
 import { FileVarDecl, ImportDecl, NodeData, TreeData, VarDecl } from "../../shared/misc/b3type";
+import { NodeDef } from "../../shared/misc/b3type";
 import * as b3util from "../../shared/misc/b3util";
 import { message } from "../../shared/misc/hooks";
 import i18n from "../../shared/misc/i18n";
@@ -120,7 +120,6 @@ export type Settings = {
     editSubtreeNodeProps: boolean;
     lang: string;
     theme: "dark" | "light";
-    layout: NodeLayout;
     /** Override default node-type colors. Keys: "Composite" | "Decorator" | "Condition" | "Action" | "Other" | "Error" */
     nodeColors?: Record<string, string>;
 };
@@ -240,7 +239,6 @@ export const useWorkspace = create<WorkspaceStore>((set, get) => ({
         editSubtreeNodeProps: true,
         theme: "dark",
         lang: "en",
-        layout: "normal",
     },
 
     onShowingSearch: (v) => set({ isShowingSearch: v }),

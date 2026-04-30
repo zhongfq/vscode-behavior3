@@ -40,14 +40,14 @@ Create a `.b3-setting` file in workspace:
 
 ```json
 {
-  "nodes": [
-    {
-      "name": "MyAction",
-      "type": "Action",
-      "desc": "Does something useful",
-      "args": [{ "name": "duration", "type": "float", "desc": "Duration in seconds" }]
-    }
-  ]
+    "nodes": [
+        {
+            "name": "MyAction",
+            "type": "Action",
+            "desc": "Does something useful",
+            "args": [{ "name": "duration", "type": "float", "desc": "Duration in seconds" }]
+        }
+    ]
 }
 ```
 
@@ -66,10 +66,10 @@ Example:
 
 ```json
 {
-  "settings": {
-    "checkExpr": true,
-    "buildScript": "scripts/build.ts"
-  }
+    "settings": {
+        "checkExpr": true,
+        "buildScript": "scripts/build.ts"
+    }
 }
 ```
 
@@ -101,12 +101,11 @@ For TypeScript authoring hints, see:
 
 ## Extension Settings
 
-| Setting                 | Type    | Default    | Description                                                                   |
-| ----------------------- | ------- | ---------- | ----------------------------------------------------------------------------- |
-| `behavior3.settingFile` | string  | `""`       | Path to `.b3-setting` relative to workspace root. Empty means auto-discovery. |
-| `behavior3.checkExpr`   | boolean | `true`     | Enable expression syntax validation for expression-type args.                 |
-| `behavior3.language`    | string  | `"auto"`   | Editor UI language. Options:`auto` (follow VS Code), `zh`, `en`.              |
-| `behavior3.layout`      | string  | `"normal"` | Node layout style. Options:`normal`, `compact`.                               |
+| Setting                 | Type    | Default  | Description                                                                   |
+| ----------------------- | ------- | -------- | ----------------------------------------------------------------------------- |
+| `behavior3.settingFile` | string  | `""`     | Path to `.b3-setting` relative to workspace root. Empty means auto-discovery. |
+| `behavior3.checkExpr`   | boolean | `true`   | Enable expression syntax validation for expression-type args.                 |
+| `behavior3.language`    | string  | `"auto"` | Editor UI language. Options:`auto` (follow VS Code), `zh`, `en`.              |
 
 ## Inspector
 

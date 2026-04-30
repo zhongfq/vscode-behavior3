@@ -74,24 +74,24 @@ export interface GraphAdapter {
 - 数据映射与 visual repaint
 - 视口恢复与聚焦
 
-## Layout Contract
+## Geometry Contract
 
 ### 基线
 
-第一版布局固定为：
+第一版几何规则固定为：
 
 - 树方向：`LR`
 - 主浏览：`pan + zoom`
 - 保留父子连接线
 - 节点间距与层间距由 adapter 统一控制
 
-### 布局所有权
+### 排布所有权
 
 几何结果属于 graph adapter 内部实现，但必须满足：
 
-- 节点坐标只依赖 `ResolvedGraphModel`、节点尺寸和布局配置
-- selection/search/highlight 变化不触发布局重排
-- 结构变化、节点尺寸变化、显式重置视口时才允许重新布局
+- 节点坐标只依赖 `ResolvedGraphModel`、节点尺寸和排布约束
+- selection/search/highlight 变化不触发排布重算
+- 结构变化、节点尺寸变化、显式重置视口时才允许重新排布
 
 ### 节点尺寸
 
@@ -99,9 +99,9 @@ export interface GraphAdapter {
 
 - G6 自定义节点内部测量
 - graph adapter 预估尺寸
-- 显式 layout config
+- 显式几何约束
 
-但不得再依赖“先渲染 DOM，再由 React 外层反算整图布局”的主路径。
+但不得再依赖“先渲染 DOM，再由 React 外层反算整图排布”的主路径。
 
 ## Outbound Contract
 

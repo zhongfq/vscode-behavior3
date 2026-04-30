@@ -1,6 +1,6 @@
-import type { NodeDef, NodeLayout, VarDecl, ImportDecl } from "../../shared/misc/b3type";
+import type { NodeDef, VarDecl, ImportDecl } from "../../shared/misc/b3type";
 
-export type { NodeDef, NodeLayout, VarDecl, ImportDecl };
+export type { NodeDef, VarDecl, ImportDecl };
 
 export type AbsoluteFsPath = string;
 export type WorkdirRelativeJsonPath = string;
@@ -42,7 +42,6 @@ export interface Settings {
     editSubtreeNodeProps: boolean;
     language: "zh" | "en";
     theme: "dark" | "light";
-    layout: NodeLayout;
     nodeColors?: Record<string, string>;
 }
 
@@ -91,7 +90,6 @@ export interface DocumentState {
     dirty: boolean;
     alertReload: boolean;
     pendingExternalContent: string | null;
-    focusNodeKey: string | null;
     history: string[];
     historyIndex: number;
     lastSavedSnapshot: string | null;

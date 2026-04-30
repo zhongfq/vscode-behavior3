@@ -49,7 +49,7 @@ header 至少应表达：
 - 当前节点标题
 - 关键只读标识，如 `displayId`、节点类型、subtree 来源
 
-### Form Layout
+### Form Structure
 
 要求：
 

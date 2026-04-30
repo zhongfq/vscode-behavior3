@@ -6,7 +6,7 @@
 
 - V2 以 `G6` 作为唯一图引擎
 - V2 不再以 V1 行为一致性作为目标
-- V2 允许重写图布局、交互语义和宿主适配边界
+- V2 允许重写图排布、交互语义和宿主适配边界
 
 从现在开始，V2 的文档不是“给现有实现找解释”，而是后续重构的实现蓝图。
 
@@ -50,7 +50,7 @@
 - `resolved-graph-algorithm.md`
     - 定义从文档树到图节点实例的解析规则
 - `graph-contract.md`
-    - 定义 G6 图层的输入、输出、布局、视觉和交互契约
+    - 定义 G6 图层的输入、输出、几何排布、视觉和交互契约
 - `inspector-contract.md`
     - 定义 Tree / Node Inspector 的结构、提交节奏与 override 交互
 - `editor-semantics.md`
@@ -63,8 +63,8 @@
 这轮 spec 刷新之后，以下前提视为固定：
 
 - 图层实现统一走 `G6`
-- `GraphPane` 只负责容器挂载与外围 UI，不再承担自绘布局与命中计算
-- 布局可以重写，不保留 `d3-hierarchy` 路线
+- `GraphPane` 只负责容器挂载与外围 UI，不再承担自绘排布与命中计算
+- 图排布可以重写，不保留 `d3-hierarchy` 路线
 - 拖放、搜索、高亮、聚焦等图交互可以重写，只要求语义清晰、可维护
 - 文档真源仍留在 store / domain / controller 侧，不能回流到图引擎实例
 
@@ -130,6 +130,6 @@ V1 和当前自绘 V2 都不是“必须保持一致”的对象。
 
 1. 先更新 spec
 2. 再收敛 `contracts.ts`
-3. 再替换 graph adapter / graph pane / layout
+3. 再替换 graph adapter / graph pane / node geometry
 4. 再联调 controller、inspector、host adapter
 5. 最后做验证与清理

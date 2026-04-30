@@ -45,7 +45,6 @@ const EditorApp = () => {
                         theme: msg.theme,
                         checkExpr: msg.checkExpr,
                         lang: msg.language,
-                        layout: msg.layout,
                         nodeColors: msg.nodeColors,
                     },
                 });

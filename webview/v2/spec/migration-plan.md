@@ -115,7 +115,7 @@
 1. spec
 2. `contracts.ts`
 3. graph adapter skeleton
-4. layout + node visuals
+4. node geometry + node visuals
 5. graph interactions
 6. controller / inspector / host 联调
 7. 清理与验证

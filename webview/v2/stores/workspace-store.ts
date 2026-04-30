@@ -14,7 +14,6 @@ export const createWorkspaceStore = (): StoreApi<WorkspaceState> => {
             editSubtreeNodeProps: true,
             language: "zh",
             theme: detectInitialThemeMode(),
-            layout: "normal",
         },
         usingVars: null,
         usingGroups: null,

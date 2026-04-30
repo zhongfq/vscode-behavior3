@@ -3,7 +3,6 @@
  */
 
 import type { NodeDef } from "../behavior3/src/behavior3/node";
-import type { NodeLayout } from "../webview/shared/misc/b3type";
 
 export type { NodeDef };
 
@@ -34,7 +33,6 @@ export type HostToEditorMessage =
           checkExpr: boolean;
           editSubtreeNodeProps: boolean;
           language: "zh" | "en";
-          layout: NodeLayout;
           theme: "dark" | "light";
           allFiles: string[];
           nodeColors?: Record<string, string>;
@@ -49,7 +47,6 @@ export type HostToEditorMessage =
               checkExpr?: boolean;
               editSubtreeNodeProps?: boolean;
               language?: "zh" | "en";
-              layout?: NodeLayout;
               nodeColors?: Record<string, string>;
           };
       }

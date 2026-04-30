@@ -37,8 +37,6 @@ export interface NodeData {
     $status?: number;
 }
 
-export type NodeLayout = "compact" | "normal";
-
 export interface VarDecl {
     name: string;
     desc: string;

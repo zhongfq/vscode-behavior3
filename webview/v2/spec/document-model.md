@@ -55,7 +55,6 @@
 - `persistedTree`
 - `dirty`
 - `alertReload`
-- `focusNodeKey`
 - `history`
 - `historyIndex`
 - `lastSavedSnapshot`

@@ -18,7 +18,7 @@ import {
 } from "@antv/g6";
 import { NodeStyle } from "@antv/g6/lib/spec/element/node";
 import { ExpressionEvaluator } from "../../../behavior3/src/behavior3/evaluator";
-import { NodeDef, getNodeType, isExprType, NodeData, NodeLayout } from "../../shared/misc/b3type";
+import { NodeDef, getNodeType, isExprType, NodeData } from "../../shared/misc/b3type";
 import * as b3util from "../../shared/misc/b3util";
 import i18n from "../../shared/misc/i18n";
 import { isMacos } from "../../shared/misc/keys";
@@ -183,7 +183,7 @@ const hasErrorInArgExpr = (def: NodeDef, data: NodeData) => {
 };
 
 b3util.setSizeCalculator((data: NodeData) => {
-    const width = useWorkspace.getState().settings.layout === "compact" ? 220 : 260;
+    const width = 260;
     let height = 50 + 2;
     const updateHeight = (obj: unknown) => {
         if ((Array.isArray(obj) && obj.length) || (obj && Object.keys(obj as object).length > 0)) {
@@ -298,7 +298,6 @@ class TreeNode extends Rect {
     private _width = 0;
     private _height = 0;
     private _radius = 0;
-    private _nodeLayout: NodeLayout = "normal";
     private _nodeDef!: NodeDef;
     private _data!: NodeData;
     private _prefix = "";
@@ -339,13 +338,10 @@ class TreeNode extends Rect {
             "name-bg",
             GRect,
             {
-                width: this._nodeLayout === "compact" ? this._width : 40,
-                height: this._nodeLayout === "compact" ? 25 : this._height,
+                width: 40,
+                height: this._height,
                 fill: attributes.stroke,
-                radius:
-                    this._nodeLayout === "compact"
-                        ? [this._radius, this._radius, 0, 0]
-                        : [this._radius, 0, 0, this._radius],
+                radius: [this._radius, 0, 0, this._radius],
             },
             container
         );
@@ -360,7 +356,7 @@ class TreeNode extends Rect {
                 ],
                 stroke: "#666",
                 lineWidth: 1,
-                visibility: this._nodeLayout === "normal" ? "visible" : "hidden",
+                visibility: "visible",
             },
             container
         );
@@ -401,9 +397,9 @@ class TreeNode extends Rect {
             GImage,
             {
                 x: 5,
-                y: this._nodeLayout === "compact" ? 3 : this._height / 2 - 16,
-                height: this._nodeLayout === "compact" ? 18 : 30,
-                width: this._nodeLayout === "compact" ? 18 : 30,
+                y: this._height / 2 - 16,
+                height: 30,
+                width: 30,
                 src: img,
             },
             container
@@ -418,8 +414,8 @@ class TreeNode extends Rect {
             {
                 x: this._width - 18,
                 y: 3,
-                height: this._nodeLayout === "compact" ? 18 : 20,
-                width: this._nodeLayout === "compact" ? 18 : 20,
+                height: 20,
+                width: 20,
                 src: `./icons/status${status}.svg`,
             },
             container
@@ -432,11 +428,11 @@ class TreeNode extends Rect {
             GText,
             {
                 fill: "black",
-                fontSize: this._nodeLayout === "compact" ? 13 : 14,
+                fontSize: 14,
                 fontWeight: "bolder",
                 text: this._data.name,
                 textBaseline: "top",
-                x: this._nodeLayout === "compact" ? 26 : 46,
+                x: 46,
                 y: isMacos ? 3 : 2,
             },
             container
@@ -811,9 +807,8 @@ class TreeNode extends Rect {
         this._nodeDef = nodeDef;
         this._data = data;
         this._classify = classify;
-        this._nodeLayout = useWorkspace.getState().settings.layout;
         this._contentWidth = 220;
-        this._contentX = this._nodeLayout === "compact" ? 6 : 46;
+        this._contentX = 46;
         this._contentY = 28;
 
         this._states = this.context.graph.getElementState(this.id) as TreeNodeState[];

@@ -12,7 +12,7 @@ import {
     watchWorkspaceFile,
 } from "./settingResolver";
 import type { EditorToHostMessage, HostToEditorMessage, NodeDef } from "./types";
-import { VERSION, type NodeLayout } from "../webview/shared/misc/b3type";
+import { VERSION } from "../webview/shared/misc/b3type";
 
 /**
  * Read the Vite-generated HTML for the editor webview entry,
@@ -113,7 +113,6 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                 checkExpr: config.get<boolean>("checkExpr", true),
                 editSubtreeNodeProps: config.get<boolean>("editSubtreeNodeProps", true),
                 language: getEditorLanguage(config.get<string>("language", "auto")),
-                layout: getNodeLayout(config.get<string>("layout", "normal")),
                 nodeColors: await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri),
             };
         };
@@ -292,7 +291,6 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         checkExpr: currentSettings.checkExpr,
                         editSubtreeNodeProps: currentSettings.editSubtreeNodeProps,
                         language: currentSettings.language,
-                        layout: currentSettings.layout,
                         theme,
                         allFiles,
                         nodeColors: currentSettings.nodeColors,
@@ -905,8 +903,4 @@ function getEditorLanguage(setting: string): "zh" | "en" {
     }
     const envLanguage = vscode.env.language.toLowerCase();
     return envLanguage.startsWith("zh") ? "zh" : "en";
-}
-
-function getNodeLayout(setting: string): NodeLayout {
-    return setting === "compact" ? "compact" : "normal";
 }
