@@ -121,6 +121,19 @@ export class G6GraphAdapter implements GraphAdapter {
         return Boolean((this.graph as (G6Graph & { rendered?: boolean }) | null)?.rendered);
     }
 
+    private captureViewportFromGraph(): GraphViewport | null {
+        if (!this.graph || !this.isGraphRendered()) {
+            return null;
+        }
+
+        const [x, y] = this.graph.getPosition();
+        return {
+            zoom: this.graph.getZoom(),
+            x,
+            y,
+        };
+    }
+
     private getNodeVM(nodeKey: string): GraphNodeVM | null {
         return this.model?.nodes.find((node) => node.ref.instanceKey === nodeKey) ?? null;
     }
@@ -238,29 +251,27 @@ export class G6GraphAdapter implements GraphAdapter {
         });
     }
 
-    private async rerenderWithStableViewport(): Promise<void> {
+    private async rerenderWithStableViewport(viewport: GraphViewport | null): Promise<void> {
         if (!this.graph) {
             return;
         }
 
-        if (!this.isGraphRendered()) {
+        if (!viewport) {
             await this.graph.render();
             return;
         }
 
-        const viewport = {
-            zoom: this.graph.getZoom(),
-            x: this.graph.getPosition()[0],
-            y: this.graph.getPosition()[1],
-        };
         this.suppressTransformSync = true;
         try {
+            if (!this.isGraphRendered()) {
+                await this.graph.render();
+            }
             await this.graph.zoomTo(1, false);
             await this.graph.translateTo([0, 0], false);
             await this.graph.render();
             await this.graph.translateTo([viewport.x, viewport.y], false);
             await this.graph.zoomTo(viewport.zoom, false);
-            this.viewport = viewport;
+            this.viewport = { ...viewport };
         } finally {
             this.suppressTransformSync = false;
         }
@@ -282,8 +293,9 @@ export class G6GraphAdapter implements GraphAdapter {
             return;
         }
 
+        const viewport = this.captureViewportFromGraph();
         this.graph.setData(data);
-        await this.rerenderWithStableViewport();
+        await this.rerenderWithStableViewport(viewport);
         if (isDefaultViewport(this.viewport)) {
             this.syncViewportFromGraph();
         }

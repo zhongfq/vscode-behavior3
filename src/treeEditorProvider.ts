@@ -69,6 +69,25 @@ function getWorkdir(documentUri: vscode.Uri): vscode.Uri {
 
 export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = "behavior3.treeEditor";
+    private static readonly activeWebviews = new Set<{
+        workspaceFsPath: string;
+        postMessage: (message: HostToEditorMessage) => Thenable<boolean>;
+    }>();
+
+    public static postMessageToWorkspace(
+        workspaceFsPath: string,
+        message: HostToEditorMessage
+    ): boolean {
+        let delivered = false;
+        for (const entry of TreeEditorProvider.activeWebviews) {
+            if (entry.workspaceFsPath !== workspaceFsPath) {
+                continue;
+            }
+            delivered = true;
+            void entry.postMessage(message);
+        }
+        return delivered;
+    }
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -86,7 +105,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         );
         const nodeDefs = await resolveNodeDefs(workspaceFolderUri, document.uri);
         const settingDir = await getResolvedB3SettingDir(workspaceFolderUri, document.uri);
-        const nodeColors = await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri);
+        let nodeColors = await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri);
         const config = vscode.workspace.getConfiguration("behavior3");
         const checkExpr = config.get<boolean>("checkExpr", true);
         const editSubtreeNodeProps = config.get<boolean>("editSubtreeNodeProps", true);
@@ -106,6 +125,13 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         };
 
         webviewPanel.webview.html = this._getEditorHtml(webviewPanel.webview);
+
+        const activeWebviewEntry = {
+            workspaceFsPath: workspaceFolderUri.fsPath,
+            postMessage: (message: HostToEditorMessage) =>
+                webviewPanel.webview.postMessage(message),
+        };
+        TreeEditorProvider.activeWebviews.add(activeWebviewEntry);
 
         let fileVersionIsNewer = false;
 
@@ -144,6 +170,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             const msg: HostToEditorMessage = {
                 type: "settingLoaded",
                 nodeDefs: mapDefsForWebview(newDefs),
+                nodeColors,
             };
             webviewPanel.webview.postMessage(msg);
         });
@@ -299,10 +326,12 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
 
                 case "requestSetting": {
                     const freshDefs = await resolveNodeDefs(workspaceFolderUri, document.uri);
+                    nodeColors = await resolveWorkspaceNodeColors(workspaceFolderUri, document.uri);
                     nodeDefs.splice(0, nodeDefs.length, ...freshDefs);
                     const replyMsg: HostToEditorMessage = {
                         type: "settingLoaded",
                         nodeDefs: mapDefsForWebview(freshDefs),
+                        nodeColors,
                     };
                     webviewPanel.webview.postMessage(replyMsg);
                     break;
@@ -500,6 +529,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             if (subtreeRefreshTimer) {
                 clearTimeout(subtreeRefreshTimer);
             }
+            TreeEditorProvider.activeWebviews.delete(activeWebviewEntry);
             settingWatcher.dispose();
             docChangeDisposable.dispose();
             subtreeSaveDisposable.dispose();

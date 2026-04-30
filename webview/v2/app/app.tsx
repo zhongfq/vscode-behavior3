@@ -10,8 +10,9 @@ import { useDocumentStore, useRuntime, useSelectionStore, useWorkspaceStore } fr
 
 const { Content, Sider } = Layout;
 
-export const App: React.FC = () => {
+const AppShell: React.FC = () => {
     const runtime = useRuntime();
+    const { message: messageApi } = AntdApp.useApp();
     const theme = useWorkspaceStore((state) => state.settings.theme);
     const language = useWorkspaceStore((state) => state.settings.language);
     const hasDocument = useDocumentStore((state) => state.persistedTree !== null);
@@ -43,6 +44,13 @@ export const App: React.FC = () => {
                 return;
             }
             if (message.type === "settingLoaded") {
+                runtime.workspaceStore.setState((state) => ({
+                    ...state,
+                    settings: {
+                        ...state.settings,
+                        nodeColors: message.nodeColors,
+                    },
+                }));
                 void runtime.controller.applyNodeDefs(message.nodeDefs);
                 return;
             }
@@ -55,6 +63,10 @@ export const App: React.FC = () => {
                 return;
             }
             if (message.type === "buildResult") {
+                const text =
+                    message.message.trim() ||
+                    i18n.t(message.success ? "build.success" : "build.failed");
+                void (message.success ? messageApi.success(text) : messageApi.error(text));
                 runtime.hostAdapter.log(
                     message.success ? "info" : "warn",
                     `[v2] build result: ${message.message}`
@@ -64,7 +76,7 @@ export const App: React.FC = () => {
 
         runtime.hostAdapter.sendReady();
         return off;
-    }, [runtime]);
+    }, [messageApi, runtime]);
 
     useLayoutEffect(() => {
         applyDocumentTheme(theme);
@@ -75,35 +87,41 @@ export const App: React.FC = () => {
     }, [language]);
 
     return (
+        <Layout className="b3-v2-shell">
+            <Layout hasSider className="b3-v2-body">
+                <Content className="b3-v2-content">
+                    {hasDocument ? (
+                        <GraphPane />
+                    ) : (
+                        <Flex className="b3-v2-loading" justify="center" align="center">
+                            <Typography.Text type="secondary">Loading V2 editor...</Typography.Text>
+                        </Flex>
+                    )}
+                </Content>
+                <Sider
+                    width={inspectorPanelWidth}
+                    className="b3-v2-sider"
+                    style={{
+                        flex: `0 0 ${inspectorPanelWidth}px`,
+                        maxWidth: inspectorPanelWidth,
+                        minWidth: inspectorPanelWidth,
+                    }}
+                >
+                    <InspectorPane />
+                </Sider>
+            </Layout>
+        </Layout>
+    );
+};
+
+export const App: React.FC = () => {
+    const theme = useWorkspaceStore((state) => state.settings.theme);
+
+    return (
         <ConfigProvider theme={getThemeConfig(theme)}>
             <AntdApp style={{ height: "100%" }}>
                 <GlobalHooksBridge />
-                <Layout className="b3-v2-shell">
-                    <Layout hasSider className="b3-v2-body">
-                        <Content className="b3-v2-content">
-                            {hasDocument ? (
-                                <GraphPane />
-                            ) : (
-                                <Flex className="b3-v2-loading" justify="center" align="center">
-                                    <Typography.Text type="secondary">
-                                        Loading V2 editor...
-                                    </Typography.Text>
-                                </Flex>
-                            )}
-                        </Content>
-                        <Sider
-                            width={inspectorPanelWidth}
-                            className="b3-v2-sider"
-                            style={{
-                                flex: `0 0 ${inspectorPanelWidth}px`,
-                                maxWidth: inspectorPanelWidth,
-                                minWidth: inspectorPanelWidth,
-                            }}
-                        >
-                            <InspectorPane />
-                        </Sider>
-                    </Layout>
-                </Layout>
+                <AppShell />
             </AntdApp>
         </ConfigProvider>
     );

@@ -10,6 +10,15 @@ import type {
 } from "../shared/contracts";
 import { stringifyCompactJson5, stringifySearchValueAsJson5 } from "../shared/json5-display";
 
+const DEFAULT_NODE_COLORS: Record<GraphNodeVM["nodeStyleKind"], string> = {
+    Composite: "#34d800",
+    Decorator: "#b2eb35",
+    Condition: "#f72585",
+    Action: "#1769dd",
+    Other: "#707070",
+    Error: "#ff0000",
+};
+
 const stringifyArgValue = (value: unknown): string => {
     return stringifySearchValueAsJson5(value);
 };
@@ -32,7 +41,8 @@ const pickNodeSubtitle = (nodeDesc: string | undefined, defDesc: string | undefi
 
 export const buildResolvedGraphModel = (
     graph: ResolvedDocumentGraph,
-    nodeDefs: NodeDef[]
+    nodeDefs: NodeDef[],
+    nodeColors?: Record<string, string>
 ): ResolvedGraphModel => {
     const defsByName = new Map(nodeDefs.map((def) => [def.name, def] as const));
     const nodes: GraphNodeVM[] = [];
@@ -54,6 +64,7 @@ export const buildResolvedGraphModel = (
             typeLabel: def?.type ?? (node.resolutionError ? "ResolutionError" : "Unknown"),
             icon: def?.icon,
             nodeStyleKind,
+            accentColor: nodeColors?.[nodeStyleKind] ?? DEFAULT_NODE_COLORS[nodeStyleKind],
             disabled: Boolean(node.disabled),
             subtreeNode: node.subtreeNode,
             subtreePath: node.path,

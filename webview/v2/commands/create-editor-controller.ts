@@ -463,7 +463,9 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         });
 
         resolvedGraph = result.graph;
-        await deps.graphAdapter.render(buildResolvedGraphModel(result.graph, workspace.nodeDefs));
+        await deps.graphAdapter.render(
+            buildResolvedGraphModel(result.graph, workspace.nodeDefs, workspace.settings.nodeColors)
+        );
         if (opts?.preserveSelection) {
             await restoreSelection();
         } else {
@@ -586,11 +588,12 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             }));
         },
 
-        async reloadDocumentFromHost(content: string) {
-            if (deps.documentStore.getState().dirty) {
+        async reloadDocumentFromHost(content: string, opts?: { force?: boolean }) {
+            if (deps.documentStore.getState().dirty && !opts?.force) {
                 deps.documentStore.setState((state) => ({
                     ...state,
                     alertReload: true,
+                    pendingExternalContent: content,
                 }));
                 return;
             }
@@ -601,6 +604,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             deps.documentStore.setState((state) => ({
                 ...state,
                 alertReload: false,
+                pendingExternalContent: null,
             }));
             await syncReachableSubtreeSources();
             await rebuildGraph({ preserveSelection: true });
@@ -612,6 +616,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 historyIndex: 0,
                 lastSavedSnapshot: snapshot,
                 dirty: false,
+                pendingExternalContent: null,
             }));
             scheduleTreeSelected(true);
         },
@@ -1106,10 +1111,6 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
 
-            const defaultNodeName =
-                getNodeDef("Sequence")?.name ??
-                deps.workspaceStore.getState().nodeDefs[0]?.name ??
-                "unknown";
             const tree = clonePersistedTree(currentTree);
             const targetNode = findPersistedNodeByStableId(
                 tree.root,
@@ -1122,7 +1123,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             const nextNode: PersistedNodeModel = {
                 $id: nanoid(),
                 id: "",
-                name: defaultNodeName,
+                name: "unknown",
             };
             targetNode.children ||= [];
             targetNode.children.push(nextNode);
@@ -1285,6 +1286,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 lastSavedSnapshot: snapshot,
                 dirty: false,
                 alertReload: false,
+                pendingExternalContent: null,
             }));
         },
 
@@ -1302,7 +1304,10 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             if (!path) {
                 return;
             }
-            await deps.hostAdapter.readFile(path, { openIfSubtree: true });
+            const response = await deps.hostAdapter.readFile(path, { openIfSubtree: true });
+            if (response.content === null) {
+                message.error(i18n.t("node.subtreeOpenFailed", { path }));
+            }
         },
 
         async saveSelectedAsSubtree() {

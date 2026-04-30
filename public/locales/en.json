@@ -128,11 +128,17 @@
   "node.pasteDataError": "Paste data error",
   "node.rootNodeAsSubtree": "Root node cann't be save as subtree",
   "node.subtree": "Subtree",
+  "node.subtreeOpenFailed": "Failed to open subtree: file not found or unreadable ({{path}})",
   "node.subtreePathError": "You should save the subtree inside the current workspace",
   "node.subtreeSaveRootError": "Root node cann't be save as subtree",
   "node.subtreeSaveSuccess": "Saved and converted to subtree node: {{path}}",
   "node.type": "Node type",
   "node.undefinedVariable": "Variable '{{variable}}' is not defined",
   "node.jsonData": "JSON Data",
-  "node.unknown.desc": "New node"
+  "node.unknown.desc": "New node",
+  "build.success": "Build completed.",
+  "build.failed": "Build failed.",
+  "editor.externalChangeConflict": "External file change detected while the document has unsaved edits.",
+  "editor.reloadFromDisk": "Reload",
+  "editor.dismissConflict": "Dismiss"
 }

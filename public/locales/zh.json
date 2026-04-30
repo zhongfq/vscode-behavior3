@@ -128,11 +128,17 @@
   "node.pasteDataError": "粘贴数据出错",
   "node.rootNodeAsSubtree": "根节点不能保存为子树",
   "node.subtree": "子树",
+  "node.subtreeOpenFailed": "打开子树失败：文件不存在或不可读（{{path}}）",
   "node.subtreePathError": "子树必须保存在当前工作区的目录内",
   "node.subtreeSaveRootError": "根节点不能保存为子树",
   "node.subtreeSaveSuccess": "已保存并转换为子树节点：{{path}}",
   "node.type": "节点类型",
   "node.undefinedVariable": "变量 “{{variable}}” 未定义",
   "node.jsonData": "JSON 数据",
-  "node.unknown.desc": "新建节点"
+  "node.unknown.desc": "新建节点",
+  "build.success": "构建完成。",
+  "build.failed": "构建失败。",
+  "editor.externalChangeConflict": "检测到外部文件变更，当前文档还有未保存修改。",
+  "editor.reloadFromDisk": "重新载入",
+  "editor.dismissConflict": "忽略"
 }

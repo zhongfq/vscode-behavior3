@@ -1,6 +1,7 @@
 import { FormOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { AutoComplete, Button, Flex, Form, Input, Select, Switch, Typography } from "antd";
+import { App, AutoComplete, Button, Flex, Form, Input, Select, Switch, Typography } from "antd";
 import React, { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { isValidVariableName } from "../../../shared/misc/b3util";
 import { useDocumentStore, useRuntime, useWorkspaceStore } from "../../app/runtime";
 import {
@@ -23,6 +24,8 @@ type ImportRefFormValue = {
 
 export const TreeInspectorForm: React.FC = () => {
     const runtime = useRuntime();
+    const { message } = App.useApp();
+    const { t } = useTranslation();
     const document = useDocumentStore((state) => state.persistedTree);
     const nodeDefs = useWorkspaceStore((state) => state.nodeDefs);
     const groupDefs = useWorkspaceStore((state) => state.groupDefs);
@@ -223,9 +226,22 @@ export const TreeInspectorForm: React.FC = () => {
                                             <FormOutlined
                                                 className="b3-v2-inline-action"
                                                 onClick={() => {
-                                                    void runtime.hostAdapter.readFile(entry.path, {
-                                                        openIfSubtree: true,
-                                                    });
+                                                    void (async () => {
+                                                        const response =
+                                                            await runtime.hostAdapter.readFile(
+                                                                entry.path,
+                                                                {
+                                                                    openIfSubtree: true,
+                                                                }
+                                                            );
+                                                        if (response.content === null) {
+                                                            message.error(
+                                                                t("node.subtreeOpenFailed", {
+                                                                    path: entry.path,
+                                                                })
+                                                            );
+                                                        }
+                                                    })();
                                                 }}
                                             />
                                         </Flex>

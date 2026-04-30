@@ -207,16 +207,39 @@ export async function runBuild(context: vscode.ExtensionContext): Promise<void> 
             const hasError = await buildProject(workspaceFilePosix, outputDirPosix);
 
             if (hasError) {
-                void vscode.window.showErrorMessage(
-                    "Build finished with validation errors. See the Output panel for details."
-                );
+                const resultMessage =
+                    "Build finished with validation errors. See the Output panel for details.";
+                const delivered = TreeEditorProvider.postMessageToWorkspace(folder.uri.fsPath, {
+                    type: "buildResult",
+                    success: false,
+                    message: resultMessage,
+                });
+                if (!delivered) {
+                    void vscode.window.showErrorMessage(resultMessage);
+                }
             } else {
-                out.info(`Build completed: ${outputDirFs}`);
-                void vscode.window.showInformationMessage(`Build completed: ${outputDirFs}`);
+                const resultMessage = `Build completed: ${outputDirFs}`;
+                out.info(resultMessage);
+                const delivered = TreeEditorProvider.postMessageToWorkspace(folder.uri.fsPath, {
+                    type: "buildResult",
+                    success: true,
+                    message: resultMessage,
+                });
+                if (!delivered) {
+                    void vscode.window.showInformationMessage(resultMessage);
+                }
             }
         } catch (e) {
             logger.error("build failed:", e);
-            void vscode.window.showErrorMessage(`Build failed: ${e}`);
+            const resultMessage = `Build failed: ${e}`;
+            const delivered = TreeEditorProvider.postMessageToWorkspace(folder.uri.fsPath, {
+                type: "buildResult",
+                success: false,
+                message: resultMessage,
+            });
+            if (!delivered) {
+                void vscode.window.showErrorMessage(resultMessage);
+            }
         } finally {
             setLogger(prevLogger);
         }

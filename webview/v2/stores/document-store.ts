@@ -6,6 +6,7 @@ export const createDocumentStore = (): StoreApi<DocumentState> => {
         persistedTree: null,
         dirty: false,
         alertReload: false,
+        pendingExternalContent: null,
         focusNodeKey: null,
         history: [],
         historyIndex: -1,

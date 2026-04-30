@@ -827,7 +827,10 @@ class VectorTreeNode extends Rect {
         this.node = data.vm;
         this.width = data.width;
         this.height = data.height;
-        this.accent = accentColorMap[this.node.nodeStyleKind] ?? accentColorMap.Other;
+        this.accent =
+            this.node.accentColor ??
+            accentColorMap[this.node.nodeStyleKind] ??
+            accentColorMap.Other;
         this.contentY = CONTENT_Y;
         this.states = this.context.graph.getElementState(this.id) as VectorTreeNodeState[];
         this.resetStyle();

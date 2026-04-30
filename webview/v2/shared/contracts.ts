@@ -90,6 +90,7 @@ export interface DocumentState {
     persistedTree: PersistedTreeModel | null;
     dirty: boolean;
     alertReload: boolean;
+    pendingExternalContent: string | null;
     focusNodeKey: string | null;
     history: string[];
     historyIndex: number;
@@ -181,7 +182,7 @@ export type HostEvent =
     | { type: "fileChanged"; content: string }
     | { type: "themeChanged"; theme: Settings["theme"] }
     | { type: "subtreeFileChanged" }
-    | { type: "settingLoaded"; nodeDefs: NodeDef[] }
+    | { type: "settingLoaded"; nodeDefs: NodeDef[]; nodeColors?: Record<string, string> }
     | { type: "varDeclLoaded"; payload: HostVarsPayload }
     | { type: "buildResult"; success: boolean; message: string };
 
@@ -234,6 +235,7 @@ export interface GraphNodeVM {
     typeLabel: string;
     icon?: string;
     nodeStyleKind: "Composite" | "Decorator" | "Condition" | "Action" | "Other" | "Error";
+    accentColor?: string;
     disabled: boolean;
     subtreeNode: boolean;
     subtreePath?: WorkdirRelativeJsonPath;
@@ -323,7 +325,7 @@ export interface HostAdapter {
 
 export interface EditorCommand {
     initFromHost(payload: HostInitPayload): Promise<void>;
-    reloadDocumentFromHost(content: string): Promise<void>;
+    reloadDocumentFromHost(content: string, opts?: { force?: boolean }): Promise<void>;
     applyNodeDefs(defs: NodeDef[]): Promise<void>;
     applyHostVars(payload: HostVarsPayload): Promise<void>;
     markSubtreeChanged(): Promise<void>;
