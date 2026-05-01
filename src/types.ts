@@ -11,6 +11,7 @@ export type { NodeDef };
 export type EditorToHostMessage =
     | { type: "ready" }
     | { type: "update"; content: string }
+    | { type: "saveDocument"; requestId: string; content: string }
     | { type: "treeSelected"; tree: unknown }
     | { type: "requestSetting" }
     | { type: "build" }
@@ -62,6 +63,12 @@ export type HostToEditorMessage =
           type: "saveSubtreeAsResult";
           requestId: string;
           savedPath: string | null;
+          error?: string;
+      }
+    | {
+          type: "saveDocumentResult";
+          requestId: string;
+          success: boolean;
           error?: string;
       }
     | {

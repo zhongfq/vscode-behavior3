@@ -338,9 +338,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 dirty: computeDirty(state.persistedTree, state.lastSavedSnapshot),
             };
         });
+        deps.hostAdapter.sendUpdate(snapshot);
     };
 
     const applyHistoryIndex = async (nextIndex: number) => {
+        const viewport = deps.graphAdapter.getViewport();
         const documentState = deps.documentStore.getState();
         const snapshot = documentState.history[nextIndex];
         if (!snapshot) {
@@ -351,11 +353,13 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         setDocumentTree(tree);
         await syncReachableSubtreeSources();
         await rebuildGraph({ preserveSelection: true });
+        await deps.graphAdapter.restoreViewport(viewport);
         deps.documentStore.setState((state) => ({
             ...state,
             historyIndex: nextIndex,
             dirty: computeDirty(state.persistedTree, state.lastSavedSnapshot),
         }));
+        deps.hostAdapter.sendUpdate(snapshot);
         scheduleTreeSelected();
     };
 
@@ -760,8 +764,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             nextTree.vars = nextVars;
             nextTree.import = nextImportRefs;
             setDocumentTree(nextTree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
+            if (tree.prefix !== nextPrefix) {
+                await rebuildGraph({ preserveSelection: true });
+            } else {
+                await applyVisualState();
+            }
             pushHistorySnapshot(
                 serializePersistedTree(deps.documentStore.getState().persistedTree!)
             );
@@ -1323,7 +1330,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
             const snapshot = serializePersistedTree(tree);
-            deps.hostAdapter.sendUpdate(snapshot);
+            const response = await deps.hostAdapter.saveDocument(snapshot);
+            if (!response.success) {
+                message.error(response.error ?? "Save failed");
+                return;
+            }
             deps.documentStore.setState((state) => ({
                 ...state,
                 lastSavedSnapshot: snapshot,

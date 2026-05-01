@@ -157,6 +157,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         TreeEditorProvider.activeWebviews.add(activeWebviewEntry);
 
         let fileVersionIsNewer = false;
+        let suppressNextMainDocumentContent: string | null = null;
 
         let cachedSubtreeRefs: Set<string> | null = null;
         const invalidateSubtreeRefs = () => {
@@ -187,6 +188,25 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             }, 450);
         };
 
+        const applyContentFromWebview = async (content: string): Promise<boolean> => {
+            if (document.getText() === content) {
+                return true;
+            }
+
+            suppressNextMainDocumentContent = content;
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(
+                document.uri,
+                new vscode.Range(0, 0, document.lineCount, 0),
+                content
+            );
+            const applied = await vscode.workspace.applyEdit(edit);
+            if (!applied) {
+                suppressNextMainDocumentContent = null;
+            }
+            return applied;
+        };
+
         // Watch .b3-setting for changes
         const settingWatcher = watchSettingFile(workspaceFolderUri, () => {
             void pushSettingLoaded({ refreshDefs: true });
@@ -206,6 +226,13 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             if (e.document.uri.toString() === document.uri.toString()) {
                 invalidateSubtreeRefs();
                 if (e.contentChanges.length > 0) {
+                    if (
+                        suppressNextMainDocumentContent !== null &&
+                        document.getText() === suppressNextMainDocumentContent
+                    ) {
+                        suppressNextMainDocumentContent = null;
+                        return;
+                    }
                     const msg: HostToEditorMessage = {
                         type: "fileChanged",
                         content: document.getText(),
@@ -319,13 +346,44 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         vscode.window.showErrorMessage(errMsg);
                         break;
                     }
-                    const edit = new vscode.WorkspaceEdit();
-                    edit.replace(
-                        document.uri,
-                        new vscode.Range(0, 0, document.lineCount, 0),
-                        msg.content
-                    );
-                    await vscode.workspace.applyEdit(edit);
+                    await applyContentFromWebview(msg.content);
+                    break;
+                }
+
+                case "saveDocument": {
+                    if (fileVersionIsNewer) {
+                        const fileData = JSON.parse(document.getText()) as { version?: string };
+                        const errMsg =
+                            currentSettings.language === "zh"
+                                ? `此文件由新版本 Behavior3(${fileData.version}) 创建，请升级到最新版本后再编辑。`
+                                : `This file is created by a newer version of Behavior3(${fileData.version}). Please upgrade to the latest version.`;
+                        vscode.window.showErrorMessage(errMsg);
+                        webviewPanel.webview.postMessage({
+                            type: "saveDocumentResult",
+                            requestId: msg.requestId,
+                            success: false,
+                            error: errMsg,
+                        } satisfies HostToEditorMessage);
+                        break;
+                    }
+
+                    try {
+                        const applied = await applyContentFromWebview(msg.content);
+                        const saved = applied ? await document.save() : false;
+                        webviewPanel.webview.postMessage({
+                            type: "saveDocumentResult",
+                            requestId: msg.requestId,
+                            success: saved,
+                            error: saved ? undefined : "Failed to save document",
+                        } satisfies HostToEditorMessage);
+                    } catch (error) {
+                        webviewPanel.webview.postMessage({
+                            type: "saveDocumentResult",
+                            requestId: msg.requestId,
+                            success: false,
+                            error: String(error),
+                        } satisfies HostToEditorMessage);
+                    }
                     break;
                 }
 

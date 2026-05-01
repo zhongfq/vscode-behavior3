@@ -10,6 +10,7 @@ import type {
     HostEvent,
     PersistedTreeModel,
     ReadFileResponse,
+    SaveDocumentResponse,
     SaveSubtreeAsResponse,
     SaveSubtreeResponse,
     WorkdirRelativeJsonPath,
@@ -31,7 +32,8 @@ const vscode = acquireVsCodeApi();
 type PendingRequest =
     | { type: "readFile"; resolve(value: ReadFileResponse): void }
     | { type: "saveSubtree"; resolve(value: SaveSubtreeResponse): void }
-    | { type: "saveSubtreeAs"; resolve(value: SaveSubtreeAsResponse): void };
+    | { type: "saveSubtreeAs"; resolve(value: SaveSubtreeAsResponse): void }
+    | { type: "saveDocument"; resolve(value: SaveDocumentResponse): void };
 
 const pendingRequests = new Map<string, PendingRequest>();
 
@@ -111,6 +113,15 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
                     return;
                 }
 
+                if (message.type === "saveDocumentResult") {
+                    const pending = pendingRequests.get(message.requestId);
+                    if (pending?.type === "saveDocument") {
+                        pendingRequests.delete(message.requestId);
+                        pending.resolve({ success: message.success, error: message.error });
+                    }
+                    return;
+                }
+
                 if (message.type === "init") {
                     onMessage({ type: "init", payload: normalizeHostInitMessage(message) });
                     return;
@@ -179,6 +190,14 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
 
         sendBuild() {
             postMessage({ type: "build" });
+        },
+
+        saveDocument(content: string) {
+            return new Promise<SaveDocumentResponse>((resolve) => {
+                const requestId = createRequestId();
+                pendingRequests.set(requestId, { type: "saveDocument", resolve });
+                postMessage({ type: "saveDocument", requestId, content });
+            });
         },
 
         readFile(path: WorkdirRelativeJsonPath, opts) {

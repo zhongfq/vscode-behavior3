@@ -176,6 +176,11 @@ export interface SaveSubtreeAsResponse {
     error?: string;
 }
 
+export interface SaveDocumentResponse {
+    success: boolean;
+    error?: string;
+}
+
 export type HostEvent =
     | { type: "init"; payload: HostInitPayload }
     | { type: "fileChanged"; content: string }
@@ -313,6 +318,7 @@ export interface HostAdapter {
     sendTreeSelected(tree: PersistedTreeModel): void;
     sendRequestSetting(): void;
     sendBuild(): void;
+    saveDocument(content: string): Promise<SaveDocumentResponse>;
     readFile(
         path: WorkdirRelativeJsonPath,
         opts?: { openIfSubtree?: boolean }
