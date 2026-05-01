@@ -74,6 +74,7 @@ export interface EditNode {
     ref: NodeInstanceRef;
     data: PersistedNodeModel;
     prefix: string;
+    activeChildCount: number;
     disabled: boolean;
     subtreeNode: boolean;
     subtreeEditable: boolean;
@@ -247,6 +248,7 @@ export interface GraphNodeVM {
     inputs: Array<{ label: string; variable?: string }>;
     outputs: Array<{ label: string; variable?: string }>;
     argsText?: string;
+    warningText?: string;
 }
 
 export interface ResolvedGraphModel {

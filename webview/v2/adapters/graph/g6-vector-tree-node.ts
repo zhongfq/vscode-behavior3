@@ -277,9 +277,6 @@ const toBreakWord = (value: string, maxWidth: number, fontSize?: string) => {
     };
 };
 
-const isWarningNode = (node: GraphNodeVM) =>
-    node.nodeStyleKind === "Error" || node.typeLabel === "Unknown";
-
 const getInputText = (node: GraphNodeVM) => {
     const labels = node.inputs.map((entry) => entry.label).filter(Boolean);
     if (labels.length === 0) {
@@ -314,10 +311,6 @@ export const measureVectorTreeNode = (node: GraphNodeVM) => {
     const outputText = getOutputText(node);
     if (outputText.line > 0) {
         height += outputText.line * ROW_HEIGHT;
-    }
-
-    if (isWarningNode(node)) {
-        height += ROW_HEIGHT;
     }
 
     return {
@@ -785,31 +778,6 @@ class VectorTreeNode extends Rect {
         );
     }
 
-    private drawWarningText(container: Group) {
-        const text = isWarningNode(this.node)
-            ? cutWordTo(`${i18n.t("node.type")}:${this.node.typeLabel}`, CONTENT_WIDTH)
-            : "";
-
-        this.upsert(
-            "warn-text",
-            GText,
-            {
-                fill: this.palette.warningText,
-                fontSize: 12,
-                fontWeight: "normal",
-                lineHeight: ROW_HEIGHT,
-                text,
-                textBaseline: "top",
-                x: CONTENT_X,
-                y: this.contentY + ROW_HEIGHT,
-                visibility: text ? "visible" : "hidden",
-            },
-            container
-        );
-
-        this.contentY += text ? ROW_HEIGHT : 0;
-    }
-
     private drawDragShapes(container: Group) {
         this.upsert(
             "drag-src",
@@ -916,7 +884,6 @@ class VectorTreeNode extends Rect {
         this.drawInputText(container);
         this.drawOutputText(container);
         this.drawSubtreeText(container);
-        this.drawWarningText(container);
         this.drawDragShapes(container);
         this.drawCollapseBadge(container);
         this.drawIdText(container);

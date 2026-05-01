@@ -255,6 +255,10 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 path: node.path,
             },
             prefix: tree.prefix,
+            activeChildCount: node.childKeys.reduce((count, childKey) => {
+                const child = resolvedGraph?.nodesByInstanceKey[childKey];
+                return count + (child && !child.disabled ? 1 : 0);
+            }, 0),
             disabled: !node.subtreeEditable,
             subtreeNode: node.subtreeNode,
             subtreeEditable: node.subtreeEditable,
@@ -471,7 +475,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
 
         resolvedGraph = result.graph;
         await deps.graphAdapter.render(
-            buildResolvedGraphModel(result.graph, workspace.nodeDefs, workspace.settings.nodeColors)
+            buildResolvedGraphModel(result.graph, workspace.nodeDefs, workspace.settings.nodeColors, {
+                usingVars: workspace.usingVars,
+                usingGroups: workspace.usingGroups,
+                checkExpr: workspace.settings.checkExpr,
+            })
         );
         if (opts?.preserveSelection) {
             await restoreSelection();
@@ -645,7 +653,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 importDecls: payload.importDecls,
                 subtreeDecls: payload.subtreeDecls,
             }));
-            await applyVisualState();
+            await rebuildGraph({ preserveSelection: true });
         },
 
         async markSubtreeChanged() {
@@ -764,7 +772,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             nextTree.vars = nextVars;
             nextTree.import = nextImportRefs;
             setDocumentTree(nextTree);
-            if (tree.prefix !== nextPrefix) {
+            if (tree.prefix !== nextPrefix || !isJsonEqual(tree.group, nextGroup)) {
                 await rebuildGraph({ preserveSelection: true });
             } else {
                 await applyVisualState();

@@ -1,5 +1,6 @@
+import { ExpressionEvaluator } from "../../../behavior3/src/behavior3/evaluator";
 import { getNodeType, isExprType, type NodeDef } from "../../shared/misc/b3type";
-import { parseExpr } from "../../shared/misc/b3util";
+import { isValidVariableName, isVariadic, parseExpr } from "../../shared/misc/b3util";
 import i18n from "../../shared/misc/i18n";
 import type {
     GraphHighlightState,
@@ -7,7 +8,9 @@ import type {
     GraphSearchState,
     PersistedTreeModel,
     ResolvedDocumentGraph,
+    ResolvedNodeModel,
     ResolvedGraphModel,
+    VarDecl,
 } from "../shared/contracts";
 import { stringifyCompactJson5, stringifySearchValueAsJson5 } from "../shared/json5-display";
 
@@ -40,10 +43,127 @@ const pickNodeSubtitle = (nodeDesc: string | undefined, defDesc: string | undefi
     return trimmedDefDesc || undefined;
 };
 
+const computeWarningText = (params: {
+    node: ResolvedNodeModel;
+    graph: ResolvedDocumentGraph;
+    defsByName: Map<string, NodeDef>;
+    usingVars: Record<string, VarDecl> | null;
+    usingGroups: Record<string, boolean> | null;
+    checkExpr: boolean;
+}) => {
+    const { node, graph, defsByName, usingVars, usingGroups, checkExpr } = params;
+    if (node.resolutionError) {
+        return undefined;
+    }
+
+    const def = defsByName.get(node.name);
+    if (!def) {
+        return undefined;
+    }
+
+    if (def.group) {
+        const groups = Array.isArray(def.group) ? def.group : [def.group];
+        if (!groups.some((group) => usingGroups?.[group])) {
+            return `node group '${groups.join(",")}' is not enabled`;
+        }
+    }
+
+    if (node.input) {
+        for (let index = 0; index < node.input.length; index += 1) {
+            const value = node.input[index] ?? "";
+            if (value && !isValidVariableName(value)) {
+                return `input field '${value}' is not a valid variable name`;
+            }
+            if (value && usingVars && !usingVars[value]) {
+                return i18n.t("node.undefinedVariable", { variable: value });
+            }
+        }
+    }
+
+    if (node.output) {
+        for (let index = 0; index < node.output.length; index += 1) {
+            const value = node.output[index] ?? "";
+            if (value && !isValidVariableName(value)) {
+                return `output field '${value}' is not a valid variable name`;
+            }
+            if (value && usingVars && !usingVars[value]) {
+                return i18n.t("node.undefinedVariable", { variable: value });
+            }
+        }
+    }
+
+    for (const arg of def.args ?? []) {
+        const rawValue = node.args?.[arg.name];
+        if (!isExprType(arg.type) || !rawValue) {
+            continue;
+        }
+
+        const exprValues = Array.isArray(rawValue) ? rawValue : [rawValue];
+        for (const expr of exprValues) {
+            if (typeof expr !== "string" || !expr) {
+                continue;
+            }
+
+            for (const variable of parseExpr(expr)) {
+                if (usingVars && variable && !usingVars[variable]) {
+                    return i18n.t("node.undefinedVariable", { variable });
+                }
+            }
+
+            if (checkExpr) {
+                try {
+                    if (!new ExpressionEvaluator(expr).dryRun()) {
+                        return `expr '${expr}' is not valid`;
+                    }
+                } catch {
+                    return `expr '${expr}' is not valid`;
+                }
+            }
+        }
+    }
+
+    if (def.children !== undefined && def.children !== -1) {
+        const count = node.childKeys.reduce((total, childKey) => {
+            const child = graph.nodesByInstanceKey[childKey];
+            return total + (child && !child.disabled ? 1 : 0);
+        }, 0);
+        if (count !== def.children) {
+            return `expect ${def.children} children, but got ${count}`;
+        }
+    }
+
+    for (let index = 0; index < (def.input?.length ?? 0); index += 1) {
+        const label = def.input?.[index] ?? "";
+        if (isVariadic(def.input ?? [], index)) {
+            break;
+        }
+        if (!label.includes("?") && !(node.input?.[index] ?? "")) {
+            return `input field '${label}' is required`;
+        }
+    }
+
+    for (let index = 0; index < (def.output?.length ?? 0); index += 1) {
+        const label = def.output?.[index] ?? "";
+        if (isVariadic(def.output ?? [], index)) {
+            break;
+        }
+        if (!label.includes("?") && !(node.output?.[index] ?? "")) {
+            return `output field '${label}' is required`;
+        }
+    }
+
+    return undefined;
+};
+
 export const buildResolvedGraphModel = (
     graph: ResolvedDocumentGraph,
     nodeDefs: NodeDef[],
-    nodeColors?: Record<string, string>
+    nodeColors?: Record<string, string>,
+    validation?: {
+        usingVars: Record<string, VarDecl> | null;
+        usingGroups: Record<string, boolean> | null;
+        checkExpr: boolean;
+    }
 ): ResolvedGraphModel => {
     const defsByName = new Map(nodeDefs.map((def) => [def.name, def] as const));
     const nodes: GraphNodeVM[] = [];
@@ -52,7 +172,16 @@ export const buildResolvedGraphModel = (
     for (const key of graph.nodeOrder) {
         const node = graph.nodesByInstanceKey[key];
         const def = defsByName.get(node.name);
-        const nodeStyleKind = node.resolutionError ? "Error" : def ? getNodeType(def) : "Error";
+        const warningText = computeWarningText({
+            node,
+            graph,
+            defsByName,
+            usingVars: validation?.usingVars ?? null,
+            usingGroups: validation?.usingGroups ?? null,
+            checkExpr: validation?.checkExpr ?? false,
+        });
+        const nodeStyleKind =
+            node.resolutionError || warningText ? "Error" : def ? getNodeType(def) : "Error";
 
         nodes.push({
             ref: node.ref,
@@ -86,6 +215,7 @@ export const buildResolvedGraphModel = (
                 node.args && Object.keys(node.args).length > 0
                     ? stringifyCompactJson5(node.args)
                     : undefined,
+            warningText,
         });
 
         for (const childKey of node.childKeys) {

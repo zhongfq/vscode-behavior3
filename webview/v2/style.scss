@@ -37,18 +37,12 @@ body[data-theme="dark"] {
     --b3-node-text: #111827;
     --b3-node-muted: #4b5563;
     --b3-node-divider: #666666;
-    --b3-node-highlight-bg: var(--vscode-list-activeSelectionBackground, #0d1117);
-    --b3-node-highlight-text: var(--vscode-list-activeSelectionForeground, #ffffff);
-    --b3-node-gray-fill: var(
-        --vscode-sideBarSectionHeader-background,
-        var(--vscode-editorWidget-background, #0d1117)
-    );
-    --b3-node-gray-border: var(--vscode-panel-border, #30363d);
-    --b3-node-gray-rail: var(
-        --vscode-sideBarSectionHeader-background,
-        var(--vscode-sideBar-background, #30363d)
-    );
-    --b3-node-gray-text: var(--vscode-disabledForeground, #666666);
+    --b3-node-highlight-bg: #0d1117;
+    --b3-node-highlight-text: #ffffff;
+    --b3-node-gray-fill: #0d1117;
+    --b3-node-gray-border: #30363d;
+    --b3-node-gray-rail: #30363d;
+    --b3-node-gray-text: #666666;
     --b3-node-id-text: var(--vscode-editorLineNumber-activeForeground, #ffffff);
     --b3-node-id-stroke: #000000;
     --b3-node-selection-base: var(--vscode-editor-background, #24303d);
@@ -92,18 +86,12 @@ body[data-theme="light"] {
     --b3-node-text: #111827;
     --b3-node-muted: #4b5563;
     --b3-node-divider: #666666;
-    --b3-node-highlight-bg: var(--vscode-list-activeSelectionBackground, #0969da);
-    --b3-node-highlight-text: var(--vscode-list-activeSelectionForeground, #ffffff);
-    --b3-node-gray-fill: var(
-        --vscode-sideBarSectionHeader-background,
-        var(--vscode-editorWidget-background, #f6f8fa)
-    );
-    --b3-node-gray-border: var(--vscode-panel-border, #d8dee4);
-    --b3-node-gray-rail: var(
-        --vscode-sideBarSectionHeader-background,
-        var(--vscode-sideBar-background, #d8dee4)
-    );
-    --b3-node-gray-text: var(--vscode-disabledForeground, #8c959f);
+    --b3-node-highlight-bg: #0d1117;
+    --b3-node-highlight-text: #ffffff;
+    --b3-node-gray-fill: #0d1117;
+    --b3-node-gray-border: #30363d;
+    --b3-node-gray-rail: #30363d;
+    --b3-node-gray-text: #666666;
     --b3-node-id-text: var(--vscode-editorLineNumber-activeForeground, var(--vscode-foreground, #1f2328));
     --b3-node-id-stroke: #ffffff;
     --b3-node-selection-base: var(--vscode-editor-background, #ffffff);

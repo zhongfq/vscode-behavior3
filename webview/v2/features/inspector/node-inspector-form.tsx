@@ -263,6 +263,7 @@ export const NodeInspectorForm: React.FC = () => {
     const selectedNode = useSelectionStore((state) => state.selectedNodeSnapshot);
     const nodeDefs = useWorkspaceStore((state) => state.nodeDefs);
     const usingVars = useWorkspaceStore((state) => state.usingVars);
+    const usingGroups = useWorkspaceStore((state) => state.usingGroups);
     const allFiles = useWorkspaceStore((state) => state.allFiles);
     const checkExpr = useWorkspaceStore((state) => state.settings.checkExpr);
     const [form] = Form.useForm();
@@ -319,6 +320,18 @@ export const NodeInspectorForm: React.FC = () => {
             rawNodeJson: JSON.stringify(selectedNode.data ?? {}, null, 2),
         });
     }, [form, nodeDefMap, selectedNode, t]);
+
+    useEffect(() => {
+        if (!selectedNode) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            void form.validateFields({ recursive: true }).catch(() => undefined);
+        }, 100);
+
+        return () => window.clearTimeout(timer);
+    }, [form, selectedNode, usingVars, usingGroups, checkExpr, nodeDef]);
 
     if (!selectedNode) {
         return null;
@@ -526,7 +539,23 @@ export const NodeInspectorForm: React.FC = () => {
                         <Input disabled />
                     </Form.Item>
                     {nodeDef?.group?.length ? (
-                        <Form.Item {...createInspectorLabelProps(t("node.group"))} name="group">
+                        <Form.Item
+                            {...createInspectorLabelProps(t("node.group"))}
+                            name="group"
+                            rules={[
+                                {
+                                    validator: async () => {
+                                        if (!nodeDef.group?.some((group) => usingGroups?.[group])) {
+                                            throw new Error(
+                                                t("node.groupNotEnabled", {
+                                                    group: nodeDef.group,
+                                                })
+                                            );
+                                        }
+                                    },
+                                },
+                            ]}
+                        >
                             <Select
                                 mode="multiple"
                                 disabled
@@ -537,7 +566,23 @@ export const NodeInspectorForm: React.FC = () => {
                             />
                         </Form.Item>
                     ) : null}
-                    <Form.Item {...createInspectorLabelProps(t("node.children"))} name="children">
+                    <Form.Item
+                        {...createInspectorLabelProps(t("node.children"))}
+                        name="children"
+                        rules={[
+                            {
+                                validator: async () => {
+                                    if (
+                                        nodeDef?.children !== undefined &&
+                                        nodeDef.children !== -1 &&
+                                        selectedNode.activeChildCount !== nodeDef.children
+                                    ) {
+                                        throw new Error(t("node.invalidChildren"));
+                                    }
+                                },
+                            },
+                        ]}
+                    >
                         <Input disabled />
                     </Form.Item>
 
