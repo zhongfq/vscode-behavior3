@@ -77,6 +77,9 @@ const buildUsingGroups = (groupNames: string[]): Record<string, boolean> | null 
 const cloneVars = <T extends { name: string; desc: string }>(entries: T[]): T[] =>
     entries.map((entry) => ({ ...entry }));
 
+const isJsonEqual = (left: unknown, right: unknown): boolean =>
+    JSON.stringify(left) === JSON.stringify(right);
+
 export const createEditorController = (deps: ControllerDeps): EditorCommand => {
     let resolvedGraph: ResolvedDocumentGraph | null = null;
     let treeSelectedTimer: number | null = null;
@@ -731,13 +734,31 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             if (!tree) {
                 return;
             }
+            const nextDesc = payload.desc?.trim() || undefined;
+            const nextPrefix = payload.prefix ?? "";
+            const nextExport = payload.export !== false;
+            const nextGroup = [...payload.group];
+            const nextVars = cloneVars(payload.vars).sort((a, b) => a.name.localeCompare(b.name));
+            const nextImportRefs = [...payload.importRefs].sort((a, b) => a.localeCompare(b));
+
+            if (
+                tree.desc === nextDesc &&
+                tree.prefix === nextPrefix &&
+                (tree.export !== false) === nextExport &&
+                isJsonEqual(tree.group, nextGroup) &&
+                isJsonEqual(tree.vars, nextVars) &&
+                isJsonEqual(tree.import, nextImportRefs)
+            ) {
+                return;
+            }
+
             const nextTree = clonePersistedTree(tree);
-            nextTree.desc = payload.desc;
-            nextTree.prefix = payload.prefix ?? "";
-            nextTree.export = payload.export;
-            nextTree.group = [...payload.group];
-            nextTree.vars = cloneVars(payload.vars).sort((a, b) => a.name.localeCompare(b.name));
-            nextTree.import = [...payload.importRefs].sort((a, b) => a.localeCompare(b));
+            nextTree.desc = nextDesc;
+            nextTree.prefix = nextPrefix;
+            nextTree.export = nextExport;
+            nextTree.group = nextGroup;
+            nextTree.vars = nextVars;
+            nextTree.import = nextImportRefs;
             setDocumentTree(nextTree);
             await syncReachableSubtreeSources();
             await rebuildGraph({ preserveSelection: true });
@@ -756,6 +777,28 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
 
+            const nextName = String(payload.data.name ?? resolvedNode.name).trim() || resolvedNode.name;
+            const nextDesc = payload.data.desc?.trim() || undefined;
+            const nextPath = payload.data.path?.trim() || undefined;
+            const nextDebug = Boolean(payload.data.debug);
+            const nextDisabled = Boolean(payload.data.disabled);
+            const nextInput = payload.data.input;
+            const nextOutput = payload.data.output;
+            const nextArgs = payload.data.args;
+
+            if (
+                nextName === resolvedNode.name &&
+                nextDesc === resolvedNode.desc &&
+                nextPath === resolvedNode.path &&
+                nextDebug === Boolean(resolvedNode.debug) &&
+                nextDisabled === Boolean(resolvedNode.disabled) &&
+                isJsonEqual(nextInput ?? [], resolvedNode.input ?? []) &&
+                isJsonEqual(nextOutput ?? [], resolvedNode.output ?? []) &&
+                isJsonEqual(nextArgs ?? {}, resolvedNode.args ?? {})
+            ) {
+                return;
+            }
+
             const tree = clonePersistedTree(currentTree);
             if (resolvedNode.subtreeNode) {
                 const def = getNodeDef(resolvedNode.name);
@@ -767,13 +810,13 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 const editedNode: PersistedNodeModel = {
                     $id: resolvedNode.ref.sourceStableId,
                     id: resolvedNode.ref.displayId,
-                    name: resolvedNode.name,
-                    desc: payload.data.desc,
-                    args: payload.data.args,
-                    input: payload.data.input,
-                    output: payload.data.output,
-                    debug: payload.data.debug,
-                    disabled: payload.data.disabled,
+                    name: nextName,
+                    desc: nextDesc,
+                    args: nextArgs,
+                    input: nextInput,
+                    output: nextOutput,
+                    debug: nextDebug,
+                    disabled: nextDisabled,
                     path: resolvedNode.path,
                 };
 
@@ -810,25 +853,25 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                     clearPathOnRoot: true,
                 });
                 if (detached) {
-                    detached.name = payload.data.name;
-                    detached.desc = payload.data.desc;
-                    detached.args = payload.data.args;
-                    detached.input = payload.data.input;
-                    detached.output = payload.data.output;
-                    detached.debug = payload.data.debug;
-                    detached.disabled = payload.data.disabled;
+                    detached.name = nextName;
+                    detached.desc = nextDesc;
+                    detached.args = nextArgs;
+                    detached.input = nextInput;
+                    detached.output = nextOutput;
+                    detached.debug = nextDebug;
+                    detached.disabled = nextDisabled;
                     overwritePersistedNode(node, detached);
                 }
             } else {
-                node.name = payload.data.name;
-                node.desc = payload.data.desc;
-                node.args = payload.data.args;
-                node.input = payload.data.input;
-                node.output = payload.data.output;
-                node.debug = payload.data.debug;
-                node.disabled = payload.data.disabled;
-                node.path = payload.data.path;
-                if (payload.data.path && payload.data.path !== selectedSnapshot?.data.path) {
+                node.name = nextName;
+                node.desc = nextDesc;
+                node.args = nextArgs;
+                node.input = nextInput;
+                node.output = nextOutput;
+                node.debug = nextDebug;
+                node.disabled = nextDisabled;
+                node.path = nextPath;
+                if (nextPath && nextPath !== selectedSnapshot?.data.path) {
                     node.children = undefined;
                 }
             }

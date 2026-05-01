@@ -9,50 +9,142 @@ body,
 
 body {
     overflow: hidden;
+    color: var(--ant-color-text);
+    background: var(--b3-app-bg);
 }
 
-:root[data-theme="dark"] {
-    --b3-text-muted: #8b949e;
-    --b3-filter-hover-bg: #30363d;
-    --b3-filter-selected-bg: #2f81f7;
-    --b3-filter-selected-hover-bg: #388bfd;
-    --b3-search-bg: #161b22;
-    --b3-search-border-accent: #f78166;
+body[data-theme="dark"] {
+    --b3-app-bg: var(--vscode-editor-background, #0d1117);
+    --b3-panel-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #0d1117));
+    --b3-panel-border: var(--vscode-sideBar-border, var(--vscode-panel-border, #30363d));
+    --b3-graph-bg: var(--vscode-editor-background, #010409);
+    --b3-graph-edge: #a3b1bf;
+    --b3-text-muted: var(--vscode-descriptionForeground, #8b949e);
+    --b3-filter-hover-bg: var(--vscode-list-hoverBackground, #30363d);
+    --b3-filter-selected-bg: var(--vscode-list-activeSelectionBackground, #2f81f7);
+    --b3-filter-selected-hover-bg: var(
+        --vscode-list-inactiveSelectionBackground,
+        var(--vscode-list-activeSelectionBackground, #388bfd)
+    );
+    --b3-search-bg: var(
+        --vscode-editorWidget-background,
+        var(--vscode-input-background, #161b22)
+    );
+    --b3-search-border-accent: var(--vscode-focusBorder, #f78166);
     --b3-search-shadow: #0000005c;
+    --b3-override-bar: var(--vscode-badge-background, #d87a16);
+    --b3-node-content-bg: #ffffff;
+    --b3-node-text: #111827;
+    --b3-node-muted: #4b5563;
+    --b3-node-divider: #666666;
+    --b3-node-highlight-bg: var(--vscode-list-activeSelectionBackground, #0d1117);
+    --b3-node-highlight-text: var(--vscode-list-activeSelectionForeground, #ffffff);
+    --b3-node-gray-fill: var(
+        --vscode-sideBarSectionHeader-background,
+        var(--vscode-editorWidget-background, #0d1117)
+    );
+    --b3-node-gray-border: var(--vscode-panel-border, #30363d);
+    --b3-node-gray-rail: var(
+        --vscode-sideBarSectionHeader-background,
+        var(--vscode-sideBar-background, #30363d)
+    );
+    --b3-node-gray-text: var(--vscode-disabledForeground, #666666);
+    --b3-node-id-text: var(--vscode-editorLineNumber-activeForeground, #ffffff);
+    --b3-node-id-stroke: #000000;
+    --b3-node-selection-base: var(--vscode-editor-background, #24303d);
+    --b3-node-selection-strength: 58%;
+    --b3-node-focus-ring: rgba(255, 171, 0, 0.22);
+    --b3-node-focus-color: var(--vscode-focusBorder, #ffab00);
+    --b3-node-focus-opacity: 0.45;
+    --b3-node-variable-hover-bg: var(--vscode-list-hoverBackground, rgba(23, 105, 221, 0.08));
+    --b3-node-variable-active-hover-bg: rgba(255, 255, 255, 0.14);
+    --b3-subtree-outline: var(--vscode-panel-border, #a5b1be);
+    --b3-warning-text: var(--vscode-errorForeground, #b42318);
+    --b3-drop-before: var(--vscode-editorWarning-foreground, #faad14);
+    --b3-drop-child: var(--vscode-errorForeground, #ff4d4f);
+    --b3-drag-source: var(--vscode-list-dropBackground, #ffa500);
+    --b3-collapse-bg: var(--vscode-editorWidget-background, #ffffff);
+    --b3-collapse-border: var(--vscode-panel-border, #666666);
+    --b3-collapse-text: var(--vscode-descriptionForeground, #666666);
 }
 
-:root[data-theme="light"] {
-    --b3-text-muted: #6b7280;
-    --b3-filter-hover-bg: #e5e7eb;
-    --b3-filter-selected-bg: #1677ff;
-    --b3-filter-selected-hover-bg: #4096ff;
-    --b3-search-bg: #ffffff;
-    --b3-search-border-accent: #1677ff;
-    --b3-search-shadow: #00000026;
+body[data-theme="light"] {
+    --b3-app-bg: var(--vscode-editor-background, #ffffff);
+    --b3-panel-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #ffffff));
+    --b3-panel-border: var(--vscode-sideBar-border, var(--vscode-panel-border, #d0d7de));
+    --b3-graph-bg: var(--vscode-editor-background, #f6f8fa);
+    --b3-graph-edge: #a3b1bf;
+    --b3-text-muted: var(--vscode-descriptionForeground, #57606a);
+    --b3-filter-hover-bg: var(--vscode-list-hoverBackground, #eaeef2);
+    --b3-filter-selected-bg: var(--vscode-list-activeSelectionBackground, #0969da);
+    --b3-filter-selected-hover-bg: var(
+        --vscode-list-inactiveSelectionBackground,
+        var(--vscode-list-activeSelectionBackground, #1f6feb)
+    );
+    --b3-search-bg: var(
+        --vscode-editorWidget-background,
+        var(--vscode-input-background, #ffffff)
+    );
+    --b3-search-border-accent: var(--vscode-focusBorder, #0969da);
+    --b3-search-shadow: #1f232826;
+    --b3-override-bar: var(--vscode-badge-background, #bc4c00);
+    --b3-node-content-bg: #ffffff;
+    --b3-node-text: #111827;
+    --b3-node-muted: #4b5563;
+    --b3-node-divider: #666666;
+    --b3-node-highlight-bg: var(--vscode-list-activeSelectionBackground, #0969da);
+    --b3-node-highlight-text: var(--vscode-list-activeSelectionForeground, #ffffff);
+    --b3-node-gray-fill: var(
+        --vscode-sideBarSectionHeader-background,
+        var(--vscode-editorWidget-background, #f6f8fa)
+    );
+    --b3-node-gray-border: var(--vscode-panel-border, #d8dee4);
+    --b3-node-gray-rail: var(
+        --vscode-sideBarSectionHeader-background,
+        var(--vscode-sideBar-background, #d8dee4)
+    );
+    --b3-node-gray-text: var(--vscode-disabledForeground, #8c959f);
+    --b3-node-id-text: var(--vscode-editorLineNumber-activeForeground, var(--vscode-foreground, #1f2328));
+    --b3-node-id-stroke: #ffffff;
+    --b3-node-selection-base: var(--vscode-editor-background, #ffffff);
+    --b3-node-selection-strength: 38%;
+    --b3-node-focus-ring: rgba(191, 135, 0, 0.28);
+    --b3-node-focus-color: var(--vscode-focusBorder, #9a6700);
+    --b3-node-focus-opacity: 0.5;
+    --b3-node-variable-hover-bg: var(--vscode-list-hoverBackground, rgba(9, 105, 218, 0.1));
+    --b3-node-variable-active-hover-bg: rgba(255, 255, 255, 0.18);
+    --b3-subtree-outline: var(--vscode-panel-border, #6e7781);
+    --b3-warning-text: var(--vscode-errorForeground, #cf222e);
+    --b3-drop-before: var(--vscode-editorWarning-foreground, #9a6700);
+    --b3-drop-child: var(--vscode-errorForeground, #cf222e);
+    --b3-drag-source: var(--vscode-list-dropBackground, #fb8500);
+    --b3-collapse-bg: var(--vscode-editorWidget-background, #ffffff);
+    --b3-collapse-border: var(--vscode-panel-border, #8c959f);
+    --b3-collapse-text: var(--vscode-descriptionForeground, #57606a);
 }
 
 .b3-v2-shell {
     height: 100%;
-    background: transparent;
+    background: var(--b3-app-bg);
 }
 
 .b3-v2-body {
     min-height: 0;
     flex: 1;
-    background: transparent;
+    background: var(--b3-app-bg);
 }
 
 .b3-v2-content {
     min-height: 0;
     padding: 0;
     overflow: hidden;
-    background: transparent;
+    background: var(--b3-graph-bg);
 }
 
 .b3-v2-sider {
-    border-left: 1px solid var(--ant-color-border-secondary);
+    border-left: 1px solid var(--b3-panel-border);
     overflow: hidden;
-    background: var(--ant-color-bg-container);
+    background: var(--b3-panel-bg);
 }
 
 .b3-v2-inspector {
@@ -63,7 +155,7 @@ body {
 
 .b3-v2-inspector-header {
     padding: 12px;
-    border-bottom: 1px solid var(--ant-color-border-secondary);
+    border-bottom: 1px solid var(--b3-panel-border);
 }
 
 .b3-v2-inspector-banner {
@@ -289,7 +381,7 @@ body {
     width: 6px;
     cursor: pointer;
     border-radius: 2px;
-    background: #d87a16;
+    background: var(--b3-override-bar);
 }
 
 .b3-v2-markdown {
@@ -374,7 +466,7 @@ body {
     min-height: 0;
     cursor: grab;
     user-select: none;
-    background: transparent;
+    background: var(--b3-graph-bg);
 }
 
 .b3-v2-graph.is-panning {
@@ -405,7 +497,7 @@ body {
 
 .b3-v2-graph-edges path {
     fill: none;
-    stroke: color-mix(in srgb, var(--ant-color-border) 82%, #8ea3b7);
+    stroke: var(--b3-graph-edge);
 }
 
 .b3-v2-graph-nodes {
@@ -427,7 +519,7 @@ body {
     top: calc(50% + 2px * var(--b3-v2-node-scale));
     right: calc(100% + 3px * var(--b3-v2-node-scale));
     z-index: 1;
-    color: #fff;
+    color: var(--b3-node-id-text);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: calc(20px * var(--b3-v2-node-scale));
     font-weight: 700;
@@ -437,15 +529,15 @@ body {
     transform: translateY(-50%) scale(calc(1 / var(--b3-v2-node-scale)));
     transform-origin: right center;
     text-shadow:
-        0 0 1px #000,
-        0 1px 0 #000,
-        1px 0 0 #000,
-        -1px 0 0 #000,
-        0 -1px 0 #000;
+        0 0 1px var(--b3-node-id-stroke),
+        0 1px 0 var(--b3-node-id-stroke),
+        1px 0 0 var(--b3-node-id-stroke),
+        -1px 0 0 var(--b3-node-id-stroke),
+        0 -1px 0 var(--b3-node-id-stroke);
 }
 
 .b3-v2-node-floating-id.is-gray {
-    color: #666;
+    color: var(--b3-node-gray-text);
 }
 
 .b3-v2-node {
@@ -504,11 +596,15 @@ body {
 .b3-v2-node.is-selected::before {
     opacity: 1;
     box-shadow: 0 0 0 calc(10px * var(--b3-v2-node-scale))
-        color-mix(in srgb, var(--b3-v2-node-accent) 58%, #24303d);
+        color-mix(
+            in srgb,
+            var(--b3-v2-node-accent) var(--b3-node-selection-strength),
+            var(--b3-node-selection-base)
+        );
 }
 
 .b3-v2-node.is-focused {
-    box-shadow: 0 0 0 calc(3px * var(--b3-v2-node-scale)) rgba(255, 171, 0, 0.22);
+    box-shadow: 0 0 0 calc(3px * var(--b3-v2-node-scale)) var(--b3-node-focus-ring);
 }
 
 .b3-v2-node.is-drag-source {
@@ -516,15 +612,15 @@ body {
 }
 
 .b3-v2-node.is-drop-before {
-    border-color: #faad14;
+    border-color: var(--b3-drop-before);
 }
 
 .b3-v2-node.is-drop-after {
-    border-color: #faad14;
+    border-color: var(--b3-drop-before);
 }
 
 .b3-v2-node.is-drop-child {
-    border-color: #ff4d4f;
+    border-color: var(--b3-drop-child);
 }
 
 .b3-v2-node.is-drop-before::after,
@@ -535,17 +631,17 @@ body {
 
 .b3-v2-node.is-drop-before::after {
     inset: 0 0 50% 0;
-    background: rgba(250, 173, 20, 0.22);
+    background: color-mix(in srgb, var(--b3-drop-before) 22%, transparent);
 }
 
 .b3-v2-node.is-drop-after::after {
     inset: 50% 0 0 0;
-    background: rgba(250, 173, 20, 0.22);
+    background: color-mix(in srgb, var(--b3-drop-before) 22%, transparent);
 }
 
 .b3-v2-node.is-drop-child::after {
     inset: 0 0 0 50%;
-    background: rgba(255, 77, 79, 0.24);
+    background: color-mix(in srgb, var(--b3-drop-child) 24%, transparent);
 }
 
 .b3-v2-node.is-gray {
@@ -588,7 +684,7 @@ body {
     box-sizing: border-box;
     height: 100%;
     min-width: 0;
-    background: #fff;
+    background: var(--b3-node-content-bg);
     border-radius: 0 calc(2px * var(--b3-v2-node-scale)) calc(2px * var(--b3-v2-node-scale)) 0;
     padding: calc(2px * var(--b3-v2-node-scale)) calc(8px * var(--b3-v2-node-scale))
         calc(6px * var(--b3-v2-node-scale)) calc(6px * var(--b3-v2-node-scale));
@@ -604,7 +700,7 @@ body {
 
 .b3-v2-node-title {
     overflow: hidden;
-    color: #111;
+    color: var(--b3-node-text);
     font-size: calc(14px * var(--b3-v2-node-scale));
     font-weight: 700;
     line-height: calc(20px * var(--b3-v2-node-scale));
@@ -639,7 +735,7 @@ body {
 .b3-v2-node-divider {
     height: calc(1px * var(--b3-v2-node-scale));
     margin: 0 0 calc(5px * var(--b3-v2-node-scale));
-    background: #666;
+    background: var(--b3-node-divider);
 }
 
 .b3-v2-node-detail-row {
@@ -649,23 +745,23 @@ body {
     min-width: 0;
     padding: 0;
     margin: 0;
-    color: #111;
+    color: var(--b3-node-text);
     font-size: calc(12px * var(--b3-v2-node-scale));
     line-height: calc(20px * var(--b3-v2-node-scale));
     border-radius: calc(4px * var(--b3-v2-node-scale));
 }
 
 .b3-v2-node-detail-row.is-active {
-    color: #fff;
-    background: #0d1117;
+    color: var(--b3-node-highlight-text);
+    background: var(--b3-node-highlight-bg);
 }
 
 .b3-v2-node-detail-row.is-subtle {
-    color: #4b5563;
+    color: var(--b3-node-muted);
 }
 
 .b3-v2-node-detail-row.is-warning {
-    color: #b42318;
+    color: var(--b3-warning-text);
 }
 
 .b3-v2-node-detail-row.is-mark {
@@ -703,11 +799,11 @@ body {
 }
 
 .b3-v2-node-detail-row.is-subtle .b3-v2-node-detail-label {
-    color: #4b5563;
+    color: var(--b3-node-muted);
 }
 
 .b3-v2-node-detail-row.is-warning .b3-v2-node-detail-label {
-    color: #b42318;
+    color: var(--b3-warning-text);
 }
 
 .b3-v2-node-variable-button {
@@ -725,7 +821,7 @@ body {
 
 .b3-v2-node-variable-button:hover {
     color: inherit;
-    background: rgba(23, 105, 221, 0.08);
+    background: var(--b3-node-variable-hover-bg);
 }
 
 .b3-v2-node-variable-button.is-active {
@@ -734,7 +830,7 @@ body {
 }
 
 .b3-v2-node-detail-row.is-active .b3-v2-node-variable-button:hover {
-    background: rgba(255, 255, 255, 0.14);
+    background: var(--b3-node-variable-active-hover-bg);
 }
 
 .b3-v2-node-json-punctuation {

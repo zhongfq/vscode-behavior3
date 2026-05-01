@@ -90,6 +90,59 @@ const ROW_HEIGHT = 20;
 const LEFT_RAIL_WIDTH = 40;
 const RADIUS = 4;
 
+const readThemeCssVariable = (name: string, fallback: string): string => {
+    if (typeof document === "undefined") {
+        return fallback;
+    }
+
+    for (const element of [document.body, document.documentElement]) {
+        if (!element) {
+            continue;
+        }
+
+        const value = getComputedStyle(element).getPropertyValue(name).trim();
+        if (value) {
+            return value;
+        }
+    }
+
+    return fallback;
+};
+
+const readThemeCssNumber = (name: string, fallback: number): number => {
+    const rawValue = readThemeCssVariable(name, `${fallback}`);
+    const value = Number(rawValue);
+    return Number.isFinite(value) ? value : fallback;
+};
+
+export const getGraphThemeColor = (name: string, fallback: string): string =>
+    readThemeCssVariable(name, fallback);
+
+const getVectorTreeNodePalette = () => ({
+    collapseBg: readThemeCssVariable("--b3-collapse-bg", "#ffffff"),
+    collapseBorder: readThemeCssVariable("--b3-collapse-border", "#666666"),
+    collapseText: readThemeCssVariable("--b3-collapse-text", "#666666"),
+    divider: readThemeCssVariable("--b3-node-divider", "#666666"),
+    dragSource: readThemeCssVariable("--b3-drag-source", "#ffa500"),
+    dropChild: readThemeCssVariable("--b3-drop-child", "#ff4d4f"),
+    focusColor: readThemeCssVariable("--b3-node-focus-color", "#ffab00"),
+    focusOpacity: readThemeCssNumber("--b3-node-focus-opacity", 0.45),
+    grayBorder: readThemeCssVariable("--b3-node-gray-border", "#30363d"),
+    grayFill: readThemeCssVariable("--b3-node-gray-fill", "#0d1117"),
+    grayRail: readThemeCssVariable("--b3-node-gray-rail", "#30363d"),
+    grayText: readThemeCssVariable("--b3-node-gray-text", "#666666"),
+    highlightBg: readThemeCssVariable("--b3-node-highlight-bg", "#0d1117"),
+    highlightText: readThemeCssVariable("--b3-node-highlight-text", "#ffffff"),
+    idStroke: readThemeCssVariable("--b3-node-id-stroke", "#000000"),
+    idText: readThemeCssVariable("--b3-node-id-text", "#ffffff"),
+    nodeBg: readThemeCssVariable("--b3-node-content-bg", "#ffffff"),
+    nodeText: readThemeCssVariable("--b3-node-text", "#111827"),
+    subtreeOutline: readThemeCssVariable("--b3-subtree-outline", "#a5b1be"),
+    warningText: readThemeCssVariable("--b3-warning-text", "#b42318"),
+});
+
+type VectorTreeNodePalette = ReturnType<typeof getVectorTreeNodePalette>;
+
 const accentColorMap: Record<GraphNodeVM["nodeStyleKind"], string> = {
     Action: "#1769dd",
     Composite: "#34d800",
@@ -273,56 +326,62 @@ export const measureVectorTreeNode = (node: GraphNodeVM) => {
     };
 };
 
-export const VectorTreeNodeStyle: {
+export type VectorTreeNodeStateStyleMap = {
     [s in VectorTreeNodeState]?: { [n in ShapeName]?: NodeStyle };
-} = {
-    dragsrc: {
-        "drag-src": { visibility: "visible" },
-    },
-    dragup: {
-        "drag-up": { visibility: "visible" },
-    },
-    dragdown: {
-        "drag-down": { visibility: "visible" },
-    },
-    dragright: {
-        "drag-right": { visibility: "visible" },
-    },
-    focused: {
-        "focus-halo": { visibility: "visible" },
-    },
-    highlightargs: {
-        "args-bg": { visibility: "visible" },
-        "args-text": { fill: "white" },
-    },
-    highlightinput: {
-        "input-bg": { visibility: "visible" },
-        "input-text": { fill: "white" },
-    },
-    highlightoutput: {
-        "output-bg": { visibility: "visible" },
-        "output-text": { fill: "white" },
-    },
-    highlightgray: {
-        collapse: { opacity: 0.45 },
-        "desc-text": { fill: "#666" },
-        disabled: { opacity: 0.45 },
-        icon: { opacity: 0.45 },
-        "id-text": { fill: "#666" },
-        "input-text": { fill: "#666" },
-        "key-shape": { fill: "#0d1117", stroke: "#30363d" },
-        "name-bg": { fill: "#30363d" },
-        "name-line": { stroke: "#666" },
-        "name-text": { fill: "#666" },
-        "output-text": { fill: "#666" },
-        "path-text": { fill: "#666" },
-        status: { opacity: 0.45 },
-        "warn-text": { fill: "#666" },
-        "args-text": { fill: "#666" },
-    },
-    selected: {
-        "selection-halo": { visibility: "visible" },
-    },
+};
+
+export const getVectorTreeNodeStateStyle = (): VectorTreeNodeStateStyleMap => {
+    const palette = getVectorTreeNodePalette();
+
+    return {
+        dragsrc: {
+            "drag-src": { visibility: "visible" },
+        },
+        dragup: {
+            "drag-up": { visibility: "visible" },
+        },
+        dragdown: {
+            "drag-down": { visibility: "visible" },
+        },
+        dragright: {
+            "drag-right": { visibility: "visible" },
+        },
+        focused: {
+            "focus-halo": { visibility: "visible" },
+        },
+        highlightargs: {
+            "args-bg": { visibility: "visible" },
+            "args-text": { fill: palette.highlightText },
+        },
+        highlightinput: {
+            "input-bg": { visibility: "visible" },
+            "input-text": { fill: palette.highlightText },
+        },
+        highlightoutput: {
+            "output-bg": { visibility: "visible" },
+            "output-text": { fill: palette.highlightText },
+        },
+        highlightgray: {
+            collapse: { opacity: 0.45 },
+            "desc-text": { fill: palette.grayText },
+            disabled: { opacity: 0.45 },
+            icon: { opacity: 0.45 },
+            "id-text": { fill: palette.grayText, stroke: palette.idStroke },
+            "input-text": { fill: palette.grayText },
+            "key-shape": { fill: palette.grayFill, stroke: palette.grayBorder },
+            "name-bg": { fill: palette.grayRail },
+            "name-line": { stroke: palette.divider },
+            "name-text": { fill: palette.grayText },
+            "output-text": { fill: palette.grayText },
+            "path-text": { fill: palette.grayText },
+            status: { opacity: 0.45 },
+            "warn-text": { fill: palette.grayText },
+            "args-text": { fill: palette.grayText },
+        },
+        selected: {
+            "selection-halo": { visibility: "visible" },
+        },
+    };
 };
 
 class VectorTreeNode extends Rect {
@@ -333,6 +392,7 @@ class VectorTreeNode extends Rect {
     private accent = accentColorMap.Other;
     private contentY = CONTENT_Y;
     private states: VectorTreeNodeState[] = [];
+    private palette: VectorTreeNodePalette = getVectorTreeNodePalette();
 
     protected override getKeyStyle(attributes: Required<RectStyleProps>) {
         const style = super.getKeyStyle(attributes);
@@ -384,9 +444,9 @@ class VectorTreeNode extends Rect {
                 height: this.height + 16,
                 lineWidth: 4,
                 radius: this.radius + 8,
-                stroke: "#ffab00",
-                strokeOpacity: 0.45,
-                fill: "#ffab00",
+                stroke: this.palette.focusColor,
+                strokeOpacity: this.palette.focusOpacity,
+                fill: this.palette.focusColor,
                 fillOpacity: 0,
                 visibility: "hidden",
             },
@@ -426,7 +486,7 @@ class VectorTreeNode extends Rect {
                     ["M", 46, 23],
                     ["L", this.width - 40, 23],
                 ],
-                stroke: "#666",
+                stroke: this.palette.divider,
                 lineWidth: 1,
             },
             container
@@ -438,11 +498,11 @@ class VectorTreeNode extends Rect {
             "id-text",
             GText,
             {
-                fill: "white",
+                fill: this.palette.idText,
                 fontSize: 20,
                 lineHeight: 20,
                 lineWidth: 2,
-                stroke: "black",
+                stroke: this.palette.idStroke,
                 text: this.node.renderedIdLabel,
                 textAlign: "right",
                 textBaseline: "top",
@@ -507,7 +567,7 @@ class VectorTreeNode extends Rect {
             "name-text",
             GText,
             {
-                fill: "black",
+                fill: this.palette.nodeText,
                 fontSize: 14,
                 fontWeight: "bolder",
                 text: this.node.title,
@@ -528,7 +588,7 @@ class VectorTreeNode extends Rect {
             "desc-text",
             GText,
             {
-                fill: "black",
+                fill: this.palette.nodeText,
                 fontSize: 12,
                 fontWeight: "bolder",
                 lineHeight: ROW_HEIGHT,
@@ -555,7 +615,7 @@ class VectorTreeNode extends Rect {
                 y: this.contentY + 21,
                 width: CONTENT_WIDTH - 6,
                 height: 18,
-                fill: "#0d1117",
+                fill: this.palette.highlightBg,
                 radius: this.radius,
                 visibility: "hidden",
             },
@@ -566,7 +626,7 @@ class VectorTreeNode extends Rect {
             "args-text",
             GText,
             {
-                fill: "black",
+                fill: this.palette.nodeText,
                 fontSize: 12,
                 fontWeight: "normal",
                 lineHeight: ROW_HEIGHT,
@@ -589,7 +649,7 @@ class VectorTreeNode extends Rect {
             "input-bg",
             GRect,
             {
-                fill: "#0d1117",
+                fill: this.palette.highlightBg,
                 height: 18,
                 radius: this.radius,
                 visibility: "hidden",
@@ -604,7 +664,7 @@ class VectorTreeNode extends Rect {
             "input-text",
             GText,
             {
-                fill: "black",
+                fill: this.palette.nodeText,
                 fontSize: 12,
                 fontWeight: "normal",
                 lineHeight: ROW_HEIGHT,
@@ -627,7 +687,7 @@ class VectorTreeNode extends Rect {
             "output-bg",
             GRect,
             {
-                fill: "#0d1117",
+                fill: this.palette.highlightBg,
                 height: 18,
                 radius: this.radius,
                 visibility: "hidden",
@@ -642,7 +702,7 @@ class VectorTreeNode extends Rect {
             "output-text",
             GText,
             {
-                fill: "black",
+                fill: this.palette.nodeText,
                 fontSize: 12,
                 fontWeight: "normal",
                 lineHeight: ROW_HEIGHT,
@@ -672,7 +732,7 @@ class VectorTreeNode extends Rect {
                 y: -10,
                 width: this.width + 20,
                 height: this.height + 20,
-                stroke: "#a5b1be",
+                stroke: this.palette.subtreeOutline,
                 lineWidth: 2.5,
                 lineDash: [6, 6],
                 radius: this.radius,
@@ -685,7 +745,7 @@ class VectorTreeNode extends Rect {
             "path-text",
             GText,
             {
-                fill: "black",
+                fill: this.palette.nodeText,
                 fontSize: 12,
                 lineHeight: ROW_HEIGHT,
                 text,
@@ -705,13 +765,13 @@ class VectorTreeNode extends Rect {
             "collapse",
             Badge,
             {
-                backgroundFill: "#fff",
+                backgroundFill: this.palette.collapseBg,
                 backgroundHeight: 14,
                 backgroundLineWidth: 1,
                 backgroundRadius: 7,
-                backgroundStroke: "#666",
+                backgroundStroke: this.palette.collapseBorder,
                 backgroundWidth: 14,
-                fill: "#666",
+                fill: this.palette.collapseText,
                 fontSize: 16,
                 opacity: 1,
                 text: "-",
@@ -734,7 +794,7 @@ class VectorTreeNode extends Rect {
             "warn-text",
             GText,
             {
-                fill: "#b42318",
+                fill: this.palette.warningText,
                 fontSize: 12,
                 fontWeight: "normal",
                 lineHeight: ROW_HEIGHT,
@@ -759,7 +819,7 @@ class VectorTreeNode extends Rect {
                 height: this.height,
                 lineWidth: 0,
                 fillOpacity: 0.8,
-                fill: "orange",
+                fill: this.palette.dragSource,
                 radius: this.radius,
                 visibility: "hidden",
             },
@@ -773,9 +833,9 @@ class VectorTreeNode extends Rect {
                 width: this.width,
                 height: this.height / 2,
                 lineWidth: 2,
-                stroke: "#ff0000",
+                stroke: this.palette.dropChild,
                 strokeOpacity: 0.8,
-                fill: "#ff0000",
+                fill: this.palette.dropChild,
                 fillOpacity: 0.8,
                 radius: [this.radius, this.radius, 0, 0],
                 visibility: "hidden",
@@ -791,9 +851,9 @@ class VectorTreeNode extends Rect {
                 width: this.width,
                 height: this.height / 2,
                 lineWidth: 2,
-                stroke: "#ff0000",
+                stroke: this.palette.dropChild,
                 strokeOpacity: 0.8,
-                fill: "#ff0000",
+                fill: this.palette.dropChild,
                 fillOpacity: 0.8,
                 radius: [0, 0, this.radius, this.radius],
                 visibility: "hidden",
@@ -809,9 +869,9 @@ class VectorTreeNode extends Rect {
                 width: this.width / 2,
                 height: this.height,
                 lineWidth: 2,
-                stroke: "#ff0000",
+                stroke: this.palette.dropChild,
                 strokeOpacity: 0.8,
-                fill: "#ff0000",
+                fill: this.palette.dropChild,
                 fillOpacity: 0.8,
                 radius: [0, this.radius, this.radius, 0],
                 visibility: "hidden",
@@ -825,6 +885,7 @@ class VectorTreeNode extends Rect {
         const data = node.data as unknown as VectorTreeNodeDatum;
 
         this.node = data.vm;
+        this.palette = getVectorTreeNodePalette();
         this.width = data.width;
         this.height = data.height;
         this.accent =
@@ -839,7 +900,7 @@ class VectorTreeNode extends Rect {
             return;
         }
 
-        attributes.fill = "white";
+        attributes.fill = this.palette.nodeBg;
         attributes.stroke = this.accent;
 
         this.drawSelectionHalo(container);
@@ -887,7 +948,7 @@ class VectorTreeNode extends Rect {
 
     private resetStyle() {
         const style = this.context.graph.getOptions().node?.state as
-            | typeof VectorTreeNodeStyle
+            | VectorTreeNodeStateStyleMap
             | undefined;
         if (!style) {
             return;

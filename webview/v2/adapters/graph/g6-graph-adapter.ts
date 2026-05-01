@@ -26,11 +26,12 @@ import {
     G6_VECTOR_NODE_V_GAP,
     G6_VECTOR_NODE_WIDTH,
     G6_VECTOR_TREE_NODE_TYPE,
+    getGraphThemeColor,
+    getVectorTreeNodeStateStyle,
     type VectorTreeNodeDatum,
     type VectorTreeNodeState,
     measureVectorTreeNode,
     registerVectorTreeNode,
-    VectorTreeNodeStyle,
 } from "./g6-vector-tree-node";
 
 const DEFAULT_VIEWPORT: GraphViewport = { zoom: 1, x: 0, y: 0 };
@@ -38,6 +39,22 @@ const DEFAULT_PORTS = [
     { key: "right", placement: "right" as const },
     { key: "left", placement: "left" as const },
 ];
+
+const createNodeOptions = () => ({
+    type: G6_VECTOR_TREE_NODE_TYPE,
+    style: {
+        ports: DEFAULT_PORTS,
+    },
+    state: getVectorTreeNodeStateStyle() as any,
+});
+
+const createEdgeOptions = () => ({
+    type: "cubic-horizontal",
+    style: {
+        lineWidth: 2,
+        stroke: getGraphThemeColor("--b3-graph-edge", "#A3B1BF"),
+    },
+});
 
 type DragIntentState = {
     sourceKey: string | null;
@@ -67,6 +84,20 @@ const toDragState = (position: DropIntent["position"] | null): VectorTreeNodeSta
         return "dragright";
     }
     return null;
+};
+
+const getLayoutOrder = (node: G6NodeData): number => {
+    const displayId = (node.data as VectorTreeNodeDatum | undefined)?.vm?.ref.displayId;
+    const order = Number(displayId ?? node.id);
+    return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
+};
+
+const compareLayoutOrder = (nodeA: G6NodeData, nodeB: G6NodeData): number => {
+    const diff = getLayoutOrder(nodeA) - getLayoutOrder(nodeB);
+    if (diff !== 0) {
+        return diff;
+    }
+    return String(nodeA.id).localeCompare(String(nodeB.id));
 };
 
 const getEventTargetId = (event: G6Event): string | null => {
@@ -109,6 +140,15 @@ export class G6GraphAdapter implements GraphAdapter {
         position: null,
     };
     private suppressTransformSync = false;
+
+    private syncThemeOptions() {
+        if (!this.graph) {
+            return;
+        }
+
+        this.graph.setNode(createNodeOptions() as any);
+        this.graph.setEdge(createEdgeOptions() as any);
+    }
 
     private readonly handleGraphTransform = () => {
         if (this.suppressTransformSync || !this.graph) {
@@ -294,6 +334,7 @@ export class G6GraphAdapter implements GraphAdapter {
         }
 
         const viewport = this.captureViewportFromGraph();
+        await this.graph.clear();
         this.graph.setData(data);
         await this.rerenderWithStableViewport(viewport);
         if (isDefaultViewport(this.viewport)) {
@@ -547,23 +588,12 @@ export class G6GraphAdapter implements GraphAdapter {
             animation: false,
             zoomRange: [0.25, 2],
             behaviors: ["drag-canvas", "zoom-canvas"],
-            node: {
-                type: G6_VECTOR_TREE_NODE_TYPE,
-                style: {
-                    ports: DEFAULT_PORTS,
-                },
-                state: VectorTreeNodeStyle as any,
-            },
-            edge: {
-                type: "cubic-horizontal",
-                style: {
-                    lineWidth: 2,
-                    stroke: "#A3B1BF",
-                },
-            },
+            node: createNodeOptions(),
+            edge: createEdgeOptions(),
             layout: {
                 type: "compact-box",
                 direction: "LR",
+                sortBy: compareLayoutOrder,
                 getHeight: (datum: G6NodeData) =>
                     Number(
                         (datum.data as { height?: number } | undefined)?.height ??
@@ -621,6 +651,7 @@ export class G6GraphAdapter implements GraphAdapter {
     async render(model: ResolvedGraphModel): Promise<void> {
         this.model = model;
         this.clearDragIntent();
+        this.syncThemeOptions();
         await this.renderGraphData();
     }
 

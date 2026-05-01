@@ -15,6 +15,7 @@ export const createWorkspaceStore = (): StoreApi<WorkspaceState> => {
             language: "zh",
             theme: detectInitialThemeMode(),
         },
+        themeVersion: 0,
         usingVars: null,
         usingGroups: null,
         importDecls: [],

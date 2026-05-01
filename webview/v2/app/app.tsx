@@ -35,18 +35,15 @@ const AppShell: React.FC = () => {
                 return;
             }
             if (message.type === "themeChanged") {
-                runtime.workspaceStore.setState((state) => {
-                    if (state.settings.theme === message.theme) {
-                        return state;
-                    }
-                    return {
-                        ...state,
-                        settings: {
-                            ...state.settings,
-                            theme: message.theme,
-                        },
-                    };
-                });
+                runtime.workspaceStore.setState((state) => ({
+                    ...state,
+                    settings: {
+                        ...state.settings,
+                        theme: message.theme,
+                    },
+                    themeVersion: state.themeVersion + 1,
+                }));
+                void runtime.controller.refreshGraph({ preserveSelection: true });
                 return;
             }
             if (message.type === "settingLoaded") {
@@ -130,9 +127,10 @@ const AppShell: React.FC = () => {
 export const App: React.FC = () => {
     const theme = useWorkspaceStore((state) => state.settings.theme);
     const language = useWorkspaceStore((state) => state.settings.language);
+    const themeVersion = useWorkspaceStore((state) => state.themeVersion);
 
     return (
-        <ConfigProvider locale={getAntdLocale(language)} theme={getThemeConfig(theme)}>
+        <ConfigProvider locale={getAntdLocale(language)} theme={getThemeConfig(theme, themeVersion)}>
             <AntdApp style={{ height: "100%" }}>
                 <GlobalHooksBridge />
                 <AppShell />

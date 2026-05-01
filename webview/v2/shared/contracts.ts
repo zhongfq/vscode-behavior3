@@ -102,6 +102,7 @@ export interface WorkspaceState {
     groupDefs: string[];
     allFiles: WorkdirRelativeJsonPath[];
     settings: Settings;
+    themeVersion: number;
     usingVars: Record<string, VarDecl> | null;
     usingGroups: Record<string, boolean> | null;
     importDecls: ImportDecl[];
