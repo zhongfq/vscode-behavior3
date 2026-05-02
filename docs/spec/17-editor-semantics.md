@@ -107,6 +107,14 @@ G6 只翻译事件，不拥有业务规则。
 - 只在现有结果内循环切换
 - 切换后更新选中节点并聚焦目标
 
+### 视口稳定性
+
+- 非导航型交互应尽量保持当前视口
+  例如字段提交、selection 变化、变量高亮、宿主 vars/import/subtree decl 回流
+- full render 与 graph 容器 resize 后都应恢复原视口
+- 显式导航型交互允许移动视口
+  例如搜索结果聚焦、用户拖动画布、用户缩放画布
+
 ## Host 驱动命令
 
 ### `initFromHost(payload)`

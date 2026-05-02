@@ -121,6 +121,7 @@ export class G6GraphAdapter implements GraphAdapter {
     private handlers: GraphEventHandlers | null = null;
     private graph: G6Graph | null = null;
     private resizeObserver: ResizeObserver | null = null;
+    private resizeRestoreFrame: number | null = null;
     private model: ResolvedGraphModel | null = null;
     private selection: GraphSelectionState = { selectedNodeKey: null };
     private highlights: GraphHighlightState = { activeVariableNames: [], variableHits: {} };
@@ -158,20 +159,47 @@ export class G6GraphAdapter implements GraphAdapter {
     };
 
     private isGraphRendered() {
-        return Boolean((this.graph as (G6Graph & { rendered?: boolean }) | null)?.rendered);
+        const graph = this.graph as unknown as
+            | { rendered?: boolean; destroyed?: boolean }
+            | null;
+        return Boolean(graph?.rendered && !graph?.destroyed);
     }
 
-    private captureViewportFromGraph(): GraphViewport | null {
-        if (!this.graph || !this.isGraphRendered()) {
+    private readViewportFromGraph(): GraphViewport | null {
+        const graph = this.graph as unknown as
+            | {
+                  rendered?: boolean;
+                  destroyed?: boolean;
+                  context?: { viewport?: unknown };
+                  getPosition?: () => [number, number];
+                  getZoom?: () => number;
+              }
+            | null;
+
+        if (
+            !graph?.rendered ||
+            graph.destroyed ||
+            !graph.context?.viewport ||
+            !graph.getPosition ||
+            !graph.getZoom
+        ) {
             return null;
         }
 
-        const [x, y] = this.graph.getPosition();
-        return {
-            zoom: this.graph.getZoom(),
-            x,
-            y,
-        };
+        try {
+            const [x, y] = graph.getPosition();
+            const zoom = graph.getZoom();
+            if (![x, y, zoom].every((value) => Number.isFinite(value))) {
+                return null;
+            }
+            return { zoom, x, y };
+        } catch {
+            return null;
+        }
+    }
+
+    private captureViewportFromGraph(): GraphViewport | null {
+        return this.readViewportFromGraph();
     }
 
     private getNodeVM(nodeKey: string): GraphNodeVM | null {
@@ -309,9 +337,7 @@ export class G6GraphAdapter implements GraphAdapter {
             await this.graph.zoomTo(1, false);
             await this.graph.translateTo([0, 0], false);
             await this.graph.render();
-            await this.graph.translateTo([viewport.x, viewport.y], false);
-            await this.graph.zoomTo(viewport.zoom, false);
-            this.viewport = { ...viewport };
+            await this.applyViewportSnapshot(viewport);
         } finally {
             this.suppressTransformSync = false;
         }
@@ -321,6 +347,8 @@ export class G6GraphAdapter implements GraphAdapter {
         if (!this.graph) {
             return;
         }
+
+        this.cancelPendingResizeRestore();
 
         if (!this.model || this.model.nodes.length === 0) {
             await this.graph.clear();
@@ -343,6 +371,17 @@ export class G6GraphAdapter implements GraphAdapter {
         this.refreshNodeStates();
     }
 
+    private async applyViewportSnapshot(viewport: GraphViewport): Promise<void> {
+        if (!this.graph || !this.isGraphRendered()) {
+            this.viewport = { ...viewport };
+            return;
+        }
+
+        await this.graph.zoomTo(viewport.zoom, false);
+        await this.graph.translateTo([viewport.x, viewport.y], false);
+        this.viewport = { ...viewport };
+    }
+
     private async applyViewport(viewport: GraphViewport): Promise<void> {
         if (!this.graph) {
             return;
@@ -355,25 +394,33 @@ export class G6GraphAdapter implements GraphAdapter {
 
         this.suppressTransformSync = true;
         try {
-            await this.graph.zoomTo(viewport.zoom, false);
-            await this.graph.translateTo([viewport.x, viewport.y], false);
-            this.viewport = { ...viewport };
+            await this.applyViewportSnapshot(viewport);
         } finally {
             this.suppressTransformSync = false;
         }
     }
 
-    private syncViewportFromGraph() {
-        if (!this.graph) {
+    private scheduleResizeViewportRestore(viewport: GraphViewport) {
+        this.cancelPendingResizeRestore();
+        this.resizeRestoreFrame = window.requestAnimationFrame(() => {
+            this.resizeRestoreFrame = null;
+            void this.applyViewport(viewport);
+        });
+    }
+
+    private cancelPendingResizeRestore() {
+        if (this.resizeRestoreFrame == null) {
             return;
         }
+        window.cancelAnimationFrame(this.resizeRestoreFrame);
+        this.resizeRestoreFrame = null;
+    }
 
-        const [x, y] = this.graph.getPosition();
-        this.viewport = {
-            zoom: this.graph.getZoom(),
-            x,
-            y,
-        };
+    private syncViewportFromGraph() {
+        const viewport = this.readViewportFromGraph();
+        if (viewport) {
+            this.viewport = viewport;
+        }
     }
 
     private updateDragIntent(targetKey: string | null, position: DropIntent["position"] | null) {
@@ -629,9 +676,12 @@ export class G6GraphAdapter implements GraphAdapter {
                 return;
             }
 
+            const viewport = this.captureViewportFromGraph() ?? this.viewport;
             const width = Math.max(1, Math.round(entry.contentRect.width));
             const height = Math.max(1, Math.round(entry.contentRect.height));
             this.graph.resize(width, height);
+            this.viewport = { ...viewport };
+            this.scheduleResizeViewportRestore(viewport);
         });
         this.resizeObserver.observe(container);
 
@@ -639,6 +689,7 @@ export class G6GraphAdapter implements GraphAdapter {
     }
 
     unmount(): void {
+        this.cancelPendingResizeRestore();
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
         this.graph?.destroy();

@@ -43,7 +43,11 @@ import {
     computeVariableHighlights,
 } from "../domain/graph-selectors";
 import { resolveDocumentGraph } from "../domain/resolve-graph";
-import { markDocumentSaved, showDocumentReloadConflict } from "../stores/document-store";
+import {
+    clearDocumentReloadConflict,
+    markDocumentSaved,
+    showDocumentReloadConflict,
+} from "../stores/document-store";
 import { patchSelectionSearchState } from "../stores/selection-store";
 
 interface ControllerDeps {
@@ -658,6 +662,23 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         return tree ? serializePersistedTree(tree) : null;
     };
 
+    const normalizeHostDocumentSnapshot = (content: string): string | null => {
+        const filePath = deps.workspaceStore.getState().filePath || undefined;
+        try {
+            return serializePersistedTree(parsePersistedTreeContent(content, filePath));
+        } catch {
+            return null;
+        }
+    };
+
+    const matchesCurrentDocumentSnapshot = (content: string): boolean => {
+        const currentSnapshot = getSerializedCurrentTree();
+        if (!currentSnapshot) {
+            return false;
+        }
+        return normalizeHostDocumentSnapshot(content) === currentSnapshot;
+    };
+
     const pushCurrentHistorySnapshot = () => {
         const snapshot = getSerializedCurrentTree();
         if (snapshot) {
@@ -761,6 +782,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         },
 
         async reloadDocumentFromHost(content: string, opts?: { force?: boolean }) {
+            if (matchesCurrentDocumentSnapshot(content)) {
+                clearDocumentReloadConflict(deps.documentStore);
+                return;
+            }
+
             if (deps.documentStore.getState().dirty && !opts?.force) {
                 showDocumentReloadConflict(deps.documentStore, content);
                 return;
@@ -768,6 +794,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
 
             const filePath = deps.workspaceStore.getState().filePath || undefined;
             const tree = parsePersistedTreeContent(content, filePath);
+            clearDocumentReloadConflict(deps.documentStore);
             await applyDocumentTree(tree, {
                 savedSnapshot: null,
                 preserveSelection: true,
