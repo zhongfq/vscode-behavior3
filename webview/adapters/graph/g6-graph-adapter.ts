@@ -198,10 +198,6 @@ export class G6GraphAdapter implements GraphAdapter {
         }
     }
 
-    private captureViewportFromGraph(): GraphViewport | null {
-        return this.readViewportFromGraph();
-    }
-
     private getNodeVM(nodeKey: string): GraphNodeVM | null {
         return this.model?.nodes.find((node) => node.ref.instanceKey === nodeKey) ?? null;
     }
@@ -361,7 +357,9 @@ export class G6GraphAdapter implements GraphAdapter {
             return;
         }
 
-        const viewport = this.captureViewportFromGraph();
+        // Preserve the last requested viewport exactly as-is. Reading it back from G6 on every
+        // rerender can accumulate tiny coordinate errors and cause the canvas to drift.
+        const viewport = { ...this.viewport };
         await this.graph.clear();
         this.graph.setData(data);
         await this.rerenderWithStableViewport(viewport);
@@ -676,7 +674,7 @@ export class G6GraphAdapter implements GraphAdapter {
                 return;
             }
 
-            const viewport = this.captureViewportFromGraph() ?? this.viewport;
+            const viewport = { ...this.viewport };
             const width = Math.max(1, Math.round(entry.contentRect.width));
             const height = Math.max(1, Math.round(entry.contentRect.height));
             this.graph.resize(width, height);

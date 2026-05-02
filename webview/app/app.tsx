@@ -48,6 +48,12 @@ const AppShell: React.FC = () => {
                     void runtime.controller.reloadDocumentFromHost(hostEvent.content);
                     return;
 
+                case "documentReloaded":
+                    void runtime.controller.reloadDocumentFromHost(hostEvent.content, {
+                        force: true,
+                    });
+                    return;
+
                 case "themeChanged":
                     applyThemeChange(hostEvent.theme);
                     void runtime.controller.refreshGraph({ preserveSelection: true });

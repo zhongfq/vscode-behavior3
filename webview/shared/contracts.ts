@@ -182,9 +182,15 @@ export interface SaveDocumentResponse {
     error?: string;
 }
 
+export interface RevertDocumentResponse {
+    success: boolean;
+    error?: string;
+}
+
 export type HostEvent =
     | { type: "init"; payload: HostInitPayload }
     | { type: "fileChanged"; content: string }
+    | { type: "documentReloaded"; content: string }
     | { type: "themeChanged"; theme: Settings["theme"] }
     | { type: "subtreeFileChanged" }
     | { type: "settingLoaded"; nodeDefs: NodeDef[]; settings?: Partial<Settings> }
@@ -329,6 +335,7 @@ export interface HostAdapter {
     sendRequestSetting(): void;
     sendBuild(): void;
     saveDocument(content: string): Promise<SaveDocumentResponse>;
+    revertDocument(): Promise<RevertDocumentResponse>;
     readFile(
         path: WorkdirRelativeJsonPath,
         opts?: { openIfSubtree?: boolean }
@@ -366,6 +373,7 @@ export interface EditorCommand {
     redo(): Promise<void>;
     refreshGraph(opts?: { preserveSelection?: boolean }): Promise<void>;
     saveDocument(): Promise<void>;
+    revertDocument(): Promise<void>;
     buildDocument(): Promise<void>;
     openSelectedSubtree(): Promise<void>;
     saveSelectedAsSubtree(): Promise<void>;

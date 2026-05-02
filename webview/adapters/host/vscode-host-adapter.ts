@@ -10,6 +10,7 @@ import type {
     HostEvent,
     PersistedTreeModel,
     ReadFileResponse,
+    RevertDocumentResponse,
     SaveDocumentResponse,
     SaveSubtreeAsResponse,
     SaveSubtreeResponse,
@@ -34,6 +35,7 @@ interface PendingRequestMap {
     saveSubtree: SaveSubtreeResponse;
     saveSubtreeAs: SaveSubtreeAsResponse;
     saveDocument: SaveDocumentResponse;
+    revertDocument: RevertDocumentResponse;
 }
 
 type PendingRequestType = keyof PendingRequestMap;
@@ -148,6 +150,13 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
                         });
                         return;
 
+                    case "revertDocumentResult":
+                        resolvePendingRequest(message.requestId, "revertDocument", {
+                            success: message.success,
+                            error: message.error,
+                        });
+                        return;
+
                     case "init":
                         onMessage({ type: "init", payload: normalizeHostInitMessage(message) });
                         return;
@@ -161,6 +170,10 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
 
                     case "fileChanged":
                         onMessage({ type: "fileChanged", content: message.content });
+                        return;
+
+                    case "documentReloaded":
+                        onMessage({ type: "documentReloaded", content: message.content });
                         return;
 
                     case "themeChanged":
@@ -221,6 +234,13 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
             return new Promise<SaveDocumentResponse>((resolve) => {
                 const requestId = registerPendingRequest("saveDocument", resolve);
                 postMessage({ type: "saveDocument", requestId, content });
+            });
+        },
+
+        revertDocument() {
+            return new Promise<RevertDocumentResponse>((resolve) => {
+                const requestId = registerPendingRequest("revertDocument", resolve);
+                postMessage({ type: "revertDocument", requestId });
             });
         },
 

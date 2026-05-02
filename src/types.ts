@@ -12,6 +12,7 @@ export type EditorToHostMessage =
     | { type: "ready" }
     | { type: "update"; content: string }
     | { type: "saveDocument"; requestId: string; content: string }
+    | { type: "revertDocument"; requestId: string }
     | { type: "treeSelected"; tree: unknown }
     | { type: "requestSetting" }
     | { type: "build" }
@@ -39,6 +40,7 @@ export type HostToEditorMessage =
           nodeColors?: Record<string, string>;
       }
     | { type: "fileChanged"; content: string }
+    | { type: "documentReloaded"; content: string }
     /** A referenced subtree file was saved or edited; parent canvas should reload subtree data. */
     | { type: "subtreeFileChanged" }
     | {
@@ -67,6 +69,12 @@ export type HostToEditorMessage =
       }
     | {
           type: "saveDocumentResult";
+          requestId: string;
+          success: boolean;
+          error?: string;
+      }
+    | {
+          type: "revertDocumentResult";
           requestId: string;
           success: boolean;
           error?: string;

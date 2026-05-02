@@ -87,14 +87,7 @@ export const InspectorPane: React.FC = () => {
             {alertReload ? (
                 <InspectorReloadBanner
                     pendingExternalContent={pendingExternalContent}
-                    onReload={() => {
-                        if (!pendingExternalContent) {
-                            return;
-                        }
-                        void runtime.controller.reloadDocumentFromHost(pendingExternalContent, {
-                            force: true,
-                        });
-                    }}
+                    onReload={() => void runtime.controller.revertDocument()}
                     onDismiss={() => {
                         clearDocumentReloadConflict(runtime.documentStore);
                     }}

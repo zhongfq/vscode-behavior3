@@ -14,6 +14,7 @@ import {
 import type { EditorToHostMessage, HostToEditorMessage, NodeDef } from "./types";
 import { VERSION } from "../webview/shared/misc/b3type";
 import { stringifyJson } from "../webview/shared/misc/stringify";
+import { basenameWithoutExt, readTree, writeTree } from "../webview/shared/misc/util";
 
 /**
  * Read the Vite-generated HTML for the active webview entry and rewrite all
@@ -86,7 +87,6 @@ interface TreeEditorSessionState {
     currentSettings: EditorLiveSettings;
     fileVersionIsNewer: boolean;
     newerFileVersion: string | null;
-    suppressedMainDocumentChanges: SuppressedDocumentChange[];
     cachedSubtreeRefs: Set<string> | null;
     subtreeRefreshTimer?: ReturnType<typeof setTimeout>;
 }
@@ -186,14 +186,9 @@ async function readWorkspaceFileContent(fileUri: vscode.Uri): Promise<string> {
     return Buffer.from(raw).toString("utf-8");
 }
 
-function normalizeSavedSubtreeContent(content: string, fileUri: vscode.Uri): string {
-    try {
-        const parsed = JSON.parse(content) as { name?: string };
-        parsed.name = path.basename(fileUri.fsPath, path.extname(fileUri.fsPath));
-        return stringifyJson(parsed, { indent: 2 });
-    } catch {
-        return content;
-    }
+async function readFileContentFromDisk(fileUri: vscode.Uri): Promise<string> {
+    const raw = await vscode.workspace.fs.readFile(fileUri);
+    return Buffer.from(raw).toString("utf-8");
 }
 
 function clearRefreshTimer(timer: ReturnType<typeof setTimeout> | undefined): undefined {
@@ -212,6 +207,21 @@ function normalizeJsonContent(content: string): string | null {
         return stringifyJson(JSON.parse(content), { indent: 2 });
     } catch {
         return null;
+    }
+}
+
+function normalizeJsonContentForWrite(content: string): string {
+    return normalizeJsonContent(content) ?? content;
+}
+
+function normalizeTreeContentForWrite(content: string, filePath: string): string {
+    try {
+        const tree = readTree(content);
+        const name = basenameWithoutExt(filePath);
+        tree.name = name;
+        return writeTree(tree, name);
+    } catch {
+        return normalizeJsonContentForWrite(content);
     }
 }
 
@@ -242,42 +252,75 @@ function suppressedDocumentChangesMatch(
     );
 }
 
-function rememberSuppressedMainDocumentChange(
-    state: TreeEditorSessionState,
-    content: string
-): SuppressedDocumentChange {
-    const change = buildSuppressedDocumentChange(content);
-    state.suppressedMainDocumentChanges.push(change);
-    return change;
-}
+class TreeEditorDocument implements vscode.CustomDocument {
+    private _content: string;
+    private _isDirty: boolean;
+    private _ownFileWrites: SuppressedDocumentChange[] = [];
 
-function discardSuppressedMainDocumentChange(
-    state: TreeEditorSessionState,
-    change: SuppressedDocumentChange
-): void {
-    const index = state.suppressedMainDocumentChanges.indexOf(change);
-    if (index >= 0) {
-        state.suppressedMainDocumentChanges.splice(index, 1);
+    constructor(
+        public readonly uri: vscode.Uri,
+        content: string,
+        opts?: { dirty?: boolean }
+    ) {
+        this._content = content;
+        this._isDirty = opts?.dirty ?? false;
     }
-}
 
-function consumeSuppressedMainDocumentChange(
-    state: TreeEditorSessionState,
-    content: string
-): boolean {
-    const actualChange = buildSuppressedDocumentChange(content);
-    const index = state.suppressedMainDocumentChanges.findIndex((change) =>
-        suppressedDocumentChangesMatch(change, actualChange)
-    );
-    if (index < 0) {
-        return false;
+    get content(): string {
+        return this._content;
     }
-    state.suppressedMainDocumentChanges.splice(index, 1);
-    return true;
-}
 
-function clearSuppressedMainDocumentChanges(state: TreeEditorSessionState): void {
-    state.suppressedMainDocumentChanges = [];
+    get isDirty(): boolean {
+        return this._isDirty;
+    }
+
+    updateContent(
+        content: string,
+        opts?: {
+            markDirty?: boolean;
+            markSaved?: boolean;
+        }
+    ): boolean {
+        const changed = this._content !== content;
+        this._content = content;
+
+        if (opts?.markSaved) {
+            this._isDirty = false;
+        } else if (opts?.markDirty !== false && changed) {
+            this._isDirty = true;
+        }
+
+        return changed;
+    }
+
+    markSaved(content = this._content): void {
+        this._content = content;
+        this._isDirty = false;
+    }
+
+    rememberOwnWrite(content: string): void {
+        this._ownFileWrites.push(buildSuppressedDocumentChange(content));
+    }
+
+    consumeOwnWrite(content: string): boolean {
+        const actualChange = buildSuppressedDocumentChange(content);
+        const index = this._ownFileWrites.findIndex((change) =>
+            suppressedDocumentChangesMatch(change, actualChange)
+        );
+        if (index < 0) {
+            return false;
+        }
+        this._ownFileWrites.splice(index, 1);
+        return true;
+    }
+
+    clearOwnWrites(): void {
+        this._ownFileWrites = [];
+    }
+
+    dispose(): void {
+        this.clearOwnWrites();
+    }
 }
 
 function disposeAll(disposables: vscode.Disposable[]): void {
@@ -286,12 +329,17 @@ function disposeAll(disposables: vscode.Disposable[]): void {
     }
 }
 
-export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
+export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEditorDocument> {
     public static readonly viewType = "behavior3.treeEditor";
     private static readonly activeWebviews = new Set<{
         workspaceFsPath: string;
+        documentUri: string;
         postMessage: (message: HostToEditorMessage) => Thenable<boolean>;
     }>();
+    private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<
+        vscode.CustomDocumentContentChangeEvent<TreeEditorDocument>
+    >();
+    public readonly onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
 
     public static postMessageToWorkspace(
         workspaceFsPath: string,
@@ -308,13 +356,123 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
         return delivered;
     }
 
-    constructor(
-        private readonly _extensionUri: vscode.Uri,
-        private readonly _context: vscode.ExtensionContext
-    ) {}
+    public static postMessageToDocument(
+        documentUri: string,
+        message: HostToEditorMessage
+    ): boolean {
+        let delivered = false;
+        for (const entry of TreeEditorProvider.activeWebviews) {
+            if (entry.documentUri !== documentUri) {
+                continue;
+            }
+            delivered = true;
+            void entry.postMessage(message);
+        }
+        return delivered;
+    }
 
-    async resolveCustomTextEditor(
-        document: vscode.TextDocument,
+    constructor(private readonly _extensionUri: vscode.Uri) {}
+
+    private async writeDocumentContentToDisk(targetUri: vscode.Uri, content: string): Promise<string> {
+        const normalizedContent = normalizeTreeContentForWrite(content, targetUri.fsPath);
+        await vscode.workspace.fs.writeFile(
+            targetUri,
+            Buffer.from(normalizedContent, "utf-8")
+        );
+        return normalizedContent;
+    }
+
+    private async persistMainDocumentToDisk(
+        document: TreeEditorDocument,
+        opts?: { notifyReload?: boolean }
+    ): Promise<string> {
+        const normalizedContent = await this.writeDocumentContentToDisk(document.uri, document.content);
+        document.markSaved(normalizedContent);
+        document.rememberOwnWrite(normalizedContent);
+
+        if (opts?.notifyReload !== false) {
+            TreeEditorProvider.postMessageToDocument(document.uri.toString(), {
+                type: "documentReloaded",
+                content: normalizedContent,
+            });
+        }
+
+        return normalizedContent;
+    }
+
+    async openCustomDocument(
+        uri: vscode.Uri,
+        openContext: vscode.CustomDocumentOpenContext,
+        _token: vscode.CancellationToken
+    ): Promise<TreeEditorDocument> {
+        let content = "";
+        let dirty = false;
+
+        if (openContext.backupId) {
+            content = await readFileContentFromDisk(vscode.Uri.file(openContext.backupId));
+            dirty = true;
+        } else if (openContext.untitledDocumentData) {
+            content = Buffer.from(openContext.untitledDocumentData).toString("utf-8");
+            dirty = openContext.untitledDocumentData.length > 0;
+        } else {
+            content = await readFileContentFromDisk(uri);
+        }
+
+        return new TreeEditorDocument(uri, content, { dirty });
+    }
+
+    async saveCustomDocument(
+        document: TreeEditorDocument,
+        _cancellation: vscode.CancellationToken
+    ): Promise<void> {
+        await this.persistMainDocumentToDisk(document);
+    }
+
+    async saveCustomDocumentAs(
+        document: TreeEditorDocument,
+        destination: vscode.Uri,
+        _cancellation: vscode.CancellationToken
+    ): Promise<void> {
+        await this.writeDocumentContentToDisk(destination, document.content);
+    }
+
+    async revertCustomDocument(
+        document: TreeEditorDocument,
+        _cancellation: vscode.CancellationToken
+    ): Promise<void> {
+        const content = await readFileContentFromDisk(document.uri);
+        document.clearOwnWrites();
+        document.updateContent(content, { markSaved: true, markDirty: false });
+        TreeEditorProvider.postMessageToDocument(document.uri.toString(), {
+            type: "documentReloaded",
+            content,
+        });
+    }
+
+    async backupCustomDocument(
+        document: TreeEditorDocument,
+        context: vscode.CustomDocumentBackupContext,
+        _cancellation: vscode.CancellationToken
+    ): Promise<vscode.CustomDocumentBackup> {
+        await vscode.workspace.fs.writeFile(
+            context.destination,
+            Buffer.from(document.content, "utf-8")
+        );
+
+        return {
+            id: context.destination.fsPath,
+            delete: async () => {
+                try {
+                    await vscode.workspace.fs.delete(context.destination);
+                } catch {
+                    /* ignore backup cleanup failures */
+                }
+            },
+        };
+    }
+
+    async resolveCustomEditor(
+        document: TreeEditorDocument,
         webviewPanel: vscode.WebviewPanel,
         _token: vscode.CancellationToken
     ): Promise<void> {
@@ -335,7 +493,6 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             currentSettings,
             fileVersionIsNewer: false,
             newerFileVersion: null,
-            suppressedMainDocumentChanges: [],
             cachedSubtreeRefs: null,
         };
 
@@ -353,6 +510,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
 
         const activeWebviewEntry = {
             workspaceFsPath: workspaceFolderUri.fsPath,
+            documentUri: document.uri.toString(),
             postMessage,
         };
         TreeEditorProvider.activeWebviews.add(activeWebviewEntry);
@@ -393,11 +551,32 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             state.cachedSubtreeRefs = null;
         };
 
+        const updateFileVersionState = (
+            content: string,
+            opts?: { showWarning?: boolean }
+        ): void => {
+            state.fileVersionIsNewer = false;
+            state.newerFileVersion = null;
+
+            const fileVersion = getTreeFileVersion(content);
+            if (!fileVersion || !isFileVersionNewer(fileVersion)) {
+                return;
+            }
+
+            state.fileVersionIsNewer = true;
+            state.newerFileVersion = fileVersion;
+            if (opts?.showWarning) {
+                vscode.window.showWarningMessage(
+                    getNewerVersionMessage(state.currentSettings.language, fileVersion, "warn")
+                );
+            }
+        };
+
         const getTrackedSubtreeRefs = (): Set<string> => {
             if (!state.cachedSubtreeRefs) {
                 state.cachedSubtreeRefs = getTransitiveSubtreeRelativePaths(
                     projectRootUri.fsPath,
-                    document.getText()
+                    document.content
                 );
             }
             return state.cachedSubtreeRefs;
@@ -412,6 +591,9 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             void postMessage({ type: "subtreeFileChanged" });
         };
 
+        const isMainDocumentUri = (uri: vscode.Uri): boolean =>
+            uri.toString() === document.uri.toString();
+
         const scheduleParentSubtreeRefresh = () => {
             state.subtreeRefreshTimer = clearRefreshTimer(state.subtreeRefreshTimer);
             state.subtreeRefreshTimer = setTimeout(() => {
@@ -420,33 +602,36 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             }, 450);
         };
 
-        const applyContentFromWebview = async (content: string): Promise<boolean> => {
-            if (document.getText() === content) {
-                return true;
+        const scheduleTrackedSubtreeRefresh = (uri: vscode.Uri): void => {
+            if (isMainDocumentUri(uri) || !isTrackedSubtreeDocument(uri)) {
+                return;
             }
-
-            const suppressedChange = rememberSuppressedMainDocumentChange(state, content);
-            const edit = new vscode.WorkspaceEdit();
-            edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), content);
-            const applied = await vscode.workspace.applyEdit(edit);
-            if (!applied) {
-                discardSuppressedMainDocumentChange(state, suppressedChange);
-            }
-            return applied;
+            scheduleParentSubtreeRefresh();
         };
 
-        const saveMainDocumentToDisk = async (): Promise<boolean> => {
-            if (!document.isDirty) {
-                return true;
+        const flushTrackedSubtreeRefresh = (uri: vscode.Uri): void => {
+            if (isMainDocumentUri(uri) || !isTrackedSubtreeDocument(uri)) {
+                return;
+            }
+            state.subtreeRefreshTimer = clearRefreshTimer(state.subtreeRefreshTimer);
+            flushParentSubtreeRefresh();
+        };
+
+        const applyContentFromWebview = (content: string): boolean => {
+            const normalizedContent = normalizeTreeContentForWrite(content, document.uri.fsPath);
+            if (document.content === normalizedContent) {
+                return false;
             }
 
-            const saved = await document.save();
-            if (saved || !document.isDirty) {
-                return true;
+            const changed = document.updateContent(normalizedContent, { markDirty: true });
+            if (!changed) {
+                return false;
             }
 
-            await vscode.commands.executeCommand("workbench.action.files.save");
-            return !document.isDirty;
+            invalidateSubtreeRefs();
+            updateFileVersionState(normalizedContent);
+            this._onDidChangeCustomDocument.fire({ document });
+            return true;
         };
 
         const blockEditingForNewerFile = (): string | null => {
@@ -454,8 +639,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                 return null;
             }
 
-            const fileVersion =
-                state.newerFileVersion ?? getTreeFileVersion(document.getText()) ?? "";
+            const fileVersion = state.newerFileVersion ?? getTreeFileVersion(document.content) ?? "";
             const message = getNewerVersionMessage(
                 state.currentSettings.language,
                 fileVersion,
@@ -467,19 +651,9 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
 
         const handleReadyMessage = async (): Promise<void> => {
             const theme = getVSCodeTheme();
-            const content = document.getText();
+            const content = document.content;
 
-            state.fileVersionIsNewer = false;
-            state.newerFileVersion = null;
-
-            const fileVersion = getTreeFileVersion(content);
-            if (fileVersion && isFileVersionNewer(fileVersion)) {
-                state.fileVersionIsNewer = true;
-                state.newerFileVersion = fileVersion;
-                vscode.window.showWarningMessage(
-                    getNewerVersionMessage(state.currentSettings.language, fileVersion, "warn")
-                );
-            }
+            updateFileVersionState(content, { showWarning: true });
 
             const [allFiles, initUsingVars] = await Promise.all([
                 collectAllFiles(projectRootUri),
@@ -521,18 +695,17 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                 }
 
                 try {
-                    const suppressedSaveChange =
-                        document.isDirty && document.getText() === msg.content
-                            ? rememberSuppressedMainDocumentChange(state, msg.content)
-                            : null;
-                    const applied = await applyContentFromWebview(msg.content);
-                    const success = applied ? await saveMainDocumentToDisk() : false;
-                    if (!success && suppressedSaveChange) {
-                        discardSuppressedMainDocumentChange(state, suppressedSaveChange);
+                    const changed = applyContentFromWebview(msg.content);
+                    let savedContent: string | null = null;
+                    if (changed || document.isDirty) {
+                        savedContent = await this.persistMainDocumentToDisk(document, {
+                            notifyReload: false,
+                        });
                     }
+                    const success = !document.isDirty;
                     if (!success) {
                         getBehavior3OutputChannel().warn(
-                            `[saveDocument] save failed for ${document.uri.fsPath}; isDirty=${document.isDirty}; version=${document.version}`
+                            `[saveDocument] save failed for ${document.uri.fsPath}; isDirty=${document.isDirty}`
                         );
                     }
                     await postMessage({
@@ -541,8 +714,14 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         success,
                         error: success ? undefined : "Failed to save document",
                     } satisfies HostToEditorMessage);
+
+                    if (success && savedContent !== null) {
+                        await postMessage({
+                            type: "documentReloaded",
+                            content: savedContent,
+                        } satisfies HostToEditorMessage);
+                    }
                 } catch (error) {
-                    clearSuppressedMainDocumentChanges(state);
                     getBehavior3OutputChannel().error(
                         `[saveDocument] exception for ${document.uri.fsPath}: ${String(error)}`
                     );
@@ -553,6 +732,67 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         error: String(error),
                     } satisfies HostToEditorMessage);
                 }
+            });
+        };
+
+        const handleRevertDocumentMessage = async (
+            msg: Extract<EditorToHostMessage, { type: "revertDocument" }>
+        ): Promise<void> => {
+            await enqueueMainDocumentOperation(async () => {
+                const cancellation = new vscode.CancellationTokenSource();
+                try {
+                    await this.revertCustomDocument(document, cancellation.token);
+                    await postMessage({
+                        type: "revertDocumentResult",
+                        requestId: msg.requestId,
+                        success: true,
+                    } satisfies HostToEditorMessage);
+                } catch (error) {
+                    await postMessage({
+                        type: "revertDocumentResult",
+                        requestId: msg.requestId,
+                        success: false,
+                        error: String(error),
+                    } satisfies HostToEditorMessage);
+                } finally {
+                    cancellation.dispose();
+                }
+            });
+        };
+
+        const handleMainDocumentFileChange = async (): Promise<void> => {
+            await enqueueMainDocumentOperation(async () => {
+                let content: string;
+                try {
+                    content = await readFileContentFromDisk(document.uri);
+                } catch {
+                    return;
+                }
+
+                invalidateSubtreeRefs();
+
+                if (document.consumeOwnWrite(content)) {
+                    return;
+                }
+
+                if (document.content === content) {
+                    return;
+                }
+
+                if (!document.isDirty) {
+                    document.updateContent(content, { markSaved: true, markDirty: false });
+                    updateFileVersionState(content, { showWarning: true });
+                    await postMessage({
+                        type: "documentReloaded",
+                        content,
+                    } satisfies HostToEditorMessage);
+                    return;
+                }
+
+                await postMessage({
+                    type: "fileChanged",
+                    content,
+                } satisfies HostToEditorMessage);
             });
         };
 
@@ -636,7 +876,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             }
 
             try {
-                await vscode.workspace.fs.writeFile(fileUri, Buffer.from(msg.content, "utf-8"));
+                await this.writeDocumentContentToDisk(fileUri, msg.content);
                 await postMessage({
                     type: "saveSubtreeResult",
                     requestId: msg.requestId,
@@ -687,10 +927,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                     return;
                 }
 
-                await vscode.workspace.fs.writeFile(
-                    picked,
-                    Buffer.from(normalizeSavedSubtreeContent(msg.content, picked), "utf-8")
-                );
+                await this.writeDocumentContentToDisk(picked, msg.content);
                 await postMessage({
                     type: "saveSubtreeAsResult",
                     requestId: msg.requestId,
@@ -730,6 +967,16 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
             }
         };
 
+        const mainDocumentWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(
+                path.dirname(document.uri.fsPath),
+                path.basename(document.uri.fsPath)
+            )
+        );
+        const subtreeFileWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(projectRootUri.fsPath, "**/*.json")
+        );
+
         const sessionDisposables: vscode.Disposable[] = [
             watchSettingFile(workspaceFolderUri, () => {
                 void refreshSettings({ refreshDefs: true });
@@ -743,39 +990,15 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                 }
                 void refreshSettings();
             }),
+            mainDocumentWatcher,
+            subtreeFileWatcher,
             vscode.workspace.onDidChangeTextDocument((event) => {
-                if (event.document.uri.toString() === document.uri.toString()) {
-                    invalidateSubtreeRefs();
-                    if (event.contentChanges.length === 0) {
-                        return;
-                    }
-                    if (consumeSuppressedMainDocumentChange(state, document.getText())) {
-                        return;
-                    }
-                    void postMessage({
-                        type: "fileChanged",
-                        content: document.getText(),
-                    });
-                    return;
-                }
-
-                if (
-                    event.contentChanges.length > 0 &&
-                    isTrackedSubtreeDocument(event.document.uri)
-                ) {
-                    scheduleParentSubtreeRefresh();
+                if (event.contentChanges.length > 0) {
+                    scheduleTrackedSubtreeRefresh(event.document.uri);
                 }
             }),
             vscode.workspace.onDidSaveTextDocument((savedDocument) => {
-                if (savedDocument.uri.toString() === document.uri.toString()) {
-                    clearSuppressedMainDocumentChanges(state);
-                    return;
-                }
-                if (!isTrackedSubtreeDocument(savedDocument.uri)) {
-                    return;
-                }
-                state.subtreeRefreshTimer = clearRefreshTimer(state.subtreeRefreshTimer);
-                flushParentSubtreeRefresh();
+                flushTrackedSubtreeRefresh(savedDocument.uri);
             }),
             vscode.window.onDidChangeActiveColorTheme(() => {
                 void postMessage({
@@ -797,12 +1020,16 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                             if (blockEditingForNewerFile()) {
                                 return;
                             }
-                            await applyContentFromWebview(msg.content);
+                            applyContentFromWebview(msg.content);
                         });
                         break;
 
                     case "saveDocument":
                         await handleSaveDocumentMessage(msg);
+                        break;
+
+                    case "revertDocument":
+                        await handleRevertDocumentMessage(msg);
                         break;
 
                     case "treeSelected":
@@ -833,6 +1060,24 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
                         await handleSaveSubtreeAsMessage(msg);
                         break;
                 }
+            })
+        );
+
+        sessionDisposables.push(
+            mainDocumentWatcher.onDidChange(() => {
+                void handleMainDocumentFileChange();
+            }),
+            mainDocumentWatcher.onDidCreate(() => {
+                void handleMainDocumentFileChange();
+            }),
+            subtreeFileWatcher.onDidChange((uri) => {
+                scheduleTrackedSubtreeRefresh(uri);
+            }),
+            subtreeFileWatcher.onDidCreate((uri) => {
+                scheduleTrackedSubtreeRefresh(uri);
+            }),
+            subtreeFileWatcher.onDidDelete((uri) => {
+                scheduleTrackedSubtreeRefresh(uri);
             })
         );
 

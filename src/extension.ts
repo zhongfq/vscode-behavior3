@@ -2,6 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { Context, Node, NodeDef } from "../behavior3/src/behavior3";
+import { stringifyJson } from "../webview/shared/misc/stringify";
+import { writeTree } from "../webview/shared/misc/util";
 import { composeLoggers, createConsoleLogger, setLogger } from "../webview/shared/misc/logger";
 import { runBuild } from "./build/run-build";
 import { createLogOutputChannelLogger } from "./log-channel";
@@ -14,7 +16,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(out);
     setLogger(composeLoggers(createConsoleLogger(), createLogOutputChannelLogger(out)));
 
-    const editorProvider = new TreeEditorProvider(context.extensionUri, context);
+    const editorProvider = new TreeEditorProvider(context.extensionUri);
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(TreeEditorProvider.viewType, editorProvider, {
             supportsMultipleEditorsPerDocument: false,
@@ -141,9 +143,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                 await fs.promises.writeFile(
                     path.join(projectDir, "example.json"),
-                    JSON.stringify(
+                    writeTree(
                         {
-                            name: "example",
                             root: {
                                 id: 1,
                                 name: "Sequence",
@@ -152,22 +153,20 @@ export function activate(context: vscode.ExtensionContext) {
                                     { id: 3, name: "Wait", args: { time: 1 } },
                                 ],
                             },
-                        },
-                        null,
-                        2
+                        } as never,
+                        "example"
                     ),
                     "utf-8"
                 );
 
                 await fs.promises.writeFile(
                     path.join(projectDir, "workspace.b3-workspace"),
-                    JSON.stringify(
+                    stringifyJson(
                         {
                             nodeConf: "node-config.b3-setting",
                             metadata: [],
                         },
-                        null,
-                        2
+                        { indent: 2 }
                     ),
                     "utf-8"
                 );
@@ -243,17 +242,15 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            const template = JSON.stringify(
+            const template = writeTree(
                 {
-                    name: treeName,
                     root: {
                         id: 1,
                         name: "Sequence",
                         children: [],
                     },
-                },
-                null,
-                2
+                } as never,
+                treeName
             );
 
             try {
@@ -422,7 +419,7 @@ function createNodeConfigFromBuiltins(): string {
     const defs = Object.values(context.nodeDefs).sort((a: NodeDef, b: NodeDef) =>
         a.name.localeCompare(b.name)
     );
-    let content = JSON.stringify(defs, null, 2);
+    let content = stringifyJson(defs, { indent: 2 });
     content = content.replace(/"doc": "\\n +/g, '"doc": "');
     content = content.replace(/\\n +/g, "\\n");
     return content;

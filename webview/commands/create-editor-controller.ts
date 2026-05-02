@@ -784,6 +784,12 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         async reloadDocumentFromHost(content: string, opts?: { force?: boolean }) {
             if (matchesCurrentDocumentSnapshot(content)) {
                 clearDocumentReloadConflict(deps.documentStore);
+                if (opts?.force) {
+                    const snapshot = getSerializedCurrentTree();
+                    if (snapshot) {
+                        markDocumentSaved(deps.documentStore, snapshot);
+                    }
+                }
                 return;
             }
 
@@ -1430,6 +1436,13 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
             markDocumentSaved(deps.documentStore, snapshot);
+        },
+
+        async revertDocument() {
+            const response = await deps.hostAdapter.revertDocument();
+            if (!response.success) {
+                message.error(response.error ?? "Revert failed");
+            }
         },
 
         async buildDocument() {
