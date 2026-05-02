@@ -12,7 +12,6 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        editor: path.resolve(__dirname, "webview/editor/index.html"),
         v2: path.resolve(__dirname, "webview/v2/index.html"),
       },
     },

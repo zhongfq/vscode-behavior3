@@ -15,16 +15,15 @@ import type { EditorToHostMessage, HostToEditorMessage, NodeDef } from "./types"
 import { VERSION } from "../webview/shared/misc/b3type";
 
 /**
- * Read the Vite-generated HTML for the editor webview entry,
- * and rewrite all asset references to proper vscode-webview-resource: URIs.
+ * Read the Vite-generated HTML for the active webview entry and rewrite all
+ * asset references to proper vscode-webview-resource URIs.
  */
 function buildWebviewHtml(
     webview: vscode.Webview,
     extensionUri: vscode.Uri,
-    title?: string,
-    entry: "editor" | "v2" = "editor"
+    title?: string
 ): string {
-    const htmlPath = vscode.Uri.joinPath(extensionUri, "dist", "webview", entry, "index.html");
+    const htmlPath = vscode.Uri.joinPath(extensionUri, "dist", "webview", "v2", "index.html");
     let html = fs.readFileSync(htmlPath.fsPath, "utf-8");
 
     const webviewRootUri = webview.asWebviewUri(
@@ -615,7 +614,7 @@ export class TreeEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     private _getEditorHtml(webview: vscode.Webview): string {
-        return buildWebviewHtml(webview, this._extensionUri, "Behavior3 Editor V2", "v2");
+        return buildWebviewHtml(webview, this._extensionUri, "Behavior3 Editor");
     }
 }
 
