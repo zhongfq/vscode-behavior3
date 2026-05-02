@@ -31,8 +31,7 @@ function buildWebviewHtml(
     );
 
     const assetsUri = `${webviewRootUri}/assets`;
-    html = html.replace(/\.\.\/assets\//g, `${assetsUri}/`);
-    html = html.replace(/(?<!=")\.\/assets\//g, `${assetsUri}/`);
+    html = html.replace(/(?:\.\.\/|\.\/)assets\//g, `${assetsUri}/`);
 
     if (title) {
         html = html.replace(/<title>.*?<\/title>/, `<title>${title}</title>`);
@@ -42,7 +41,7 @@ function buildWebviewHtml(
 
     const src = webview.cspSource;
     const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${src} data: blob:; style-src ${src} 'unsafe-inline'; script-src ${src} 'unsafe-inline'; font-src ${src} data:; worker-src blob:; connect-src ${src};">`;
-    html = html.replace("</head>", `  ${baseTag}\n  ${csp}\n</head>`);
+    html = html.replace("<head>", `<head>\n  ${baseTag}\n  ${csp}`);
 
     return html;
 }
