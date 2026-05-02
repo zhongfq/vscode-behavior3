@@ -108,7 +108,7 @@ export interface WorkspaceState {
     usingGroups: Record<string, boolean> | null;
     importDecls: ImportDecl[];
     subtreeDecls: ImportDecl[];
-    subtreeSources: Record<WorkdirRelativeJsonPath, PersistedTreeModel | null>;
+    subtreeSources: Record<WorkdirRelativeJsonPath, SubtreeSourceCacheEntry>;
     subtreeSourceRevision: number;
     hostSubtreeRefreshSeq: number;
 }
@@ -223,6 +223,12 @@ export interface ResolveGraphResult {
     mainTreeDisplayIdsByStableId: Record<string, string>;
 }
 
+export interface InvalidSubtreeSource {
+    error: "invalid-subtree";
+}
+
+export type SubtreeSourceCacheEntry = PersistedTreeModel | InvalidSubtreeSource | null;
+
 export interface GraphEdgeVM {
     key: string;
     sourceKey: string;
@@ -241,7 +247,9 @@ export interface GraphNodeVM {
     icon?: string;
     nodeStyleKind: "Composite" | "Decorator" | "Condition" | "Action" | "Other" | "Error";
     accentColor?: string;
+    debug: boolean;
     disabled: boolean;
+    hasOverride: boolean;
     subtreeNode: boolean;
     subtreePath?: WorkdirRelativeJsonPath;
     statusBits: number;

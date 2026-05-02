@@ -510,7 +510,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             visited.add(normalized);
 
             const response = await deps.hostAdapter.readFile(normalized);
-            if (!response.content) {
+            if (response.content === null) {
                 nextSources[normalized] = null;
                 return;
             }
@@ -528,7 +528,9 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                     await loadPath(childPath);
                 }
             } catch {
-                nextSources[normalized] = null;
+                nextSources[normalized] = {
+                    error: "invalid-subtree",
+                };
             }
         };
 

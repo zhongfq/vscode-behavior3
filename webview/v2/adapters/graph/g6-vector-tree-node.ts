@@ -2,6 +2,7 @@ import { Image as GImage, Path as GPath, Rect as GRect, Text as GText } from "@a
 import { DisplayObject, Group } from "@antv/g-lite";
 import {
     Badge,
+    CommonEvent,
     ExtensionCategory,
     NodeData as G6NodeData,
     Rect,
@@ -13,6 +14,7 @@ import { NodeStyle } from "@antv/g6/lib/spec/element/node";
 import actionIconUrl from "../../../../public/icons/Action.svg";
 import compositeIconUrl from "../../../../public/icons/Composite.svg";
 import conditionIconUrl from "../../../../public/icons/Condition.svg";
+import debugIconUrl from "../../../../public/icons/Debug.svg";
 import decoratorIconUrl from "../../../../public/icons/Decorator.svg";
 import disabledIconUrl from "../../../../public/icons/Disabled.svg";
 import errorIconUrl from "../../../../public/icons/Error.svg";
@@ -57,6 +59,7 @@ export type VectorTreeNodeState =
 type ShapeName =
     | "args-bg"
     | "args-text"
+    | "debug"
     | "desc-text"
     | "disabled"
     | "collapse"
@@ -73,6 +76,7 @@ type ShapeName =
     | "name-bg"
     | "name-line"
     | "name-text"
+    | "override-bar"
     | "output-bg"
     | "output-text"
     | "path-text"
@@ -119,9 +123,11 @@ export const getGraphThemeColor = (name: string, fallback: string): string =>
     readThemeCssVariable(name, fallback);
 
 const getVectorTreeNodePalette = () => ({
-    collapseBg: readThemeCssVariable("--b3-collapse-bg", "#ffffff"),
-    collapseBorder: readThemeCssVariable("--b3-collapse-border", "#666666"),
-    collapseText: readThemeCssVariable("--b3-collapse-text", "#666666"),
+    // Keep the collapse control aligned with the V1 editor look instead of
+    // inheriting a themed dark pill from VS Code widget colors.
+    collapseBg: "#ffffff",
+    collapseBorder: "#666666",
+    collapseText: "#666666",
     divider: readThemeCssVariable("--b3-node-divider", "#666666"),
     dragSource: readThemeCssVariable("--b3-drag-source", "#ffa500"),
     dropChild: readThemeCssVariable("--b3-drop-child", "#ff4d4f"),
@@ -137,6 +143,7 @@ const getVectorTreeNodePalette = () => ({
     idText: readThemeCssVariable("--b3-node-id-text", "#ffffff"),
     nodeBg: readThemeCssVariable("--b3-node-content-bg", "#ffffff"),
     nodeText: readThemeCssVariable("--b3-node-text", "#111827"),
+    overrideBar: readThemeCssVariable("--b3-override-bar", "#d87a16"),
     subtreeOutline: readThemeCssVariable("--b3-subtree-outline", "#a5b1be"),
     warningText: readThemeCssVariable("--b3-warning-text", "#b42318"),
 });
@@ -313,6 +320,10 @@ export const measureVectorTreeNode = (node: GraphNodeVM) => {
         height += outputText.line * ROW_HEIGHT;
     }
 
+    if (node.warningText) {
+        height += toBreakWord(node.warningText, 200).line * ROW_HEIGHT;
+    }
+
     return {
         width: G6_VECTOR_NODE_WIDTH,
         height: Math.max(G6_VECTOR_NODE_MIN_HEIGHT, height),
@@ -357,6 +368,7 @@ export const getVectorTreeNodeStateStyle = (): VectorTreeNodeStateStyleMap => {
         highlightgray: {
             collapse: { opacity: 0.45 },
             "desc-text": { fill: palette.grayText },
+            debug: { opacity: 0.45 },
             disabled: { opacity: 0.45 },
             icon: { opacity: 0.45 },
             "id-text": { fill: palette.grayText, stroke: palette.idStroke },
@@ -365,6 +377,7 @@ export const getVectorTreeNodeStateStyle = (): VectorTreeNodeStateStyleMap => {
             "name-bg": { fill: palette.grayRail },
             "name-line": { stroke: palette.divider },
             "name-text": { fill: palette.grayText },
+            "override-bar": { opacity: 0.45 },
             "output-text": { fill: palette.grayText },
             "path-text": { fill: palette.grayText },
             status: { opacity: 0.45 },
@@ -538,18 +551,54 @@ class VectorTreeNode extends Rect {
         );
     }
 
+    private drawDebugIcon(container: Group) {
+        this.upsert(
+            "debug",
+            GImage,
+            {
+                x: this.width - 30,
+                y: 4,
+                height: 16,
+                opacity: 1,
+                width: 16,
+                src: debugIconUrl,
+                visibility: this.node.debug ? "visible" : "hidden",
+            },
+            container
+        );
+    }
+
     private drawDisabledIcon(container: Group) {
         this.upsert(
             "disabled",
             GImage,
             {
-                x: this.width - 36,
+                x: this.width - 30 - (this.node.debug ? 18 : 0),
                 y: 4,
                 height: 16,
                 opacity: 1,
                 width: 16,
                 src: disabledIconUrl,
                 visibility: this.node.disabled ? "visible" : "hidden",
+            },
+            container
+        );
+    }
+
+    private drawOverrideBar(container: Group) {
+        this.upsert(
+            "override-bar",
+            GRect,
+            {
+                x: this.width - 17,
+                y: 1,
+                width: 16,
+                height: this.height - 2,
+                fill: this.palette.overrideBar,
+                lineWidth: 2,
+                opacity: 1,
+                radius: [0, this.radius - 1, this.radius - 1, 0],
+                visibility: this.node.hasOverride ? "visible" : "hidden",
             },
             container
         );
@@ -753,8 +802,33 @@ class VectorTreeNode extends Rect {
         this.contentY += text ? ROW_HEIGHT : 0;
     }
 
-    private drawCollapseBadge(container: Group) {
+    private drawWarningText(container: Group) {
+        const { str, line } = this.node.warningText
+            ? toBreakWord(this.node.warningText, 200)
+            : { str: "", line: 0 };
+
         this.upsert(
+            "warn-text",
+            GText,
+            {
+                fill: this.palette.warningText,
+                fontSize: 12,
+                fontWeight: "normal",
+                lineHeight: ROW_HEIGHT,
+                text: str,
+                textBaseline: "top",
+                x: CONTENT_X,
+                y: this.contentY + ROW_HEIGHT,
+                visibility: str ? "visible" : "hidden",
+            },
+            container
+        );
+
+        this.contentY += ROW_HEIGHT * line;
+    }
+
+    private drawCollapseBadge(attributes: Required<RectStyleProps>, container: Group) {
+        const badge = this.upsert(
             "collapse",
             Badge,
             {
@@ -764,10 +838,11 @@ class VectorTreeNode extends Rect {
                 backgroundRadius: 7,
                 backgroundStroke: this.palette.collapseBorder,
                 backgroundWidth: 14,
+                cursor: "pointer",
                 fill: this.palette.collapseText,
                 fontSize: 16,
                 opacity: 1,
-                text: "-",
+                text: attributes.collapsed ? "+" : "-",
                 textAlign: "center",
                 textBaseline: "middle",
                 visibility: this.node.childKeys.length > 0 ? "visible" : "hidden",
@@ -776,6 +851,18 @@ class VectorTreeNode extends Rect {
             },
             container
         );
+
+        if (badge && !Reflect.has(badge, "__bind__")) {
+            Reflect.set(badge, "__bind__", true);
+            badge.addEventListener(CommonEvent.CLICK, () => {
+                const graph = this.context.graph;
+                if (this.attributes.collapsed) {
+                    graph.expandElement(this.id);
+                } else {
+                    graph.collapseElement(this.id);
+                }
+            });
+        }
     }
 
     private drawDragShapes(container: Group) {
@@ -875,17 +962,20 @@ class VectorTreeNode extends Rect {
         this.drawFocusHalo(container);
         this.drawBackground(attributes, container);
         this.drawNameBackground(container);
+        this.drawOverrideBar(container);
         this.drawNameText(container);
         this.drawTypeIcon(container);
         this.drawStatusIcon(container);
+        this.drawDebugIcon(container);
         this.drawDisabledIcon(container);
         this.drawDescText(container);
         this.drawArgsText(container);
         this.drawInputText(container);
         this.drawOutputText(container);
         this.drawSubtreeText(container);
+        this.drawWarningText(container);
         this.drawDragShapes(container);
-        this.drawCollapseBadge(container);
+        this.drawCollapseBadge(attributes, container);
         this.drawIdText(container);
     }
 

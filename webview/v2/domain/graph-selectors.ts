@@ -43,6 +43,41 @@ const pickNodeSubtitle = (nodeDesc: string | undefined, defDesc: string | undefi
     return trimmedDefDesc || undefined;
 };
 
+const isJsonEqual = (left: unknown, right: unknown) =>
+    JSON.stringify(left) === JSON.stringify(right);
+
+const hasNodeOverride = (node: ResolvedNodeModel): boolean => {
+    if (!node.subtreeNode || !node.subtreeOriginal) {
+        return false;
+    }
+
+    return (
+        (node.desc ?? "") !== (node.subtreeOriginal.desc ?? "") ||
+        !isJsonEqual(node.input ?? [], node.subtreeOriginal.input ?? []) ||
+        !isJsonEqual(node.output ?? [], node.subtreeOriginal.output ?? []) ||
+        !isJsonEqual(node.args ?? {}, node.subtreeOriginal.args ?? {}) ||
+        Boolean(node.debug) !== Boolean(node.subtreeOriginal.debug) ||
+        Boolean(node.disabled) !== Boolean(node.subtreeOriginal.disabled)
+    );
+};
+
+const describeResolutionError = (node: ResolvedNodeModel): string | undefined => {
+    if (!node.resolutionError) {
+        return undefined;
+    }
+
+    switch (node.resolutionError) {
+        case "missing-subtree":
+            return i18n.t("node.subtreeMissing", { path: node.path ?? "" });
+        case "invalid-subtree":
+            return i18n.t("node.subtreeInvalid", { path: node.path ?? "" });
+        case "cyclic-subtree":
+            return i18n.t("node.subtreeCyclic", { path: node.path ?? "" });
+        default:
+            return undefined;
+    }
+};
+
 const computeWarningText = (params: {
     node: ResolvedNodeModel;
     graph: ResolvedDocumentGraph;
@@ -172,16 +207,25 @@ export const buildResolvedGraphModel = (
     for (const key of graph.nodeOrder) {
         const node = graph.nodesByInstanceKey[key];
         const def = defsByName.get(node.name);
-        const warningText = computeWarningText({
-            node,
-            graph,
-            defsByName,
-            usingVars: validation?.usingVars ?? null,
-            usingGroups: validation?.usingGroups ?? null,
-            checkExpr: validation?.checkExpr ?? false,
-        });
+        const resolutionWarningText = describeResolutionError(node);
+        const warningText =
+            resolutionWarningText ??
+            computeWarningText({
+                node,
+                graph,
+                defsByName,
+                usingVars: validation?.usingVars ?? null,
+                usingGroups: validation?.usingGroups ?? null,
+                checkExpr: validation?.checkExpr ?? false,
+            });
         const nodeStyleKind =
             node.resolutionError || warningText ? "Error" : def ? getNodeType(def) : "Error";
+        const accentColor =
+            nodeStyleKind === "Error"
+                ? (nodeColors?.[nodeStyleKind] ?? DEFAULT_NODE_COLORS[nodeStyleKind])
+                : (def?.color?.trim() ||
+                  nodeColors?.[nodeStyleKind] ||
+                  DEFAULT_NODE_COLORS[nodeStyleKind]);
 
         nodes.push({
             ref: node.ref,
@@ -198,8 +242,10 @@ export const buildResolvedGraphModel = (
                     : i18n.t("node.unknownType")),
             icon: def?.icon,
             nodeStyleKind,
-            accentColor: nodeColors?.[nodeStyleKind] ?? DEFAULT_NODE_COLORS[nodeStyleKind],
+            accentColor,
+            debug: Boolean(node.debug),
             disabled: Boolean(node.disabled),
+            hasOverride: hasNodeOverride(node),
             subtreeNode: node.subtreeNode,
             subtreePath: node.path,
             statusBits: ((node.$status ?? 0) & 0b111) as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7,
@@ -307,7 +353,7 @@ export const computeSearchState = (
         const node = graph.nodesByInstanceKey[key];
         let matched = false;
         if (current.mode === "id") {
-            matched = includesString(node.ref.displayId, current.query, current.caseSensitive);
+            matched = node.ref.displayId === current.query;
         } else {
             const stringParts = [
                 node.name,

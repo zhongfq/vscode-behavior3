@@ -1,10 +1,12 @@
 import type { NodeDef } from "../../shared/misc/b3type";
 import type {
+    InvalidSubtreeSource,
     PersistedNodeModel,
     PersistedTreeModel,
     ResolveGraphResult,
     ResolvedDocumentGraph,
     ResolvedNodeModel,
+    SubtreeSourceCacheEntry,
     WorkdirRelativeJsonPath,
 } from "../shared/contracts";
 import { normalizeWorkdirRelativePath } from "../shared/protocol";
@@ -74,6 +76,12 @@ const buildResolvedExternalNode = (
     const subtreeOriginal = clonePersistedNode(value);
     applyPatchIfAny(value, rootOverride[sourceNode.$id]);
     return { value, subtreeOriginal };
+};
+
+const isInvalidSubtreeSource = (
+    value: SubtreeSourceCacheEntry | undefined
+): value is InvalidSubtreeSource => {
+    return Boolean(value && typeof value === "object" && "error" in value);
 };
 
 const toStatusFlag = (nodeName: string, defsByName: Map<string, NodeDef>) => {
@@ -164,7 +172,7 @@ const buildStatusFlag = (
 
 export const resolveDocumentGraph = (params: {
     persistedTree: PersistedTreeModel;
-    subtreeSources: Record<WorkdirRelativeJsonPath, PersistedTreeModel | null>;
+    subtreeSources: Record<WorkdirRelativeJsonPath, SubtreeSourceCacheEntry>;
     nodeDefs: NodeDef[];
     subtreeEditable: boolean;
 }): ResolveGraphResult => {
@@ -184,8 +192,10 @@ export const resolveDocumentGraph = (params: {
             ? normalizeWorkdirRelativePath(structuredNode.path)
             : undefined;
         const isCyclic = normalizedPath ? context.subtreeStack.includes(normalizedPath) : false;
+        const subtreeSource =
+            normalizedPath && !isCyclic ? params.subtreeSources[normalizedPath] : undefined;
         const subtreeTree =
-            normalizedPath && !isCyclic ? (params.subtreeSources[normalizedPath] ?? null) : null;
+            subtreeSource && !isInvalidSubtreeSource(subtreeSource) ? subtreeSource : null;
         const materialized = Boolean(normalizedPath && subtreeTree);
 
         let sourceNode = structuredNode;
@@ -196,6 +206,8 @@ export const resolveDocumentGraph = (params: {
 
         if (normalizedPath && isCyclic) {
             resolutionError = "cyclic-subtree";
+        } else if (isInvalidSubtreeSource(subtreeSource)) {
+            resolutionError = "invalid-subtree";
         } else if (normalizedPath && !subtreeTree) {
             resolutionError = "missing-subtree";
         } else if (materialized && subtreeTree) {
