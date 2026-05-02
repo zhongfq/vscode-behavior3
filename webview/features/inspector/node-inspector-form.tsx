@@ -34,25 +34,31 @@ import {
     isNodeArgOptional,
     isVariadic,
 } from "../../shared/misc/b3util";
-import { useNodeInspectorState, useRuntime } from "../../app/runtime";
+import { useRuntime } from "../../app/runtime";
 import {
     OverrideBar,
     SectionDivider,
     cleanSlotLabel,
     compareJsonValue,
     createInspectorLabelProps,
-    createNodeDefMap,
-    createVariableOptions,
     filterOptionByLabel,
     formatArgInitialValue,
-    formatChildrenLabel,
     parseArgSubmitValue,
     queueSubmit,
     validateExpressionValues,
     validateVariableValue,
+    type VariableOption,
 } from "./inspector-shared";
+import {
+    buildNodeSlotArray,
+    createNodeInspectorFormValues,
+    getNodeSlotFormValue,
+    useNodeInspectorViewState,
+} from "./inspector-state";
 
 const { TextArea } = Input;
+
+type SlotFieldName = "inputSlots" | "outputSlots";
 
 const NodeArgField: React.FC<{
     form: FormInstance;
@@ -148,7 +154,7 @@ const NodeArgField: React.FC<{
                     allowClear={!required}
                     onChange={() => queueSubmit(form)}
                     onBlur={onCommit}
-                    options={options.map((option) => ({
+                    options={options.map((option: { name: string; value: unknown }) => ({
                         label: `${option.name} (${String(option.value)})`,
                         value: option.value as string | number | boolean,
                     }))}
@@ -251,28 +257,473 @@ const NodeArgField: React.FC<{
     );
 };
 
+const NodeMetaFields: React.FC<{
+    form: FormInstance;
+    selectedNode: NonNullable<ReturnType<typeof useNodeInspectorViewState>["selectedNode"]>;
+    nodeDefs: NodeDef[];
+    nodeDef: NodeDef | null;
+    nodeDefMap: Map<string, NodeDef>;
+    usingGroups: Record<string, boolean> | null;
+    allFiles: string[];
+    fieldEditDisabled: boolean;
+    canShowOverride: boolean;
+    subtreeOriginal: ReturnType<typeof useNodeInspectorViewState>["subtreeOriginal"];
+    onCommit: () => void;
+}> = ({
+    form,
+    selectedNode,
+    nodeDefs,
+    nodeDef,
+    nodeDefMap,
+    usingGroups,
+    allFiles,
+    fieldEditDisabled,
+    canShowOverride,
+    subtreeOriginal,
+    onCommit,
+}) => {
+    const { t } = useTranslation();
+    const resetField = (name: string, value: unknown) => {
+        form.setFieldValue(name, value);
+        queueSubmit(form);
+    };
+
+    return (
+        <>
+            <Form.Item {...createInspectorLabelProps(t("node.id"))} name="id">
+                <Input disabled />
+            </Form.Item>
+            <Form.Item {...createInspectorLabelProps(t("node.type"))} name="type">
+                <Input disabled />
+            </Form.Item>
+
+            {nodeDef?.group?.length ? (
+                <Form.Item
+                    {...createInspectorLabelProps(t("node.group"))}
+                    name="group"
+                    rules={[
+                        {
+                            validator: async () => {
+                                if (!nodeDef.group?.some((group) => usingGroups?.[group])) {
+                                    throw new Error(
+                                        t("node.groupNotEnabled", {
+                                            group: nodeDef.group,
+                                        })
+                                    );
+                                }
+                            },
+                        },
+                    ]}
+                >
+                    <Select
+                        mode="multiple"
+                        disabled
+                        options={nodeDef.group.map((group) => ({
+                            label: group,
+                            value: group,
+                        }))}
+                    />
+                </Form.Item>
+            ) : null}
+
+            <Form.Item
+                {...createInspectorLabelProps(t("node.children"))}
+                name="children"
+                rules={[
+                    {
+                        validator: async () => {
+                            if (
+                                nodeDef?.children !== undefined &&
+                                nodeDef.children !== -1 &&
+                                selectedNode.activeChildCount !== nodeDef.children
+                            ) {
+                                throw new Error(t("node.invalidChildren"));
+                            }
+                        },
+                    },
+                ]}
+            >
+                <Input disabled />
+            </Form.Item>
+
+            <Form.Item
+                {...createInspectorLabelProps(t("node.name"))}
+                name="name"
+                rules={[
+                    {
+                        validator: async (_, value) => {
+                            const nextName = String(value ?? "").trim();
+                            if (!nextName) {
+                                throw new Error(
+                                    t("node.notFound", { name: selectedNode.data.name })
+                                );
+                            }
+                            if (nextName === selectedNode.data.name) {
+                                return;
+                            }
+                            if (!nodeDefMap.has(nextName)) {
+                                throw new Error(
+                                    t("node.notFound", {
+                                        name: nextName || selectedNode.data.name,
+                                    })
+                                );
+                            }
+                        },
+                    },
+                ]}
+            >
+                <AutoComplete
+                    disabled={fieldEditDisabled}
+                    options={nodeDefs.map((entry) => ({
+                        label: `${entry.name} (${entry.desc})`,
+                        value: entry.name,
+                    }))}
+                    filterOption={filterOptionByLabel}
+                    onBlur={onCommit}
+                    onSelect={() => queueSubmit(form)}
+                />
+            </Form.Item>
+
+            <OverrideBar
+                active={canShowOverride && (selectedNode.data.desc ?? "") !== (subtreeOriginal?.desc ?? "")}
+                onReset={() => resetField("desc", subtreeOriginal?.desc ?? "")}
+            >
+                <Form.Item {...createInspectorLabelProps(t("node.desc"))} name="desc">
+                    <TextArea
+                        autoSize={{ minRows: 1 }}
+                        disabled={fieldEditDisabled}
+                        onBlur={onCommit}
+                    />
+                </Form.Item>
+            </OverrideBar>
+
+            <OverrideBar
+                active={
+                    canShowOverride &&
+                    Boolean(selectedNode.data.debug) !== Boolean(subtreeOriginal?.debug)
+                }
+                onReset={() => resetField("debug", Boolean(subtreeOriginal?.debug))}
+            >
+                <Form.Item
+                    {...createInspectorLabelProps(t("node.debug"))}
+                    name="debug"
+                    valuePropName="checked"
+                >
+                    <Switch
+                        disabled={fieldEditDisabled && !selectedNode.data.path}
+                        onChange={() => queueSubmit(form)}
+                    />
+                </Form.Item>
+            </OverrideBar>
+
+            <OverrideBar
+                active={
+                    canShowOverride &&
+                    Boolean(selectedNode.data.disabled) !== Boolean(subtreeOriginal?.disabled)
+                }
+                onReset={() => resetField("disabled", Boolean(subtreeOriginal?.disabled))}
+            >
+                <Form.Item
+                    {...createInspectorLabelProps(t("node.disabled"))}
+                    name="disabled"
+                    valuePropName="checked"
+                >
+                    <Switch
+                        disabled={fieldEditDisabled && !selectedNode.data.path}
+                        onChange={() => queueSubmit(form)}
+                    />
+                </Form.Item>
+            </OverrideBar>
+
+            <Form.Item {...createInspectorLabelProps(t("node.subtree"))} name="path">
+                <AutoComplete
+                    disabled={fieldEditDisabled || selectedNode.subtreeNode}
+                    options={allFiles.map((path) => ({ label: path, value: path }))}
+                    filterOption={filterOptionByLabel}
+                    onBlur={onCommit}
+                    onSelect={() => queueSubmit(form)}
+                />
+            </Form.Item>
+
+            {nodeDef?.doc ? (
+                <ReactMarkdown className="b3-v2-markdown">{nodeDef.doc}</ReactMarkdown>
+            ) : null}
+        </>
+    );
+};
+
+const NodeVariableField: React.FC<{
+    form: FormInstance;
+    fieldName: SlotFieldName;
+    slotDefs: string[];
+    slot: string;
+    index: number;
+    usingVars: Record<string, VarDecl> | null;
+    variableOptions: VariableOption[];
+    fieldEditDisabled: boolean;
+    isOverridden: (index: number, variadic?: boolean) => boolean;
+    onReset: (index: number, variadic?: boolean) => void;
+    onCommit: () => void;
+    getRelatedArg?: (index: number) => NodeArg | null;
+}> = ({
+    form,
+    fieldName,
+    slotDefs,
+    slot,
+    index,
+    usingVars,
+    variableOptions,
+    fieldEditDisabled,
+    isOverridden,
+    onReset,
+    onCommit,
+    getRelatedArg,
+}) => {
+    const { t } = useTranslation();
+    const slotLabel = cleanSlotLabel(slot);
+    const variadic = isVariadic(slotDefs, index);
+    const relatedArg = getRelatedArg?.(index) ?? null;
+
+    const validateSlotValue = async (_: unknown, value: string | undefined) => {
+        const error = validateVariableValue(value, usingVars);
+        if (error) {
+            throw new Error(error);
+        }
+        if (
+            relatedArg &&
+            !checkOneof(relatedArg, form.getFieldValue(["args", relatedArg.name]), value)
+        ) {
+            throw new Error(
+                t("validation.oneof", {
+                    left: relatedArg.name,
+                    right: slotLabel,
+                })
+            );
+        }
+    };
+
+    if (variadic) {
+        return (
+            <OverrideBar active={isOverridden(index, true)} onReset={() => onReset(index, true)}>
+                <Form.Item {...createInspectorLabelProps(slotLabel, !slot.includes("?"))}>
+                    <Form.List name={[fieldName, index]}>
+                        {(fields, { add, remove }, { errors }) => (
+                            <div className="b3-v2-list-block">
+                                {fields.map((field) => (
+                                    <Flex key={field.key} gap={4} align="start">
+                                        <Form.Item
+                                            name={field.name}
+                                            style={{ width: "100%", marginBottom: 2 }}
+                                            validateTrigger={["onChange", "onBlur"]}
+                                            rules={[{ validator: validateSlotValue }]}
+                                        >
+                                            <AutoComplete
+                                                disabled={fieldEditDisabled}
+                                                options={variableOptions}
+                                                filterOption={filterOptionByLabel}
+                                                onBlur={onCommit}
+                                            />
+                                        </Form.Item>
+                                        <MinusCircleOutlined
+                                            className="b3-v2-inline-remove"
+                                            onClick={() => {
+                                                remove(field.name);
+                                                queueSubmit(form);
+                                            }}
+                                        />
+                                    </Flex>
+                                ))}
+                                <Form.Item style={{ marginBottom: 0, marginTop: 4 }}>
+                                    <Button
+                                        type="dashed"
+                                        block
+                                        icon={<PlusOutlined />}
+                                        onClick={() => add("")}
+                                    >
+                                        {t("add")}
+                                    </Button>
+                                    <Form.ErrorList errors={errors} />
+                                </Form.Item>
+                            </div>
+                        )}
+                    </Form.List>
+                </Form.Item>
+            </OverrideBar>
+        );
+    }
+
+    return (
+        <OverrideBar active={isOverridden(index)} onReset={() => onReset(index)}>
+            <Form.Item
+                {...createInspectorLabelProps(slotLabel, !slot.includes("?"))}
+                name={[fieldName, index]}
+                rules={[
+                    {
+                        required: !slot.includes("?"),
+                        message: t("fieldRequired", {
+                            field: slotLabel,
+                        }),
+                    },
+                    {
+                        validator: validateSlotValue,
+                    },
+                ]}
+            >
+                <AutoComplete
+                    disabled={fieldEditDisabled}
+                    options={variableOptions}
+                    filterOption={filterOptionByLabel}
+                    onBlur={onCommit}
+                />
+            </Form.Item>
+        </OverrideBar>
+    );
+};
+
+const NodeVariableSection: React.FC<{
+    form: FormInstance;
+    title: string;
+    fieldName: SlotFieldName;
+    slotDefs?: string[];
+    usingVars: Record<string, VarDecl> | null;
+    variableOptions: VariableOption[];
+    fieldEditDisabled: boolean;
+    isOverridden: (index: number, variadic?: boolean) => boolean;
+    onReset: (index: number, variadic?: boolean) => void;
+    onCommit: () => void;
+    getRelatedArg?: (index: number) => NodeArg | null;
+}> = ({
+    form,
+    title,
+    fieldName,
+    slotDefs,
+    usingVars,
+    variableOptions,
+    fieldEditDisabled,
+    isOverridden,
+    onReset,
+    onCommit,
+    getRelatedArg,
+}) => {
+    if (!slotDefs?.length) {
+        return null;
+    }
+
+    return (
+        <>
+            <SectionDivider>{title}</SectionDivider>
+            {slotDefs.map((slot, index) => (
+                <NodeVariableField
+                    key={`${fieldName}-${index}`}
+                    form={form}
+                    fieldName={fieldName}
+                    slotDefs={slotDefs}
+                    slot={slot}
+                    index={index}
+                    usingVars={usingVars}
+                    variableOptions={variableOptions}
+                    fieldEditDisabled={fieldEditDisabled}
+                    isOverridden={isOverridden}
+                    onReset={onReset}
+                    onCommit={onCommit}
+                    getRelatedArg={getRelatedArg}
+                />
+            ))}
+        </>
+    );
+};
+
+const NodeStructuredArgsSection: React.FC<{
+    form: FormInstance;
+    nodeDef: NodeDef;
+    args: NodeArg[];
+    usingVars: Record<string, VarDecl> | null;
+    checkExpr: boolean;
+    fieldEditDisabled: boolean;
+    isOverridden: (argName: string) => boolean;
+    onReset: (arg: NodeArg) => void;
+    onCommit: () => void;
+}> = ({
+    form,
+    nodeDef,
+    args,
+    usingVars,
+    checkExpr,
+    fieldEditDisabled,
+    isOverridden,
+    onReset,
+    onCommit,
+}) => {
+    const { t } = useTranslation();
+
+    if (args.length === 0) {
+        return null;
+    }
+
+    return (
+        <>
+            <SectionDivider>{t("node.args")}</SectionDivider>
+            {args.map((arg) => (
+                <OverrideBar
+                    key={`arg-${arg.name}`}
+                    active={isOverridden(arg.name)}
+                    onReset={() => onReset(arg)}
+                >
+                    <NodeArgField
+                        form={form}
+                        arg={arg}
+                        nodeDef={nodeDef}
+                        usingVars={usingVars}
+                        checkExpr={checkExpr}
+                        disabled={fieldEditDisabled}
+                        onCommit={onCommit}
+                    />
+                </OverrideBar>
+            ))}
+        </>
+    );
+};
+
+const NodeRawJsonSection: React.FC<{ visible: boolean }> = ({ visible }) => {
+    const { t } = useTranslation();
+
+    if (!visible) {
+        return null;
+    }
+
+    return (
+        <>
+            <SectionDivider>{t("node.jsonData")}</SectionDivider>
+            <Form.Item {...createInspectorLabelProps(t("node.jsonData"))} name="rawNodeJson">
+                <TextArea autoSize={{ minRows: 1 }} disabled />
+            </Form.Item>
+        </>
+    );
+};
+
 export const NodeInspectorForm: React.FC = () => {
     const runtime = useRuntime();
     const { t } = useTranslation();
-    const { document, selectedNode, nodeDefs, usingVars, usingGroups, allFiles, checkExpr } =
-        useNodeInspectorState();
     const [form] = Form.useForm();
-
-    const nodeDefMap = useMemo(() => createNodeDefMap(nodeDefs), [nodeDefs]);
-    const variableOptions = useMemo(
-        () => createVariableOptions(usingVars, document?.root ?? null, nodeDefMap),
-        [usingVars, document?.root, nodeDefMap]
-    );
-    const watchedName = Form.useWatch("name", form) as string | undefined;
-
-    const effectiveName =
-        (watchedName ?? selectedNode?.data.name ?? "").trim() || selectedNode?.data.name || "";
-    const nodeDef = nodeDefs.find((entry) => entry.name === effectiveName) ?? null;
-    const fieldEditDisabled = selectedNode?.disabled ?? false;
-    const title = nodeDef?.desc || effectiveName || t("node.unknown.title");
-    const structuredArgs = nodeDef?.args ?? [];
-    const hasStructuredArgs = structuredArgs.length > 0;
-    const shouldShowRawNodeJson = nodeDef === null;
+    const {
+        selectedNode,
+        nodeDefs,
+        usingVars,
+        usingGroups,
+        allFiles,
+        checkExpr,
+        nodeDefMap,
+        variableOptions,
+        nodeDef,
+        fieldEditDisabled,
+        title,
+        structuredArgs,
+        hasStructuredArgs,
+        shouldShowRawNodeJson,
+        subtreeOriginal,
+        canShowOverride,
+    } = useNodeInspectorViewState(form);
+    const inspectorTitle = title || t("node.unknown.title");
 
     useEffect(() => {
         if (!selectedNode) {
@@ -280,35 +731,9 @@ export const NodeInspectorForm: React.FC = () => {
         }
 
         const currentNodeDef = nodeDefMap.get(selectedNode.data.name) ?? null;
-
-        form.setFieldsValue({
-            id: selectedNode.ref.displayId,
-            type: currentNodeDef?.type ?? t("node.unknownType"),
-            children: formatChildrenLabel(currentNodeDef),
-            group: currentNodeDef?.group ?? [],
-            name: selectedNode.data.name,
-            desc: selectedNode.data.desc ?? currentNodeDef?.desc ?? "",
-            path: selectedNode.data.path ?? "",
-            debug: Boolean(selectedNode.data.debug),
-            disabled: Boolean(selectedNode.data.disabled),
-            args: Object.fromEntries(
-                (currentNodeDef?.args ?? []).map((arg) => [
-                    arg.name,
-                    formatArgInitialValue(arg, selectedNode.data.args?.[arg.name]),
-                ])
-            ),
-            inputSlots: (currentNodeDef?.input ?? []).map((_, index) =>
-                currentNodeDef?.input && isVariadic(currentNodeDef.input, index)
-                    ? (selectedNode.data.input?.slice(index) ?? [])
-                    : (selectedNode.data.input?.[index] ?? "")
-            ),
-            outputSlots: (currentNodeDef?.output ?? []).map((_, index) =>
-                currentNodeDef?.output && isVariadic(currentNodeDef.output, index)
-                    ? (selectedNode.data.output?.slice(index) ?? [])
-                    : (selectedNode.data.output?.[index] ?? "")
-            ),
-            rawNodeJson: JSON.stringify(selectedNode.data ?? {}, null, 2),
-        });
+        form.setFieldsValue(
+            createNodeInspectorFormValues(currentNodeDef, selectedNode, t("node.unknownType"))
+        );
     }, [form, nodeDefMap, selectedNode, t]);
 
     useEffect(() => {
@@ -327,127 +752,52 @@ export const NodeInspectorForm: React.FC = () => {
         return null;
     }
 
-    const subtreeOriginal = selectedNode.subtreeOriginal;
-    const canShowOverride = Boolean(selectedNode.subtreeNode && subtreeOriginal);
-
-    const isInputOverridden = (index: number, variadic = false) => {
-        if (!canShowOverride) {
-            return false;
-        }
-        if (variadic) {
-            return !compareJsonValue(
-                selectedNode.data.input?.slice(index) ?? [],
-                subtreeOriginal?.input?.slice(index) ?? []
-            );
-        }
-        return (selectedNode.data.input?.[index] ?? "") !== (subtreeOriginal?.input?.[index] ?? "");
-    };
-
-    const isOutputOverridden = (index: number, variadic = false) => {
-        if (!canShowOverride) {
-            return false;
-        }
-        if (variadic) {
-            return !compareJsonValue(
-                selectedNode.data.output?.slice(index) ?? [],
-                subtreeOriginal?.output?.slice(index) ?? []
-            );
-        }
-        return (
-            (selectedNode.data.output?.[index] ?? "") !== (subtreeOriginal?.output?.[index] ?? "")
-        );
-    };
-
-    const isArgOverridden = (argName: string) => {
-        if (!canShowOverride) {
-            return false;
-        }
-        return !compareJsonValue(
-            selectedNode.data.args?.[argName],
-            subtreeOriginal?.args?.[argName]
-        );
-    };
-
     const submitNodeForm = () => {
         void form.submit();
     };
 
-    const buildInputArray = (currentNodeDef: NodeDef | null, values: Record<string, unknown>) => {
-        if (!currentNodeDef?.input?.length) {
-            return selectedNode.data.input;
+    const isSlotOverridden = (
+        currentSlots: string[] | undefined,
+        originalSlots: string[] | undefined,
+        index: number,
+        variadic = false
+    ) => {
+        if (!canShowOverride) {
+            return false;
         }
-
-        const slots = ((values.inputSlots ?? []) as Array<string | string[]>).slice();
-        const nextValue: string[] = [];
-
-        currentNodeDef.input.forEach((slot, index) => {
-            const rawValue = slots[index];
-            if (isVariadic(currentNodeDef.input!, index)) {
-                const entries = Array.isArray(rawValue) ? rawValue : [];
-                nextValue.push(
-                    ...entries.filter((entry): entry is string => typeof entry === "string")
-                );
-            } else {
-                nextValue.push(typeof rawValue === "string" ? rawValue : "");
-            }
-            if (
-                slot === currentNodeDef.input![currentNodeDef.input!.length - 1] &&
-                isVariadic(currentNodeDef.input!, index)
-            ) {
-                return;
-            }
-        });
-
-        return nextValue;
+        if (variadic) {
+            return !compareJsonValue(
+                currentSlots?.slice(index) ?? [],
+                originalSlots?.slice(index) ?? []
+            );
+        }
+        return (currentSlots?.[index] ?? "") !== (originalSlots?.[index] ?? "");
     };
 
-    const buildOutputArray = (currentNodeDef: NodeDef | null, values: Record<string, unknown>) => {
-        if (!currentNodeDef?.output?.length) {
-            return selectedNode.data.output;
-        }
-
-        const slots = ((values.outputSlots ?? []) as Array<string | string[]>).slice();
-        const nextValue: string[] = [];
-
-        currentNodeDef.output.forEach((slot, index) => {
-            const rawValue = slots[index];
-            if (isVariadic(currentNodeDef.output!, index)) {
-                const entries = Array.isArray(rawValue) ? rawValue : [];
-                nextValue.push(
-                    ...entries.filter((entry): entry is string => typeof entry === "string")
-                );
-            } else {
-                nextValue.push(typeof rawValue === "string" ? rawValue : "");
-            }
-            if (
-                slot === currentNodeDef.output![currentNodeDef.output!.length - 1] &&
-                isVariadic(currentNodeDef.output!, index)
-            ) {
-                return;
-            }
-        });
-
-        return nextValue;
+    const resetSlotField = (
+        fieldName: SlotFieldName,
+        originalSlots: string[] | undefined,
+        index: number,
+        variadic = false
+    ) => {
+        form.setFieldValue([fieldName, index], getNodeSlotFormValue(originalSlots, index, variadic));
+        queueSubmit(form);
     };
+
+    const isInputOverridden = (index: number, variadic = false) =>
+        isSlotOverridden(selectedNode.data.input, subtreeOriginal?.input, index, variadic);
+    const isOutputOverridden = (index: number, variadic = false) =>
+        isSlotOverridden(selectedNode.data.output, subtreeOriginal?.output, index, variadic);
+    const isArgOverridden = (argName: string) =>
+        canShowOverride &&
+        !compareJsonValue(selectedNode.data.args?.[argName], subtreeOriginal?.args?.[argName]);
 
     const resetInputField = (index: number, variadic = false) => {
-        form.setFieldValue(
-            ["inputSlots", index],
-            variadic
-                ? (subtreeOriginal?.input?.slice(index) ?? [])
-                : (subtreeOriginal?.input?.[index] ?? "")
-        );
-        queueSubmit(form);
+        resetSlotField("inputSlots", subtreeOriginal?.input, index, variadic);
     };
 
     const resetOutputField = (index: number, variadic = false) => {
-        form.setFieldValue(
-            ["outputSlots", index],
-            variadic
-                ? (subtreeOriginal?.output?.slice(index) ?? [])
-                : (subtreeOriginal?.output?.[index] ?? "")
-        );
-        queueSubmit(form);
+        resetSlotField("outputSlots", subtreeOriginal?.output, index, variadic);
     };
 
     const resetArgField = (arg: NodeArg) => {
@@ -458,16 +808,19 @@ export const NodeInspectorForm: React.FC = () => {
         queueSubmit(form);
     };
 
-    const relatedArgForInput = (currentNodeDef: NodeDef, index: number) => {
-        const slotName = cleanSlotLabel(currentNodeDef.input?.[index] ?? "");
-        return currentNodeDef.args?.find((arg) => arg.oneof === slotName) ?? null;
+    const relatedArgForInput = (index: number) => {
+        if (!nodeDef) {
+            return null;
+        }
+        const slotName = cleanSlotLabel(nodeDef.input?.[index] ?? "");
+        return nodeDef.args?.find((arg) => arg.oneof === slotName) ?? null;
     };
 
     return (
         <>
             <div className="b3-v2-inspector-header">
                 <Typography.Title level={5} style={{ margin: 0 }}>
-                    {title}
+                    {inspectorTitle}
                 </Typography.Title>
             </div>
             <div className="b3-v2-inspector-content">
@@ -509,8 +862,16 @@ export const NodeInspectorForm: React.FC = () => {
                                             : values.path?.trim() || undefined,
                                     debug: Boolean(values.debug),
                                     disabled: Boolean(values.disabled),
-                                    input: buildInputArray(currentNodeDef, values),
-                                    output: buildOutputArray(currentNodeDef, values),
+                                    input: buildNodeSlotArray(
+                                        currentNodeDef?.input,
+                                        values.inputSlots,
+                                        selectedNode.data.input
+                                    ),
+                                    output: buildNodeSlotArray(
+                                        currentNodeDef?.output,
+                                        values.outputSlots,
+                                        selectedNode.data.output
+                                    ),
                                     args,
                                 },
                             });
@@ -522,558 +883,62 @@ export const NodeInspectorForm: React.FC = () => {
                         }
                     }}
                 >
-                    <Form.Item {...createInspectorLabelProps(t("node.id"))} name="id">
-                        <Input disabled />
-                    </Form.Item>
-                    <Form.Item {...createInspectorLabelProps(t("node.type"))} name="type">
-                        <Input disabled />
-                    </Form.Item>
-                    {nodeDef?.group?.length ? (
-                        <Form.Item
-                            {...createInspectorLabelProps(t("node.group"))}
-                            name="group"
-                            rules={[
-                                {
-                                    validator: async () => {
-                                        if (!nodeDef.group?.some((group) => usingGroups?.[group])) {
-                                            throw new Error(
-                                                t("node.groupNotEnabled", {
-                                                    group: nodeDef.group,
-                                                })
-                                            );
-                                        }
-                                    },
-                                },
-                            ]}
-                        >
-                            <Select
-                                mode="multiple"
-                                disabled
-                                options={nodeDef.group.map((group) => ({
-                                    label: group,
-                                    value: group,
-                                }))}
-                            />
-                        </Form.Item>
-                    ) : null}
-                    <Form.Item
-                        {...createInspectorLabelProps(t("node.children"))}
-                        name="children"
-                        rules={[
-                            {
-                                validator: async () => {
-                                    if (
-                                        nodeDef?.children !== undefined &&
-                                        nodeDef.children !== -1 &&
-                                        selectedNode.activeChildCount !== nodeDef.children
-                                    ) {
-                                        throw new Error(t("node.invalidChildren"));
-                                    }
-                                },
-                            },
-                        ]}
-                    >
-                        <Input disabled />
-                    </Form.Item>
+                    <NodeMetaFields
+                        form={form}
+                        selectedNode={selectedNode}
+                        nodeDefs={nodeDefs}
+                        nodeDef={nodeDef}
+                        nodeDefMap={nodeDefMap}
+                        usingGroups={usingGroups}
+                        allFiles={allFiles}
+                        fieldEditDisabled={fieldEditDisabled}
+                        canShowOverride={canShowOverride}
+                        subtreeOriginal={subtreeOriginal}
+                        onCommit={submitNodeForm}
+                    />
 
-                    <Form.Item
-                        {...createInspectorLabelProps(t("node.name"))}
-                        name="name"
-                        rules={[
-                            {
-                                validator: async (_, value) => {
-                                    const nextName = String(value ?? "").trim();
-                                    if (!nextName) {
-                                        throw new Error(
-                                            t("node.notFound", { name: selectedNode.data.name })
-                                        );
-                                    }
-                                    if (nextName === selectedNode.data.name) {
-                                        return;
-                                    }
-                                    if (!nodeDefMap.has(nextName)) {
-                                        throw new Error(
-                                            t("node.notFound", {
-                                                name: nextName || selectedNode.data.name,
-                                            })
-                                        );
-                                    }
-                                },
-                            },
-                        ]}
-                    >
-                        <AutoComplete
-                            disabled={fieldEditDisabled}
-                            options={nodeDefs.map((entry) => ({
-                                label: `${entry.name} (${entry.desc})`,
-                                value: entry.name,
-                            }))}
-                            filterOption={filterOptionByLabel}
-                            onBlur={submitNodeForm}
-                            onSelect={() => queueSubmit(form)}
-                        />
-                    </Form.Item>
-
-                    <OverrideBar
-                        active={
-                            canShowOverride &&
-                            (selectedNode.data.desc ?? "") !== (subtreeOriginal?.desc ?? "")
-                        }
-                        onReset={() => {
-                            form.setFieldValue("desc", subtreeOriginal?.desc ?? "");
-                            queueSubmit(form);
-                        }}
-                    >
-                        <Form.Item {...createInspectorLabelProps(t("node.desc"))} name="desc">
-                            <TextArea
-                                autoSize={{ minRows: 1 }}
-                                disabled={fieldEditDisabled}
-                                onBlur={submitNodeForm}
-                            />
-                        </Form.Item>
-                    </OverrideBar>
-
-                    <OverrideBar
-                        active={
-                            canShowOverride &&
-                            Boolean(selectedNode.data.debug) !== Boolean(subtreeOriginal?.debug)
-                        }
-                        onReset={() => {
-                            form.setFieldValue("debug", Boolean(subtreeOriginal?.debug));
-                            queueSubmit(form);
-                        }}
-                    >
-                        <Form.Item
-                            {...createInspectorLabelProps(t("node.debug"))}
-                            name="debug"
-                            valuePropName="checked"
-                        >
-                            <Switch
-                                disabled={fieldEditDisabled && !selectedNode.data.path}
-                                onChange={() => queueSubmit(form)}
-                            />
-                        </Form.Item>
-                    </OverrideBar>
-
-                    <OverrideBar
-                        active={
-                            canShowOverride &&
-                            Boolean(selectedNode.data.disabled) !==
-                                Boolean(subtreeOriginal?.disabled)
-                        }
-                        onReset={() => {
-                            form.setFieldValue("disabled", Boolean(subtreeOriginal?.disabled));
-                            queueSubmit(form);
-                        }}
-                    >
-                        <Form.Item
-                            {...createInspectorLabelProps(t("node.disabled"))}
-                            name="disabled"
-                            valuePropName="checked"
-                        >
-                            <Switch
-                                disabled={fieldEditDisabled && !selectedNode.data.path}
-                                onChange={() => queueSubmit(form)}
-                            />
-                        </Form.Item>
-                    </OverrideBar>
-
-                    <Form.Item {...createInspectorLabelProps(t("node.subtree"))} name="path">
-                        <AutoComplete
-                            disabled={fieldEditDisabled || selectedNode.subtreeNode}
-                            options={allFiles.map((path) => ({ label: path, value: path }))}
-                            filterOption={filterOptionByLabel}
-                            onBlur={submitNodeForm}
-                            onSelect={() => queueSubmit(form)}
-                        />
-                    </Form.Item>
-
-                    {nodeDef?.doc ? (
-                        <ReactMarkdown className="b3-v2-markdown">{nodeDef.doc}</ReactMarkdown>
-                    ) : null}
-
-                    {nodeDef?.input?.length ? (
-                        <>
-                            <SectionDivider>{t("node.inputVariable")}</SectionDivider>
-                            {nodeDef.input.map((slot, index) => {
-                                const slotLabel = cleanSlotLabel(slot);
-                                const relatedArg = relatedArgForInput(nodeDef, index);
-
-                                if (isVariadic(nodeDef.input!, index)) {
-                                    return (
-                                        <OverrideBar
-                                            key={`input-slot-${index}`}
-                                            active={isInputOverridden(index, true)}
-                                            onReset={() => resetInputField(index, true)}
-                                        >
-                                            <Form.Item
-                                                {...createInspectorLabelProps(
-                                                    slotLabel,
-                                                    !slot.includes("?")
-                                                )}
-                                            >
-                                                <Form.List name={["inputSlots", index]}>
-                                                    {(fields, { add, remove }, { errors }) => (
-                                                        <div className="b3-v2-list-block">
-                                                            {fields.map((field) => (
-                                                                <Flex
-                                                                    key={field.key}
-                                                                    gap={4}
-                                                                    align="start"
-                                                                >
-                                                                    <Form.Item
-                                                                        name={field.name}
-                                                                        style={{
-                                                                            width: "100%",
-                                                                            marginBottom: 2,
-                                                                        }}
-                                                                        validateTrigger={[
-                                                                            "onChange",
-                                                                            "onBlur",
-                                                                        ]}
-                                                                        rules={[
-                                                                            {
-                                                                                validator: async (
-                                                                                    _,
-                                                                                    value:
-                                                                                        | string
-                                                                                        | undefined
-                                                                                ) => {
-                                                                                    const error =
-                                                                                        validateVariableValue(
-                                                                                            value,
-                                                                                            usingVars
-                                                                                        );
-                                                                                    if (error) {
-                                                                                        throw new Error(
-                                                                                            error
-                                                                                        );
-                                                                                    }
-                                                                                    if (
-                                                                                        relatedArg &&
-                                                                                        !checkOneof(
-                                                                                            relatedArg,
-                                                                                            form.getFieldValue(
-                                                                                                [
-                                                                                                    "args",
-                                                                                                    relatedArg.name,
-                                                                                                ]
-                                                                                            ),
-                                                                                            value
-                                                                                        )
-                                                                                    ) {
-                                                                                        throw new Error(
-                                                                                            t(
-                                                                                                "validation.oneof",
-                                                                                                {
-                                                                                                    left: relatedArg.name,
-                                                                                                    right: slotLabel,
-                                                                                                }
-                                                                                            )
-                                                                                        );
-                                                                                    }
-                                                                                },
-                                                                            },
-                                                                        ]}
-                                                                    >
-                                                                        <AutoComplete
-                                                                            disabled={
-                                                                                fieldEditDisabled
-                                                                            }
-                                                                            options={
-                                                                                variableOptions
-                                                                            }
-                                                                            filterOption={
-                                                                                filterOptionByLabel
-                                                                            }
-                                                                            onBlur={submitNodeForm}
-                                                                        />
-                                                                    </Form.Item>
-                                                                    <MinusCircleOutlined
-                                                                        className="b3-v2-inline-remove"
-                                                                        onClick={() => {
-                                                                            remove(field.name);
-                                                                            queueSubmit(form);
-                                                                        }}
-                                                                    />
-                                                                </Flex>
-                                                            ))}
-                                                            <Form.Item
-                                                                style={{
-                                                                    marginBottom: 0,
-                                                                    marginTop: 4,
-                                                                }}
-                                                            >
-                                                                <Button
-                                                                    type="dashed"
-                                                                    block
-                                                                    icon={<PlusOutlined />}
-                                                                    onClick={() => add("")}
-                                                                >
-                                                                    {t("add")}
-                                                                </Button>
-                                                                <Form.ErrorList errors={errors} />
-                                                            </Form.Item>
-                                                        </div>
-                                                    )}
-                                                </Form.List>
-                                            </Form.Item>
-                                        </OverrideBar>
-                                    );
-                                }
-
-                                return (
-                                    <OverrideBar
-                                        key={`input-slot-${index}`}
-                                        active={isInputOverridden(index)}
-                                        onReset={() => resetInputField(index)}
-                                    >
-                                        <Form.Item
-                                            {...createInspectorLabelProps(
-                                                slotLabel,
-                                                !slot.includes("?")
-                                            )}
-                                            name={["inputSlots", index]}
-                                            rules={[
-                                                {
-                                                    required: !slot.includes("?"),
-                                                    message: t("fieldRequired", {
-                                                        field: slotLabel,
-                                                    }),
-                                                },
-                                                {
-                                                    validator: async (
-                                                        _,
-                                                        value: string | undefined
-                                                    ) => {
-                                                        const error = validateVariableValue(
-                                                            value,
-                                                            usingVars
-                                                        );
-                                                        if (error) {
-                                                            throw new Error(error);
-                                                        }
-                                                        if (
-                                                            relatedArg &&
-                                                            !checkOneof(
-                                                                relatedArg,
-                                                                form.getFieldValue([
-                                                                    "args",
-                                                                    relatedArg.name,
-                                                                ]),
-                                                                value
-                                                            )
-                                                        ) {
-                                                            throw new Error(
-                                                                t("validation.oneof", {
-                                                                    left: relatedArg.name,
-                                                                    right: slotLabel,
-                                                                })
-                                                            );
-                                                        }
-                                                    },
-                                                },
-                                            ]}
-                                        >
-                                            <AutoComplete
-                                                disabled={fieldEditDisabled}
-                                                options={variableOptions}
-                                                filterOption={filterOptionByLabel}
-                                                onBlur={submitNodeForm}
-                                            />
-                                        </Form.Item>
-                                    </OverrideBar>
-                                );
-                            })}
-                        </>
-                    ) : null}
+                    <NodeVariableSection
+                        form={form}
+                        title={t("node.inputVariable")}
+                        fieldName="inputSlots"
+                        slotDefs={nodeDef?.input}
+                        usingVars={usingVars}
+                        variableOptions={variableOptions}
+                        fieldEditDisabled={fieldEditDisabled}
+                        isOverridden={isInputOverridden}
+                        onReset={resetInputField}
+                        onCommit={submitNodeForm}
+                        getRelatedArg={relatedArgForInput}
+                    />
 
                     {hasStructuredArgs && nodeDef ? (
-                        <>
-                            <SectionDivider>{t("node.args")}</SectionDivider>
-                            {structuredArgs.map((arg) => (
-                                <OverrideBar
-                                    key={`arg-${arg.name}`}
-                                    active={isArgOverridden(arg.name)}
-                                    onReset={() => resetArgField(arg)}
-                                >
-                                    <NodeArgField
-                                        form={form}
-                                        arg={arg}
-                                        nodeDef={nodeDef}
-                                        usingVars={usingVars}
-                                        checkExpr={checkExpr}
-                                        disabled={fieldEditDisabled}
-                                        onCommit={submitNodeForm}
-                                    />
-                                </OverrideBar>
-                            ))}
-                        </>
-                    ) : shouldShowRawNodeJson ? (
-                        <>
-                            <SectionDivider>{t("node.jsonData")}</SectionDivider>
-                            <Form.Item
-                                {...createInspectorLabelProps(t("node.jsonData"))}
-                                name="rawNodeJson"
-                            >
-                                <TextArea autoSize={{ minRows: 1 }} disabled />
-                            </Form.Item>
-                        </>
-                    ) : null}
+                        <NodeStructuredArgsSection
+                            form={form}
+                            nodeDef={nodeDef}
+                            args={structuredArgs}
+                            usingVars={usingVars}
+                            checkExpr={checkExpr}
+                            fieldEditDisabled={fieldEditDisabled}
+                            isOverridden={isArgOverridden}
+                            onReset={resetArgField}
+                            onCommit={submitNodeForm}
+                        />
+                    ) : (
+                        <NodeRawJsonSection visible={shouldShowRawNodeJson} />
+                    )}
 
-                    {nodeDef?.output?.length ? (
-                        <>
-                            <SectionDivider>{t("node.outputVariable")}</SectionDivider>
-                            {nodeDef.output.map((slot, index) => {
-                                const slotLabel = cleanSlotLabel(slot);
-
-                                if (isVariadic(nodeDef.output!, index)) {
-                                    return (
-                                        <OverrideBar
-                                            key={`output-slot-${index}`}
-                                            active={isOutputOverridden(index, true)}
-                                            onReset={() => resetOutputField(index, true)}
-                                        >
-                                            <Form.Item
-                                                {...createInspectorLabelProps(
-                                                    slotLabel,
-                                                    !slot.includes("?")
-                                                )}
-                                            >
-                                                <Form.List name={["outputSlots", index]}>
-                                                    {(fields, { add, remove }, { errors }) => (
-                                                        <div className="b3-v2-list-block">
-                                                            {fields.map((field) => (
-                                                                <Flex
-                                                                    key={field.key}
-                                                                    gap={4}
-                                                                    align="start"
-                                                                >
-                                                                    <Form.Item
-                                                                        name={field.name}
-                                                                        style={{
-                                                                            width: "100%",
-                                                                            marginBottom: 2,
-                                                                        }}
-                                                                        validateTrigger={[
-                                                                            "onChange",
-                                                                            "onBlur",
-                                                                        ]}
-                                                                        rules={[
-                                                                            {
-                                                                                validator: async (
-                                                                                    _,
-                                                                                    value:
-                                                                                        | string
-                                                                                        | undefined
-                                                                                ) => {
-                                                                                    const error =
-                                                                                        validateVariableValue(
-                                                                                            value,
-                                                                                            usingVars
-                                                                                        );
-                                                                                    if (error) {
-                                                                                        throw new Error(
-                                                                                            error
-                                                                                        );
-                                                                                    }
-                                                                                },
-                                                                            },
-                                                                        ]}
-                                                                    >
-                                                                        <AutoComplete
-                                                                            disabled={
-                                                                                fieldEditDisabled
-                                                                            }
-                                                                            options={
-                                                                                variableOptions
-                                                                            }
-                                                                            filterOption={
-                                                                                filterOptionByLabel
-                                                                            }
-                                                                            onBlur={submitNodeForm}
-                                                                        />
-                                                                    </Form.Item>
-                                                                    <MinusCircleOutlined
-                                                                        className="b3-v2-inline-remove"
-                                                                        onClick={() => {
-                                                                            remove(field.name);
-                                                                            queueSubmit(form);
-                                                                        }}
-                                                                    />
-                                                                </Flex>
-                                                            ))}
-                                                            <Form.Item
-                                                                style={{
-                                                                    marginBottom: 0,
-                                                                    marginTop: 4,
-                                                                }}
-                                                            >
-                                                                <Button
-                                                                    type="dashed"
-                                                                    block
-                                                                    icon={<PlusOutlined />}
-                                                                    onClick={() => add("")}
-                                                                >
-                                                                    {t("add")}
-                                                                </Button>
-                                                                <Form.ErrorList errors={errors} />
-                                                            </Form.Item>
-                                                        </div>
-                                                    )}
-                                                </Form.List>
-                                            </Form.Item>
-                                        </OverrideBar>
-                                    );
-                                }
-
-                                return (
-                                    <OverrideBar
-                                        key={`output-slot-${index}`}
-                                        active={isOutputOverridden(index)}
-                                        onReset={() => resetOutputField(index)}
-                                    >
-                                        <Form.Item
-                                            {...createInspectorLabelProps(
-                                                slotLabel,
-                                                !slot.includes("?")
-                                            )}
-                                            name={["outputSlots", index]}
-                                            rules={[
-                                                {
-                                                    required: !slot.includes("?"),
-                                                    message: t("fieldRequired", {
-                                                        field: slotLabel,
-                                                    }),
-                                                },
-                                                {
-                                                    validator: async (
-                                                        _,
-                                                        value: string | undefined
-                                                    ) => {
-                                                        const error = validateVariableValue(
-                                                            value,
-                                                            usingVars
-                                                        );
-                                                        if (error) {
-                                                            throw new Error(error);
-                                                        }
-                                                    },
-                                                },
-                                            ]}
-                                        >
-                                            <AutoComplete
-                                                disabled={fieldEditDisabled}
-                                                options={variableOptions}
-                                                filterOption={filterOptionByLabel}
-                                                onBlur={submitNodeForm}
-                                            />
-                                        </Form.Item>
-                                    </OverrideBar>
-                                );
-                            })}
-                        </>
-                    ) : null}
+                    <NodeVariableSection
+                        form={form}
+                        title={t("node.outputVariable")}
+                        fieldName="outputSlots"
+                        slotDefs={nodeDef?.output}
+                        usingVars={usingVars}
+                        variableOptions={variableOptions}
+                        fieldEditDisabled={fieldEditDisabled}
+                        isOverridden={isOutputOverridden}
+                        onReset={resetOutputField}
+                        onCommit={submitNodeForm}
+                    />
                 </Form>
             </div>
         </>
