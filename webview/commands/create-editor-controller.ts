@@ -17,7 +17,6 @@ import type {
     HostAdapter,
     HostInitPayload,
     HostVarsPayload,
-    ImportDecl,
     NodeDef,
     NodeInstanceRef,
     PersistedNodeModel,
@@ -44,6 +43,8 @@ import {
     computeVariableHighlights,
 } from "../domain/graph-selectors";
 import { resolveDocumentGraph } from "../domain/resolve-graph";
+import { markDocumentSaved, showDocumentReloadConflict } from "../stores/document-store";
+import { patchSelectionSearchState } from "../stores/selection-store";
 
 interface ControllerDeps {
     documentStore: StoreApi<DocumentState>;
@@ -79,6 +80,19 @@ const cloneVars = <T extends { name: string; desc: string }>(entries: T[]): T[] 
 
 const isJsonEqual = (left: unknown, right: unknown): boolean =>
     JSON.stringify(left) === JSON.stringify(right);
+
+type TreeSelectedMode = "debounced" | "immediate" | "skip";
+type SelectionPatch = Partial<
+    Pick<
+        SelectionState,
+        | "selectedTree"
+        | "selectedNodeKey"
+        | "selectedNodeRef"
+        | "selectedNodeSnapshot"
+        | "selectedNodeDef"
+        | "activeVariableNames"
+    >
+>;
 
 export const createEditorController = (deps: ControllerDeps): EditorCommand => {
     let resolvedGraph: ResolvedDocumentGraph | null = null;
@@ -128,6 +142,96 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         sourceTreePath: null,
         subtreeStack: [],
     });
+
+    const updateSelectionState = (buildPatch: (state: SelectionState) => SelectionPatch) => {
+        deps.selectionStore.setState((state) => ({
+            ...state,
+            ...buildPatch(state),
+        }));
+    };
+
+    const buildTreeSelectionPatch = (): SelectionPatch => {
+        const filePath = deps.workspaceStore.getState().filePath;
+        return {
+            selectedTree: filePath ? { filePath } : null,
+            selectedNodeKey: null,
+            selectedNodeRef: null,
+            selectedNodeSnapshot: null,
+            selectedNodeDef: null,
+        };
+    };
+
+    const buildResolvedNodeSelectionPatch = (instanceKey: string): SelectionPatch | null => {
+        if (!resolvedGraph) {
+            return null;
+        }
+
+        const node = resolvedGraph.nodesByInstanceKey[instanceKey];
+        if (!node) {
+            return null;
+        }
+
+        return {
+            selectedTree: null,
+            selectedNodeKey: node.ref.instanceKey,
+            selectedNodeRef: node.ref,
+            selectedNodeSnapshot: buildSelectedNodeSnapshot(node.ref.instanceKey),
+            selectedNodeDef: buildSelectedNodeDef(node.ref.instanceKey),
+        };
+    };
+
+    const buildPendingNodeSelectionPatch = (stableId: string): SelectionPatch => ({
+        selectedTree: null,
+        selectedNodeKey: stableId,
+        selectedNodeRef: buildPendingSelectionRef(stableId),
+        selectedNodeSnapshot: null,
+        selectedNodeDef: null,
+    });
+
+    const clearActiveVariableFocus = (): boolean => {
+        if (deps.selectionStore.getState().activeVariableNames.length === 0) {
+            return false;
+        }
+
+        updateSelectionState(() => ({
+            activeVariableNames: [],
+        }));
+        return true;
+    };
+
+    const selectTreeState = (opts?: { clearVariableFocus?: boolean }): boolean => {
+        const shouldClearVariableFocus =
+            Boolean(opts?.clearVariableFocus) &&
+            deps.selectionStore.getState().activeVariableNames.length > 0;
+        updateSelectionState((state) => ({
+            ...buildTreeSelectionPatch(),
+            activeVariableNames: shouldClearVariableFocus ? [] : state.activeVariableNames,
+        }));
+        return shouldClearVariableFocus;
+    };
+
+    const selectResolvedNodeState = (
+        instanceKey: string,
+        opts?: { clearVariableFocus?: boolean }
+    ): boolean => {
+        const patch = buildResolvedNodeSelectionPatch(instanceKey);
+        if (!patch) {
+            return false;
+        }
+
+        const shouldClearVariableFocus =
+            Boolean(opts?.clearVariableFocus) &&
+            deps.selectionStore.getState().activeVariableNames.length > 0;
+        updateSelectionState((state) => ({
+            ...patch,
+            activeVariableNames: shouldClearVariableFocus ? [] : state.activeVariableNames,
+        }));
+        return shouldClearVariableFocus;
+    };
+
+    const selectPendingNodeState = (stableId: string) => {
+        updateSelectionState(() => buildPendingNodeSelectionPatch(stableId));
+    };
 
     const getSelectedResolvedNode = () => {
         const ref = deps.selectionStore.getState().selectedNodeRef;
@@ -354,9 +458,9 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         }
         const filePath = deps.workspaceStore.getState().filePath || undefined;
         const tree = parsePersistedTreeContent(snapshot, filePath);
-        setDocumentTree(tree);
-        await syncReachableSubtreeSources();
-        await rebuildGraph({ preserveSelection: true });
+        await applyDocumentTree(tree, {
+            preserveSelection: true,
+        });
         await deps.graphAdapter.restoreViewport(viewport);
         deps.documentStore.setState((state) => ({
             ...state,
@@ -395,14 +499,10 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             tree: deps.documentStore.getState().persistedTree,
         });
 
-        deps.selectionStore.setState((state) => ({
-            ...state,
-            search: {
-                ...state.search,
-                results: graphSearch.resultKeys,
-                index: graphSearch.activeResultIndex,
-            },
-        }));
+        patchSelectionSearchState(deps.selectionStore, {
+            results: graphSearch.resultKeys,
+            index: graphSearch.activeResultIndex,
+        });
 
         await deps.graphAdapter.applySearch(graphSearch);
     };
@@ -434,28 +534,12 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             );
 
         if (!fallback) {
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedNodeKey: null,
-                selectedNodeRef: null,
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-                selectedTree: deps.workspaceStore.getState().filePath
-                    ? { filePath: deps.workspaceStore.getState().filePath }
-                    : null,
-            }));
+            updateSelectionState(() => buildTreeSelectionPatch());
             await deps.graphAdapter.applySelection({ selectedNodeKey: null });
             return;
         }
 
-        deps.selectionStore.setState((state) => ({
-            ...state,
-            selectedNodeKey: fallback.ref.instanceKey,
-            selectedNodeRef: fallback.ref,
-            selectedNodeSnapshot: buildSelectedNodeSnapshot(fallback.ref.instanceKey),
-            selectedNodeDef: buildSelectedNodeDef(fallback.ref.instanceKey),
-            selectedTree: null,
-        }));
+        updateSelectionState(() => buildResolvedNodeSelectionPatch(fallback.ref.instanceKey) ?? {});
         await deps.graphAdapter.applySelection({ selectedNodeKey: fallback.ref.instanceKey });
     };
 
@@ -475,11 +559,16 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
 
         resolvedGraph = result.graph;
         await deps.graphAdapter.render(
-            buildResolvedGraphModel(result.graph, workspace.nodeDefs, workspace.settings.nodeColors, {
-                usingVars: workspace.usingVars,
-                usingGroups: workspace.usingGroups,
-                checkExpr: workspace.settings.checkExpr,
-            })
+            buildResolvedGraphModel(
+                result.graph,
+                workspace.nodeDefs,
+                workspace.settings.nodeColors,
+                {
+                    usingVars: workspace.usingVars,
+                    usingGroups: workspace.usingGroups,
+                    checkExpr: workspace.settings.checkExpr,
+                }
+            )
         );
         if (opts?.preserveSelection) {
             await restoreSelection();
@@ -564,8 +653,89 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         }));
     };
 
-    const createUnimplemented = (commandName: string) => async () => {
-        deps.hostAdapter.log("info", `[v2] command not implemented yet: ${commandName}`);
+    const getSerializedCurrentTree = (): string | null => {
+        const tree = deps.documentStore.getState().persistedTree;
+        return tree ? serializePersistedTree(tree) : null;
+    };
+
+    const pushCurrentHistorySnapshot = () => {
+        const snapshot = getSerializedCurrentTree();
+        if (snapshot) {
+            pushHistorySnapshot(snapshot);
+        }
+    };
+
+    const resetDocumentHistory = () => {
+        const snapshot = getSerializedCurrentTree();
+        if (!snapshot) {
+            return;
+        }
+
+        deps.documentStore.setState((state) => ({
+            ...state,
+            history: [snapshot],
+            historyIndex: 0,
+            lastSavedSnapshot: snapshot,
+            dirty: false,
+            alertReload: false,
+            pendingExternalContent: null,
+        }));
+    };
+
+    const applyDocumentTree = async (
+        tree: PersistedTreeModel,
+        opts?: {
+            savedSnapshot?: string | null;
+            syncSubtreeSources?: boolean;
+            rebuildGraph?: boolean;
+            preserveSelection?: boolean;
+            applyVisualState?: boolean;
+        }
+    ) => {
+        setDocumentTree(tree, { savedSnapshot: opts?.savedSnapshot });
+
+        if (opts?.syncSubtreeSources !== false) {
+            await syncReachableSubtreeSources();
+        }
+
+        if (opts?.rebuildGraph !== false) {
+            await rebuildGraph({ preserveSelection: opts?.preserveSelection ?? true });
+            return;
+        }
+
+        if (opts?.applyVisualState) {
+            await applyVisualState();
+        }
+    };
+
+    const commitTreeMutation = async (
+        tree: PersistedTreeModel,
+        opts?: {
+            prepareSelection?: () => void;
+            syncSubtreeSources?: boolean;
+            rebuildGraph?: boolean;
+            preserveSelection?: boolean;
+            applyVisualState?: boolean;
+            pushHistory?: boolean;
+            treeSelectedMode?: TreeSelectedMode;
+        }
+    ) => {
+        opts?.prepareSelection?.();
+        await applyDocumentTree(tree, {
+            syncSubtreeSources: opts?.syncSubtreeSources,
+            rebuildGraph: opts?.rebuildGraph,
+            preserveSelection: opts?.preserveSelection,
+            applyVisualState: opts?.applyVisualState,
+        });
+
+        if (opts?.pushHistory !== false) {
+            pushCurrentHistorySnapshot();
+        }
+
+        const treeSelectedMode = opts?.treeSelectedMode ?? "debounced";
+        if (treeSelectedMode !== "skip") {
+            scheduleTreeSelected(treeSelectedMode === "immediate");
+        }
     };
 
     const controller: EditorCommand = {
@@ -581,60 +751,28 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 settings: payload.settings,
                 usingGroups: buildUsingGroups(persistedTree.group),
             }));
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: { filePath: payload.filePath },
-                selectedNodeKey: null,
-                selectedNodeRef: null,
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-            }));
+            selectTreeState();
 
-            setDocumentTree(persistedTree, { savedSnapshot: null });
-            await syncReachableSubtreeSources();
-            await rebuildGraph();
-
-            const snapshot = serializePersistedTree(deps.documentStore.getState().persistedTree!);
-            deps.documentStore.setState((state) => ({
-                ...state,
-                history: [snapshot],
-                historyIndex: 0,
-                lastSavedSnapshot: snapshot,
-                dirty: false,
-                alertReload: false,
-            }));
+            await applyDocumentTree(persistedTree, {
+                savedSnapshot: null,
+                preserveSelection: false,
+            });
+            resetDocumentHistory();
         },
 
         async reloadDocumentFromHost(content: string, opts?: { force?: boolean }) {
             if (deps.documentStore.getState().dirty && !opts?.force) {
-                deps.documentStore.setState((state) => ({
-                    ...state,
-                    alertReload: true,
-                    pendingExternalContent: content,
-                }));
+                showDocumentReloadConflict(deps.documentStore, content);
                 return;
             }
 
             const filePath = deps.workspaceStore.getState().filePath || undefined;
             const tree = parsePersistedTreeContent(content, filePath);
-            setDocumentTree(tree, { savedSnapshot: null });
-            deps.documentStore.setState((state) => ({
-                ...state,
-                alertReload: false,
-                pendingExternalContent: null,
-            }));
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-
-            const snapshot = serializePersistedTree(deps.documentStore.getState().persistedTree!);
-            deps.documentStore.setState((state) => ({
-                ...state,
-                history: [snapshot],
-                historyIndex: 0,
-                lastSavedSnapshot: snapshot,
-                dirty: false,
-                pendingExternalContent: null,
-            }));
+            await applyDocumentTree(tree, {
+                savedSnapshot: null,
+                preserveSelection: true,
+            });
+            resetDocumentHistory();
             scheduleTreeSelected(true);
         },
 
@@ -669,18 +807,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         },
 
         async selectTree() {
-            const filePath = deps.workspaceStore.getState().filePath;
-            const shouldClearVariableFocus =
-                deps.selectionStore.getState().activeVariableNames.length > 0;
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: filePath ? { filePath } : null,
-                selectedNodeKey: null,
-                selectedNodeRef: null,
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-                activeVariableNames: shouldClearVariableFocus ? [] : state.activeVariableNames,
-            }));
+            const shouldClearVariableFocus = selectTreeState({ clearVariableFocus: true });
             if (shouldClearVariableFocus) {
                 await applyVisualState();
             } else {
@@ -710,23 +837,14 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                     return;
                 }
 
-                deps.selectionStore.setState((state) => ({
-                    ...state,
-                    activeVariableNames: [],
-                }));
+                clearActiveVariableFocus();
                 await applyVisualState();
                 return;
             }
 
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: null,
-                selectedNodeKey: node.ref.instanceKey,
-                selectedNodeRef: node.ref,
-                selectedNodeSnapshot: buildSelectedNodeSnapshot(node.ref.instanceKey),
-                selectedNodeDef: buildSelectedNodeDef(node.ref.instanceKey),
-                activeVariableNames: shouldClearVariableFocus ? [] : state.activeVariableNames,
-            }));
+            selectResolvedNodeState(node.ref.instanceKey, {
+                clearVariableFocus: shouldClearVariableFocus,
+            });
 
             if (shouldClearVariableFocus) {
                 await applyVisualState();
@@ -773,16 +891,12 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             nextTree.group = nextGroup;
             nextTree.vars = nextVars;
             nextTree.import = nextImportRefs;
-            setDocumentTree(nextTree);
-            if (tree.prefix !== nextPrefix || !isJsonEqual(tree.group, nextGroup)) {
-                await rebuildGraph({ preserveSelection: true });
-            } else {
-                await applyVisualState();
-            }
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(nextTree, {
+                syncSubtreeSources: false,
+                rebuildGraph: tree.prefix !== nextPrefix || !isJsonEqual(tree.group, nextGroup),
+                preserveSelection: true,
+                applyVisualState: true,
+            });
         },
 
         async updateNode(payload: UpdateNodeInput) {
@@ -794,7 +908,8 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
 
-            const nextName = String(payload.data.name ?? resolvedNode.name).trim() || resolvedNode.name;
+            const nextName =
+                String(payload.data.name ?? resolvedNode.name).trim() || resolvedNode.name;
             const nextDesc = payload.data.desc?.trim() || undefined;
             const nextPath = payload.data.path?.trim() || undefined;
             const nextDebug = Boolean(payload.data.debug);
@@ -849,13 +964,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                     delete tree.$override[payload.target.sourceStableId];
                 }
 
-                setDocumentTree(tree);
-                await syncReachableSubtreeSources();
-                await rebuildGraph({ preserveSelection: true });
-                pushHistorySnapshot(
-                    serializePersistedTree(deps.documentStore.getState().persistedTree!)
-                );
-                scheduleTreeSelected();
+                await commitTreeMutation(tree);
                 return;
             }
 
@@ -893,13 +1002,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 }
             }
 
-            setDocumentTree(tree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(tree);
         },
 
         async performDrop(intent: DropIntent) {
@@ -1000,45 +1103,26 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 );
             }
 
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: null,
-                selectedNodeKey: sourceResolved.ref.instanceKey,
-                selectedNodeRef: sourceResolved.ref,
-                selectedNodeSnapshot: buildSelectedNodeSnapshot(sourceResolved.ref.instanceKey),
-                selectedNodeDef: buildSelectedNodeDef(sourceResolved.ref.instanceKey),
-            }));
-
-            setDocumentTree(tree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(tree, {
+                prepareSelection: () => {
+                    selectResolvedNodeState(sourceResolved.ref.instanceKey);
+                },
+            });
         },
 
         async openSearch(mode: "content" | "id") {
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                search: {
-                    ...state.search,
-                    open: true,
-                    mode,
-                },
-            }));
+            patchSelectionSearchState(deps.selectionStore, {
+                open: true,
+                mode,
+            });
             await applyVisualState();
         },
 
         async updateSearch(query: string) {
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                search: {
-                    ...state.search,
-                    query,
-                    index: 0,
-                },
-            }));
+            patchSelectionSearchState(deps.selectionStore, {
+                query,
+                index: 0,
+            });
             await applyVisualState();
             const { results } = deps.selectionStore.getState().search;
             if (results.length > 0) {
@@ -1053,13 +1137,9 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
             const nextIndex = (search.index + 1) % search.results.length;
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                search: {
-                    ...state.search,
-                    index: nextIndex,
-                },
-            }));
+            patchSelectionSearchState(deps.selectionStore, {
+                index: nextIndex,
+            });
             await applyVisualState();
             const key = deps.selectionStore.getState().search.results[nextIndex];
             if (key) {
@@ -1074,13 +1154,9 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 return;
             }
             const nextIndex = (search.index + search.results.length - 1) % search.results.length;
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                search: {
-                    ...state.search,
-                    index: nextIndex,
-                },
-            }));
+            patchSelectionSearchState(deps.selectionStore, {
+                index: nextIndex,
+            });
             await applyVisualState();
             const key = deps.selectionStore.getState().search.results[nextIndex];
             if (key) {
@@ -1141,22 +1217,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             targetNode.children ||= [];
             targetNode.children.push(nextNode);
 
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: null,
-                selectedNodeKey: nextNode.$id,
-                selectedNodeRef: buildPendingSelectionRef(nextNode.$id),
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-            }));
-
-            setDocumentTree(tree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(tree, {
+                prepareSelection: () => {
+                    selectPendingNodeState(nextNode.$id);
+                },
+            });
         },
 
         async insertNode() {
@@ -1188,22 +1253,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             targetNode.children ||= [];
             targetNode.children.push(nextNode);
 
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: null,
-                selectedNodeKey: nextNode.$id,
-                selectedNodeRef: buildPendingSelectionRef(nextNode.$id),
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-            }));
-
-            setDocumentTree(tree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(tree, {
+                prepareSelection: () => {
+                    selectPendingNodeState(nextNode.$id);
+                },
+            });
         },
 
         async replaceNode() {
@@ -1242,22 +1296,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             }
             overwritePersistedNode(targetNode, replacement);
 
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: null,
-                selectedNodeKey: replacement.$id,
-                selectedNodeRef: buildPendingSelectionRef(replacement.$id),
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-            }));
-
-            setDocumentTree(tree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(tree, {
+                prepareSelection: () => {
+                    selectPendingNodeState(replacement.$id);
+                },
+            });
         },
 
         async deleteNode() {
@@ -1289,22 +1332,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             );
             const nextSelection = location.parent.$id;
 
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: null,
-                selectedNodeKey: nextSelection,
-                selectedNodeRef: buildPendingSelectionRef(nextSelection),
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-            }));
-
-            setDocumentTree(tree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(tree, {
+                prepareSelection: () => {
+                    selectPendingNodeState(nextSelection);
+                },
+            });
         },
         async undo() {
             const current = deps.documentStore.getState();
@@ -1345,13 +1377,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 message.error(response.error ?? "Save failed");
                 return;
             }
-            deps.documentStore.setState((state) => ({
-                ...state,
-                lastSavedSnapshot: snapshot,
-                dirty: false,
-                alertReload: false,
-                pendingExternalContent: null,
-            }));
+            markDocumentSaved(deps.documentStore, snapshot);
         },
 
         async buildDocument() {
@@ -1432,22 +1458,11 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             targetNode.path = normalizeWorkdirRelativePath(result.savedPath);
             targetNode.children = undefined;
 
-            deps.selectionStore.setState((state) => ({
-                ...state,
-                selectedTree: null,
-                selectedNodeKey: targetNode.$id,
-                selectedNodeRef: buildPendingSelectionRef(targetNode.$id),
-                selectedNodeSnapshot: null,
-                selectedNodeDef: null,
-            }));
-
-            setDocumentTree(tree);
-            await syncReachableSubtreeSources();
-            await rebuildGraph({ preserveSelection: true });
-            pushHistorySnapshot(
-                serializePersistedTree(deps.documentStore.getState().persistedTree!)
-            );
-            scheduleTreeSelected();
+            await commitTreeMutation(tree, {
+                prepareSelection: () => {
+                    selectPendingNodeState(targetNode.$id);
+                },
+            });
             message.success(i18n.t("node.subtreeSaveSuccess", { path: targetNode.path }));
         },
     };

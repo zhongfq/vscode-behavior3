@@ -1,17 +1,15 @@
 import { Alert, Button, Flex, Skeleton } from "antd";
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { useDocumentStore, useRuntime, useSelectionStore } from "../../app/runtime";
+import { useInspectorPaneState, useRuntime } from "../../app/runtime";
+import { clearDocumentReloadConflict } from "../../stores/document-store";
 import { NodeInspectorForm } from "./node-inspector-form";
 import { TreeInspectorForm } from "./tree-inspector-form";
 
 export const InspectorPane: React.FC = () => {
     const runtime = useRuntime();
     const { t } = useTranslation();
-    const document = useDocumentStore((state) => state.persistedTree);
-    const alertReload = useDocumentStore((state) => state.alertReload);
-    const pendingExternalContent = useDocumentStore((state) => state.pendingExternalContent);
-    const selectedNode = useSelectionStore((state) => state.selectedNodeSnapshot);
+    const { document, alertReload, pendingExternalContent, selectedNode } = useInspectorPaneState();
 
     if (!document) {
         return (
@@ -128,11 +126,7 @@ export const InspectorPane: React.FC = () => {
                             <Button
                                 size="small"
                                 onClick={() => {
-                                    runtime.documentStore.setState((state) => ({
-                                        ...state,
-                                        alertReload: false,
-                                        pendingExternalContent: null,
-                                    }));
+                                    clearDocumentReloadConflict(runtime.documentStore);
                                 }}
                             >
                                 {t("editor.dismissConflict")}

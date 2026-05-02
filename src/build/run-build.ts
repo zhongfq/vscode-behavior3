@@ -2,9 +2,9 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { getLogger, logger, setLogger, type Logger } from "../../webview/shared/misc/logger";
-import { getBehavior3OutputChannel } from "../outputChannel";
-import { findB3SettingPath, findB3WorkspacePath } from "../settingResolver";
-import { TreeEditorProvider } from "../treeEditorProvider";
+import { getBehavior3OutputChannel } from "../output-channel";
+import { findB3SettingPath, findB3WorkspacePath } from "../setting-resolver";
+import { TreeEditorProvider } from "../tree-editor-provider";
 import { setFs } from "../../webview/shared/misc/b3fs";
 import {
     buildProject,
@@ -67,7 +67,7 @@ export async function saveLastBuildOutput(
 }
 
 /**
- * Resolve `.b3-setting` path (same rules as `settingResolver.resolveNodeDefs`, synchronous).
+ * Resolve `.b3-setting` path (same rules as `setting-resolver.resolveNodeDefs`, synchronous).
  * @param searchFromDir Optional directory to start walking upward from (e.g. dirname of `.b3-workspace`).
  */
 export function resolveSettingFilePathSync(

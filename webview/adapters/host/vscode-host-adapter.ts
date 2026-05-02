@@ -29,11 +29,20 @@ declare function acquireVsCodeApi(): {
 
 const vscode = acquireVsCodeApi();
 
-type PendingRequest =
-    | { type: "readFile"; resolve(value: ReadFileResponse): void }
-    | { type: "saveSubtree"; resolve(value: SaveSubtreeResponse): void }
-    | { type: "saveSubtreeAs"; resolve(value: SaveSubtreeAsResponse): void }
-    | { type: "saveDocument"; resolve(value: SaveDocumentResponse): void };
+interface PendingRequestMap {
+    readFile: ReadFileResponse;
+    saveSubtree: SaveSubtreeResponse;
+    saveSubtreeAs: SaveSubtreeAsResponse;
+    saveDocument: SaveDocumentResponse;
+}
+
+type PendingRequestType = keyof PendingRequestMap;
+type PendingRequest = {
+    [K in PendingRequestType]: {
+        type: K;
+        resolve(value: PendingRequestMap[K]): void;
+    };
+}[PendingRequestType];
 
 const pendingRequests = new Map<string, PendingRequest>();
 
@@ -56,6 +65,33 @@ const formatLogArg = (value: unknown): string => {
 
 const postMessage = (message: EditorToHostMessage) => {
     vscode.postMessage(message);
+};
+
+const registerPendingRequest = <K extends PendingRequestType>(
+    type: K,
+    resolve: (value: PendingRequestMap[K]) => void,
+    requestId = createRequestId()
+): string => {
+    pendingRequests.set(requestId, {
+        type,
+        resolve,
+    } as PendingRequest);
+    return requestId;
+};
+
+const resolvePendingRequest = <K extends PendingRequestType>(
+    requestId: string,
+    type: K,
+    value: PendingRequestMap[K]
+): boolean => {
+    const pending = pendingRequests.get(requestId);
+    if (pending?.type !== type) {
+        return false;
+    }
+
+    pendingRequests.delete(requestId);
+    (pending.resolve as (resolved: PendingRequestMap[K]) => void)(value);
+    return true;
 };
 
 const createForwardLogger = (): Logger => {
@@ -83,89 +119,78 @@ setLogger(composeLoggers(createConsoleLogger(), createForwardLogger()));
 export const createVsCodeHostAdapter = (): HostAdapter => {
     return {
         connect(onMessage) {
+            const dispatchHostEvent = (message: HostToEditorMessage) => {
+                switch (message.type) {
+                    case "readFileResult":
+                        resolvePendingRequest(message.requestId, "readFile", {
+                            content: message.content,
+                        });
+                        return;
+
+                    case "saveSubtreeResult":
+                        resolvePendingRequest(message.requestId, "saveSubtree", {
+                            success: message.success,
+                            error: message.error,
+                        });
+                        return;
+
+                    case "saveSubtreeAsResult":
+                        resolvePendingRequest(message.requestId, "saveSubtreeAs", {
+                            savedPath: message.savedPath,
+                            error: message.error,
+                        });
+                        return;
+
+                    case "saveDocumentResult":
+                        resolvePendingRequest(message.requestId, "saveDocument", {
+                            success: message.success,
+                            error: message.error,
+                        });
+                        return;
+
+                    case "init":
+                        onMessage({ type: "init", payload: normalizeHostInitMessage(message) });
+                        return;
+
+                    case "varDeclLoaded":
+                        onMessage({
+                            type: "varDeclLoaded",
+                            payload: normalizeHostVarsMessage(message),
+                        });
+                        return;
+
+                    case "fileChanged":
+                        onMessage({ type: "fileChanged", content: message.content });
+                        return;
+
+                    case "themeChanged":
+                        onMessage({ type: "themeChanged", theme: message.theme });
+                        return;
+
+                    case "subtreeFileChanged":
+                        onMessage({ type: "subtreeFileChanged" });
+                        return;
+
+                    case "settingLoaded":
+                        onMessage({
+                            type: "settingLoaded",
+                            nodeDefs: message.nodeDefs,
+                            settings: message.settings,
+                        });
+                        return;
+
+                    case "buildResult":
+                        onMessage({
+                            type: "buildResult",
+                            success: message.success,
+                            message: message.message,
+                        });
+                        return;
+                }
+            };
+
             const handler = (event: MessageEvent<HostToEditorMessage>) => {
-                const message = event.data;
-
-                if (message.type === "readFileResult") {
-                    const pending = pendingRequests.get(message.requestId);
-                    if (pending?.type === "readFile") {
-                        pendingRequests.delete(message.requestId);
-                        pending.resolve({ content: message.content });
-                    }
-                    return;
-                }
-
-                if (message.type === "saveSubtreeResult") {
-                    const pending = pendingRequests.get(message.requestId);
-                    if (pending?.type === "saveSubtree") {
-                        pendingRequests.delete(message.requestId);
-                        pending.resolve({ success: message.success, error: message.error });
-                    }
-                    return;
-                }
-
-                if (message.type === "saveSubtreeAsResult") {
-                    const pending = pendingRequests.get(message.requestId);
-                    if (pending?.type === "saveSubtreeAs") {
-                        pendingRequests.delete(message.requestId);
-                        pending.resolve({ savedPath: message.savedPath, error: message.error });
-                    }
-                    return;
-                }
-
-                if (message.type === "saveDocumentResult") {
-                    const pending = pendingRequests.get(message.requestId);
-                    if (pending?.type === "saveDocument") {
-                        pendingRequests.delete(message.requestId);
-                        pending.resolve({ success: message.success, error: message.error });
-                    }
-                    return;
-                }
-
-                if (message.type === "init") {
-                    onMessage({ type: "init", payload: normalizeHostInitMessage(message) });
-                    return;
-                }
-
-                if (message.type === "varDeclLoaded") {
-                    onMessage({
-                        type: "varDeclLoaded",
-                        payload: normalizeHostVarsMessage(message),
-                    });
-                    return;
-                }
-
-                if (message.type === "fileChanged") {
-                    onMessage({ type: "fileChanged", content: message.content });
-                    return;
-                }
-
-                if (message.type === "themeChanged") {
-                    onMessage({ type: "themeChanged", theme: message.theme });
-                    return;
-                }
-
-                if (message.type === "subtreeFileChanged") {
-                    onMessage({ type: "subtreeFileChanged" });
-                    return;
-                }
-
-                if (message.type === "settingLoaded") {
-                    onMessage({
-                        type: "settingLoaded",
-                        nodeDefs: message.nodeDefs,
-                        settings: message.settings,
-                    });
-                    return;
-                }
-
-                if (message.type === "buildResult") {
-                    onMessage({
-                        type: "buildResult",
-                        success: message.success,
-                        message: message.message,
-                    });
-                }
+                dispatchHostEvent(event.data);
             };
 
             window.addEventListener("message", handler);
@@ -194,32 +219,32 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
 
         saveDocument(content: string) {
             return new Promise<SaveDocumentResponse>((resolve) => {
-                const requestId = createRequestId();
-                pendingRequests.set(requestId, { type: "saveDocument", resolve });
+                const requestId = registerPendingRequest("saveDocument", resolve);
                 postMessage({ type: "saveDocument", requestId, content });
             });
         },
 
         readFile(path: WorkdirRelativeJsonPath, opts) {
             return new Promise<ReadFileResponse>((resolve) => {
-                const requestId = opts?.openIfSubtree ? "open-subtree" : createRequestId();
-                pendingRequests.set(requestId, { type: "readFile", resolve });
+                const requestId = registerPendingRequest(
+                    "readFile",
+                    resolve,
+                    opts?.openIfSubtree ? "open-subtree" : createRequestId()
+                );
                 postMessage({ type: "readFile", requestId, path });
             });
         },
 
         saveSubtree(path: WorkdirRelativeJsonPath, content: string) {
             return new Promise<SaveSubtreeResponse>((resolve) => {
-                const requestId = createRequestId();
-                pendingRequests.set(requestId, { type: "saveSubtree", resolve });
+                const requestId = registerPendingRequest("saveSubtree", resolve);
                 postMessage({ type: "saveSubtree", requestId, path, content });
             });
         },
 
         saveSubtreeAs(content: string, suggestedBaseName: string) {
             return new Promise<SaveSubtreeAsResponse>((resolve) => {
-                const requestId = createRequestId();
-                pendingRequests.set(requestId, { type: "saveSubtreeAs", resolve });
+                const requestId = registerPendingRequest("saveSubtreeAs", resolve);
                 postMessage({ type: "saveSubtreeAs", requestId, content, suggestedBaseName });
             });
         },

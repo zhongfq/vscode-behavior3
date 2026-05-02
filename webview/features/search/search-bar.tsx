@@ -7,21 +7,12 @@ import { VscCaseSensitive } from "react-icons/vsc";
 import { Hotkey } from "../../shared/misc/keys";
 import { mergeClassNames } from "../../shared/misc/util";
 import { useRuntime, useSelectionStore } from "../../app/runtime";
+import { patchSelectionSearchState, resetSelectionSearchState } from "../../stores/selection-store";
 
 interface SearchBarProps {
     focusToken: number;
     onClose?: () => void;
 }
-
-const createDefaultSearchState = () => ({
-    open: false,
-    mode: "content" as const,
-    query: "",
-    caseSensitive: false,
-    focusOnly: true,
-    results: [] as string[],
-    index: 0,
-});
 
 export const SearchBar: React.FC<SearchBarProps> = ({ focusToken, onClose }) => {
     const runtime = useRuntime();
@@ -49,10 +40,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ focusToken, onClose }) => 
     };
 
     const handleClose = () => {
-        runtime.selectionStore.setState((state) => ({
-            ...state,
-            search: createDefaultSearchState(),
-        }));
+        resetSelectionSearchState(runtime.selectionStore);
         void runtime.controller.updateSearch("");
         onClose?.();
     };
@@ -101,13 +89,9 @@ export const SearchBar: React.FC<SearchBarProps> = ({ focusToken, onClose }) => 
                                         />
                                     }
                                     onClick={() => {
-                                        runtime.selectionStore.setState((state) => ({
-                                            ...state,
-                                            search: {
-                                                ...state.search,
-                                                caseSensitive: !state.search.caseSensitive,
-                                            },
-                                        }));
+                                        patchSelectionSearchState(runtime.selectionStore, {
+                                            caseSensitive: !search.caseSensitive,
+                                        });
                                         reapplySearch();
                                     }}
                                 />
@@ -121,13 +105,9 @@ export const SearchBar: React.FC<SearchBarProps> = ({ focusToken, onClose }) => 
                                 )}
                                 icon={<RiFocus3Line />}
                                 onClick={() => {
-                                    runtime.selectionStore.setState((state) => ({
-                                        ...state,
-                                        search: {
-                                            ...state.search,
-                                            focusOnly: !state.search.focusOnly,
-                                        },
-                                    }));
+                                    patchSelectionSearchState(runtime.selectionStore, {
+                                        focusOnly: !search.focusOnly,
+                                    });
                                     reapplySearch();
                                 }}
                             />

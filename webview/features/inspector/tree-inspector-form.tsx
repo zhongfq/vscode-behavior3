@@ -2,8 +2,8 @@ import { FormOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/ico
 import { App, AutoComplete, Button, Flex, Form, Input, Select, Switch, Typography } from "antd";
 import React, { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useRuntime, useTreeInspectorState } from "../../app/runtime";
 import { isValidVariableName } from "../../shared/misc/b3util";
-import { useDocumentStore, useRuntime, useWorkspaceStore } from "../../app/runtime";
 import {
     SectionDivider,
     VariableDeclRow,
@@ -26,12 +26,8 @@ export const TreeInspectorForm: React.FC = () => {
     const runtime = useRuntime();
     const { message } = App.useApp();
     const { t } = useTranslation();
-    const document = useDocumentStore((state) => state.persistedTree);
-    const nodeDefs = useWorkspaceStore((state) => state.nodeDefs);
-    const groupDefs = useWorkspaceStore((state) => state.groupDefs);
-    const allFiles = useWorkspaceStore((state) => state.allFiles);
-    const importDecls = useWorkspaceStore((state) => state.importDecls);
-    const subtreeDecls = useWorkspaceStore((state) => state.subtreeDecls);
+    const { document, nodeDefs, groupDefs, allFiles, importDecls, subtreeDecls } =
+        useTreeInspectorState();
     const [form] = Form.useForm();
 
     const nodeDefMap = useMemo(() => createNodeDefMap(nodeDefs), [nodeDefs]);

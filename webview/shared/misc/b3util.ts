@@ -707,7 +707,7 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
     return !hasError;
 };
 
-/** Align with extension `treeEditorProvider.normalizePathKey` for subtree path lookup. */
+/** Align with extension `tree-editor-provider.normalizePathKey` for subtree path lookup. */
 export const normalizeSubtreePathKey = (p: string) =>
     p
         .replace(/\\/g, "/")

@@ -3,11 +3,11 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { Context, Node, NodeDef } from "../behavior3/src/behavior3";
 import { composeLoggers, createConsoleLogger, setLogger } from "../webview/shared/misc/logger";
-import { runBuild } from "./build/runBuild";
-import { createLogOutputChannelLogger } from "./logChannel";
-import { getBehavior3OutputChannel } from "./outputChannel";
-import { findB3SettingPath } from "./settingResolver";
-import { TreeEditorProvider } from "./treeEditorProvider";
+import { runBuild } from "./build/run-build";
+import { createLogOutputChannelLogger } from "./log-channel";
+import { getBehavior3OutputChannel } from "./output-channel";
+import { findB3SettingPath } from "./setting-resolver";
+import { TreeEditorProvider } from "./tree-editor-provider";
 
 export function activate(context: vscode.ExtensionContext) {
     const out = getBehavior3OutputChannel();

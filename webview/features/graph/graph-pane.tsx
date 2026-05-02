@@ -2,8 +2,8 @@ import { App, Dropdown, Flex } from "antd";
 import type { MenuProps } from "antd";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useGraphPaneState, useRuntime } from "../../app/runtime";
 import { Hotkey, isMacos, useKeyPress } from "../../shared/misc/keys";
-import { useDocumentStore, useRuntime, useSelectionStore } from "../../app/runtime";
 import { SearchBar } from "../search/search-bar";
 
 const hotkeyMap: Record<
@@ -42,10 +42,7 @@ export const GraphPane: React.FC = () => {
     const mountRef = useRef<HTMLDivElement | null>(null);
     const shellRef = useRef<HTMLDivElement | null>(null);
     const [searchFocusToken, setSearchFocusToken] = useState(0);
-    const selectedNode = useSelectionStore((state) => state.selectedNodeSnapshot);
-    const selectedNodeRef = useSelectionStore((state) => state.selectedNodeRef);
-    const searchOpen = useSelectionStore((state) => state.search.open);
-    const rootStableId = useDocumentStore((state) => state.persistedTree?.root.$id ?? null);
+    const { selectedNode, selectedNodeRef, searchOpen, rootStableId } = useGraphPaneState();
 
     const structureLocked = Boolean(selectedNode?.subtreeNode || selectedNode?.data.path);
     const isRootSelected = Boolean(

@@ -34,12 +34,7 @@ import {
     isNodeArgOptional,
     isVariadic,
 } from "../../shared/misc/b3util";
-import {
-    useDocumentStore,
-    useRuntime,
-    useSelectionStore,
-    useWorkspaceStore,
-} from "../../app/runtime";
+import { useNodeInspectorState, useRuntime } from "../../app/runtime";
 import {
     OverrideBar,
     SectionDivider,
@@ -259,13 +254,8 @@ const NodeArgField: React.FC<{
 export const NodeInspectorForm: React.FC = () => {
     const runtime = useRuntime();
     const { t } = useTranslation();
-    const document = useDocumentStore((state) => state.persistedTree);
-    const selectedNode = useSelectionStore((state) => state.selectedNodeSnapshot);
-    const nodeDefs = useWorkspaceStore((state) => state.nodeDefs);
-    const usingVars = useWorkspaceStore((state) => state.usingVars);
-    const usingGroups = useWorkspaceStore((state) => state.usingGroups);
-    const allFiles = useWorkspaceStore((state) => state.allFiles);
-    const checkExpr = useWorkspaceStore((state) => state.settings.checkExpr);
+    const { document, selectedNode, nodeDefs, usingVars, usingGroups, allFiles, checkExpr } =
+        useNodeInspectorState();
     const [form] = Form.useForm();
 
     const nodeDefMap = useMemo(() => createNodeDefMap(nodeDefs), [nodeDefs]);
