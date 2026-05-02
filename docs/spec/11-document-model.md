@@ -2,7 +2,7 @@
 
 ## 目标
 
-本文件定义 V2 的文档真源、resolved graph 依赖数据、override 与 history/save 语义。
+本文件定义编辑器的文档真源、resolved graph 依赖数据、override 与 history/save 语义。
 
 核心原则：
 
@@ -85,7 +85,7 @@
 
 ## Identity Model
 
-V2 同时维护三类 identity：
+运行时同时维护三类 identity：
 
 - `structuralStableId`
     - 当前实例在主文档结构里的锚点

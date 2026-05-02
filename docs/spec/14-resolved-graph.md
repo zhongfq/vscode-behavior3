@@ -1,4 +1,4 @@
-# Resolved Graph Algorithm
+# Resolved Graph
 
 ## 目的
 

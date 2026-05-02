@@ -1,8 +1,8 @@
-# Behavior Baseline
+# Acceptance Scenarios
 
 ## 使用方式
 
-文件名保留为 `behavior-parity.md`，但本轮开始它表达的是 **V2 当前版本必须满足的行为基线**，不再表达“与 V1 一致”。
+本文件定义当前版本必须满足的行为基线。
 
 它用于：
 
@@ -16,7 +16,7 @@
 
 要求：
 
-- 收到 `init` 后，V2 必须建立完整的 document/workspace/selection 初始状态。
+- 收到 `init` 后，编辑器必须建立完整的 document/workspace/selection 初始状态。
 - resolved graph 与 Inspector 初始态必须来自同一份文档快照。
 - 图层首次渲染后应处于可浏览状态，不能出现空白容器或需要用户手动触发的二次布局。
 

@@ -1,8 +1,8 @@
-# V2 Architecture
+# Architecture
 
 ## 总体结构
 
-V2 的目标不是“把图画出来”，而是把编辑器拆成可替换、可验证的层。
+当前架构的目标不是“把图画出来”，而是把编辑器拆成可替换、可验证的层。
 
 推荐分层如下：
 
@@ -52,7 +52,7 @@ Domain
 
 ### Command Controller
 
-`commandController` 是 V2 唯一动作入口。
+`commandController` 是编辑器唯一动作入口。
 
 它负责：
 
@@ -120,7 +120,7 @@ Domain
 
 - webview 与 extension host 的消息协议
 - 文件读取、子树保存、构建请求、日志
-- 将 wire messages 归一化成 V2 DTO
+- 将 wire messages 归一化成内部 DTO
 - 把宿主配置源变化统一折叠成 `settingLoaded`
 
 ## G6 方向约束

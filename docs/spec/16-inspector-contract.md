@@ -2,7 +2,7 @@
 
 ## 目的
 
-本文件定义 V2 Inspector 的结构、提交流程和 override 语义。
+本文件定义 Inspector 的结构、提交流程和 override 语义。
 
 它服务的是“高频编辑侧栏”，不是独立详情页。
 

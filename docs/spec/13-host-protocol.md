@@ -1,27 +1,27 @@
-# Protocol and DTOs
+# Host Protocol
 
 ## 目的
 
 本文件定义：
 
 - webview 与 extension host 之间的 raw wire messages
-- V2 内部使用的 normalized DTO
+- 编辑器内部使用的 normalized DTO
 - 路径、节点引用、drop intent 等跨层对象的统一语义
 
 原则：
 
 - raw wire message 可以面向宿主实现
-- V2 内部一律使用 normalized DTO
+- 编辑器内部一律使用 normalized DTO
 - 历史遗留或宿主 quirks 必须停留在 `HostAdapter`
 
 ## Path Rules
 
-V2 内部只承认两类路径：
+编辑器内部只承认两类路径：
 
 - `AbsoluteFsPath`
     - 仅用于宿主返回的绝对文件路径
 - `WorkdirRelativeJsonPath`
-    - V2 文档、subtree link、import、selection、override 一律使用的相对路径
+    - 编辑器文档、subtree link、import、selection、override 一律使用的相对路径
 
 规则：
 
@@ -169,7 +169,7 @@ V2 内部只承认两类路径：
 1. DTO 要表达“业务意义”，而不是某个具体控件或图引擎对象。
 2. DTO 必须可序列化、可记录、可测试。
 3. DTO 不能混入 DOM event、G6 event、React state setter 之类实现细节。
-4. DTO 命名以当前 V2 语义为准，不再以“兼容某旧实现”命名。
+4. DTO 命名以当前设计语义为准，不再以“兼容某旧实现”命名。
 
 ## 验收标准
 
