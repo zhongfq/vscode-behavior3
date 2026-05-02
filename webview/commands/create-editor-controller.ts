@@ -786,6 +786,17 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         },
 
         async applyHostVars(payload: HostVarsPayload) {
+            const current = deps.workspaceStore.getState();
+            const nextAllFiles = payload.allFiles ?? current.allFiles;
+            const usingVarsChanged = !isJsonEqual(current.usingVars, payload.usingVars);
+            const allFilesChanged = !isJsonEqual(current.allFiles, nextAllFiles);
+            const importDeclsChanged = !isJsonEqual(current.importDecls, payload.importDecls);
+            const subtreeDeclsChanged = !isJsonEqual(current.subtreeDecls, payload.subtreeDecls);
+
+            if (!usingVarsChanged && !allFilesChanged && !importDeclsChanged && !subtreeDeclsChanged) {
+                return;
+            }
+
             deps.workspaceStore.setState((state) => ({
                 ...state,
                 usingVars: payload.usingVars,
@@ -793,7 +804,10 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
                 importDecls: payload.importDecls,
                 subtreeDecls: payload.subtreeDecls,
             }));
-            await rebuildGraph({ preserveSelection: true });
+
+            if (usingVarsChanged) {
+                await rebuildGraph({ preserveSelection: true });
+            }
         },
 
         async markSubtreeChanged() {
@@ -807,13 +821,24 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
         },
 
         async selectTree() {
+            const selection = deps.selectionStore.getState();
+            const alreadyTreeSelected =
+                selection.selectedTree?.filePath === deps.workspaceStore.getState().filePath &&
+                selection.selectedNodeKey === null &&
+                selection.selectedNodeRef === null &&
+                selection.selectedNodeSnapshot === null &&
+                selection.selectedNodeDef === null;
+
+            if (alreadyTreeSelected && selection.activeVariableNames.length === 0) {
+                return;
+            }
+
             const shouldClearVariableFocus = selectTreeState({ clearVariableFocus: true });
             if (shouldClearVariableFocus) {
                 await applyVisualState();
             } else {
                 await deps.graphAdapter.applySelection({ selectedNodeKey: null });
             }
-            scheduleTreeSelected(true);
         },
 
         async selectNode(

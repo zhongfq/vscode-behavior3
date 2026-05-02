@@ -78,28 +78,27 @@ const describeResolutionError = (node: ResolvedNodeModel): string | undefined =>
     }
 };
 
-const computeWarningText = (params: {
+const hasValidationIssue = (params: {
     node: ResolvedNodeModel;
-    graph: ResolvedDocumentGraph;
     defsByName: Map<string, NodeDef>;
     usingVars: Record<string, VarDecl> | null;
     usingGroups: Record<string, boolean> | null;
     checkExpr: boolean;
 }) => {
-    const { node, graph, defsByName, usingVars, usingGroups, checkExpr } = params;
+    const { node, defsByName, usingVars, usingGroups, checkExpr } = params;
     if (node.resolutionError) {
-        return undefined;
+        return false;
     }
 
     const def = defsByName.get(node.name);
     if (!def) {
-        return undefined;
+        return false;
     }
 
     if (def.group) {
         const groups = Array.isArray(def.group) ? def.group : [def.group];
         if (!groups.some((group) => usingGroups?.[group])) {
-            return `node group '${groups.join(",")}' is not enabled`;
+            return true;
         }
     }
 
@@ -107,10 +106,10 @@ const computeWarningText = (params: {
         for (let index = 0; index < node.input.length; index += 1) {
             const value = node.input[index] ?? "";
             if (value && !isValidVariableName(value)) {
-                return `input field '${value}' is not a valid variable name`;
+                return true;
             }
             if (value && usingVars && !usingVars[value]) {
-                return i18n.t("node.undefinedVariable", { variable: value });
+                return true;
             }
         }
     }
@@ -119,10 +118,10 @@ const computeWarningText = (params: {
         for (let index = 0; index < node.output.length; index += 1) {
             const value = node.output[index] ?? "";
             if (value && !isValidVariableName(value)) {
-                return `output field '${value}' is not a valid variable name`;
+                return true;
             }
             if (value && usingVars && !usingVars[value]) {
-                return i18n.t("node.undefinedVariable", { variable: value });
+                return true;
             }
         }
     }
@@ -141,29 +140,19 @@ const computeWarningText = (params: {
 
             for (const variable of parseExpr(expr)) {
                 if (usingVars && variable && !usingVars[variable]) {
-                    return i18n.t("node.undefinedVariable", { variable });
+                    return true;
                 }
             }
 
             if (checkExpr) {
                 try {
                     if (!new ExpressionEvaluator(expr).dryRun()) {
-                        return `expr '${expr}' is not valid`;
+                        return true;
                     }
                 } catch {
-                    return `expr '${expr}' is not valid`;
+                    return true;
                 }
             }
-        }
-    }
-
-    if (def.children !== undefined && def.children !== -1) {
-        const count = node.childKeys.reduce((total, childKey) => {
-            const child = graph.nodesByInstanceKey[childKey];
-            return total + (child && !child.disabled ? 1 : 0);
-        }, 0);
-        if (count !== def.children) {
-            return `expect ${def.children} children, but got ${count}`;
         }
     }
 
@@ -173,7 +162,7 @@ const computeWarningText = (params: {
             break;
         }
         if (!label.includes("?") && !(node.input?.[index] ?? "")) {
-            return `input field '${label}' is required`;
+            return true;
         }
     }
 
@@ -183,11 +172,11 @@ const computeWarningText = (params: {
             break;
         }
         if (!label.includes("?") && !(node.output?.[index] ?? "")) {
-            return `output field '${label}' is required`;
+            return true;
         }
     }
 
-    return undefined;
+    return false;
 };
 
 export const buildResolvedGraphModel = (
@@ -207,19 +196,16 @@ export const buildResolvedGraphModel = (
     for (const key of graph.nodeOrder) {
         const node = graph.nodesByInstanceKey[key];
         const def = defsByName.get(node.name);
-        const resolutionWarningText = describeResolutionError(node);
-        const warningText =
-            resolutionWarningText ??
-            computeWarningText({
-                node,
-                graph,
-                defsByName,
-                usingVars: validation?.usingVars ?? null,
-                usingGroups: validation?.usingGroups ?? null,
-                checkExpr: validation?.checkExpr ?? false,
-            });
+        const warningText = describeResolutionError(node);
+        const invalid = hasValidationIssue({
+            node,
+            defsByName,
+            usingVars: validation?.usingVars ?? null,
+            usingGroups: validation?.usingGroups ?? null,
+            checkExpr: validation?.checkExpr ?? false,
+        });
         const nodeStyleKind =
-            node.resolutionError || warningText ? "Error" : def ? getNodeType(def) : "Error";
+            node.resolutionError || invalid || warningText ? "Error" : def ? getNodeType(def) : "Error";
         const accentColor =
             nodeStyleKind === "Error"
                 ? (nodeColors?.[nodeStyleKind] ?? DEFAULT_NODE_COLORS[nodeStyleKind])

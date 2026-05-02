@@ -57,6 +57,7 @@ header 至少应表达：
 - 高度紧凑
 - 长文本可折行
 - 错误提示就地显示
+- 字段级校验错误以 Inspector 为唯一展示入口，不同步回 graph 节点卡片
 
 ## Tree Inspector Contract
 
