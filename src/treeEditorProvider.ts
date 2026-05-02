@@ -23,7 +23,7 @@ function buildWebviewHtml(
     extensionUri: vscode.Uri,
     title?: string
 ): string {
-    const htmlPath = vscode.Uri.joinPath(extensionUri, "dist", "webview", "v2", "index.html");
+    const htmlPath = vscode.Uri.joinPath(extensionUri, "dist", "webview", "index.html");
     let html = fs.readFileSync(htmlPath.fsPath, "utf-8");
 
     const webviewRootUri = webview.asWebviewUri(
