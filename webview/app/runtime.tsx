@@ -7,13 +7,14 @@ import { createEditorController } from "../commands/create-editor-controller";
 import { createDocumentStore } from "../stores/document-store";
 import { createSelectionStore } from "../stores/selection-store";
 import { createWorkspaceStore } from "../stores/workspace-store";
+import { createAppHooksStore, type AppHooksStore } from "../shared/misc/hooks";
 import type {
     DocumentState,
     EditorCommand,
-    GraphAdapter,
     SelectionState,
     WorkspaceState,
 } from "../shared/contracts";
+import type { GraphAdapter } from "../shared/graph-contracts";
 
 export interface EditorRuntime {
     documentStore: StoreApi<DocumentState>;
@@ -22,6 +23,7 @@ export interface EditorRuntime {
     controller: EditorCommand;
     graphAdapter: GraphAdapter;
     hostAdapter: ReturnType<typeof createVsCodeHostAdapter>;
+    appHooks: AppHooksStore;
 }
 
 export const createEditorRuntime = (): EditorRuntime => {
@@ -30,12 +32,14 @@ export const createEditorRuntime = (): EditorRuntime => {
     const selectionStore = createSelectionStore();
     const hostAdapter = createVsCodeHostAdapter();
     const graphAdapter = createG6GraphAdapter();
+    const appHooks = createAppHooksStore();
     const controller = createEditorController({
         documentStore,
         workspaceStore,
         selectionStore,
         hostAdapter,
         graphAdapter,
+        appHooks,
     });
 
     return {
@@ -45,6 +49,7 @@ export const createEditorRuntime = (): EditorRuntime => {
         controller,
         graphAdapter,
         hostAdapter,
+        appHooks,
     };
 };
 

@@ -8,8 +8,6 @@ import type {
     WorkdirRelativeJsonPath,
 } from "./contracts";
 
-export const createRequestId = () => Math.random().toString(36).slice(2);
-
 export const normalizeWorkdirRelativePath = (path: string): WorkdirRelativeJsonPath => {
     return path
         .replace(/\\/g, "/")

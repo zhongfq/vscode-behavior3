@@ -49,7 +49,7 @@ export const readTree = (text: string): TreeData => {
     return applyTreeDefaults(parseTreeContent(text));
 };
 
-// ─── Node-only (after setFs) — used by buildProject / createBuildData ───
+// ─── Node-only (after setFs) — used by buildProject ───
 
 export const readJson = <T>(path: string): T => {
     const str = getFs().readFileSync(path, "utf-8");

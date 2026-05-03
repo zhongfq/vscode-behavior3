@@ -315,18 +315,6 @@ export interface GraphEventHandlers {
     onDropCommitted(intent: DropIntent): Promise<void>;
 }
 
-export interface GraphAdapter {
-    mount(container: object, handlers: GraphEventHandlers): Promise<void>;
-    unmount(): void;
-    render(model: ResolvedGraphModel): Promise<void>;
-    applySelection(selection: GraphSelectionState): Promise<void>;
-    applyHighlights(highlights: GraphHighlightState): Promise<void>;
-    applySearch(search: GraphSearchState): Promise<void>;
-    focusNode(nodeKey: string): Promise<void>;
-    restoreViewport(viewport: GraphViewport): Promise<void>;
-    getViewport(): GraphViewport;
-}
-
 export interface HostAdapter {
     connect(onMessage: (msg: HostEvent) => void): () => void;
     sendReady(): void;

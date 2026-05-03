@@ -15,9 +15,8 @@ import type {
     SaveSubtreeAsResponse,
     SaveSubtreeResponse,
     WorkdirRelativeJsonPath,
-} from "../../shared/contracts";
+    } from "../../shared/contracts";
 import {
-    createRequestId,
     normalizeHostInitMessage,
     normalizeHostVarsMessage,
 } from "../../shared/protocol";
@@ -47,6 +46,18 @@ type PendingRequest = {
 }[PendingRequestType];
 
 const pendingRequests = new Map<string, PendingRequest>();
+
+let requestSequence = 0;
+
+const createRequestId = (): string => {
+    requestSequence = (requestSequence + 1) % Number.MAX_SAFE_INTEGER;
+    const sequence = requestSequence.toString(36);
+    const uuid = globalThis.crypto?.randomUUID?.();
+    if (uuid) {
+        return `req-${sequence}-${uuid}`;
+    }
+    return `req-${Date.now().toString(36)}-${sequence}`;
+};
 
 const formatLogArg = (value: unknown): string => {
     if (typeof value === "string") {

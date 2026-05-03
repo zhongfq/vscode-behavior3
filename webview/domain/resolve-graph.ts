@@ -9,6 +9,10 @@ import type {
 } from "../shared/contracts";
 import { materializePersistedTree, type MaterializedTreeNode } from "../shared/tree-materializer";
 
+/**
+ * Flatten the materialized tree into the runtime graph structure used by the
+ * renderer, search, selection, and inspector layers.
+ */
 const flattenMaterializedTree = (
     root: MaterializedTreeNode,
     prefix: string
@@ -77,6 +81,11 @@ const flattenMaterializedTree = (
     };
 };
 
+/**
+ * Resolve persisted main-tree data plus reachable subtree sources into one
+ * graph snapshot. The rest of the webview treats this as the canonical runtime
+ * model until the next rebuild.
+ */
 export const resolveDocumentGraph = (params: {
     persistedTree: PersistedTreeModel;
     subtreeSources: Record<WorkdirRelativeJsonPath, SubtreeSourceCacheEntry>;

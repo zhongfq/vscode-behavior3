@@ -1,4 +1,4 @@
-import type { NodeDef } from "../../../behavior3/src/behavior3/node";
+import type { NodeDef } from "behavior3";
 export { DOCUMENT_VERSION as VERSION } from "../document-version";
 
 export type { NodeDef };

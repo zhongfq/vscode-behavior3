@@ -1,5 +1,5 @@
 import { customAlphabet } from "nanoid";
-import type { NodeDef } from "../../behavior3/src/behavior3/node";
+import type { NodeDef } from "behavior3";
 import { DOCUMENT_VERSION } from "./document-version";
 import type { NodeData, TreeData, VarDecl, WorkspaceModel } from "./misc/b3type";
 

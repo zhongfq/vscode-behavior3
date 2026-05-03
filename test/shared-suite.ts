@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { createAppHooksStore } from "../webview/shared/misc/hooks";
+import { createRequestId } from "../webview/shared/request-id";
 import { normalizeNodeDefCollection, parseWorkspaceModelContent } from "../webview/shared/schema";
-import { loadSubtreeSourceCache } from "../webview/shared/subtree-source-cache";
+    import { loadSubtreeSourceCache } from "../webview/shared/subtree-source-cache";
 import { materializePersistedTree } from "../webview/shared/tree-materializer";
-import { parsePersistedTreeContent } from "../webview/shared/tree";
+import { collectTransitivePaths, parsePersistedTreeContent } from "../webview/shared/tree";
 
 const tests: Array<{ name: string; run(): Promise<void> | void }> = [
     {
@@ -190,6 +192,64 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
 
             assert.equal(root.resolutionError, "missing-subtree");
             assert.equal(root.children.length, 0);
+        },
+    },
+    {
+        name: "creates stable unique request ids",
+        run() {
+            const first = createRequestId();
+            const second = createRequestId();
+
+            assert.notEqual(first, second);
+            assert.match(first, /^req-/);
+            assert.match(second, /^req-/);
+        },
+    },
+    {
+        name: "collects transitive paths breadth-first without duplicates",
+        async run() {
+            const graph: Record<string, string[]> = {
+                "root-a": ["child-a", "child-b"],
+                "root-b": ["child-b", "child-c"],
+                "child-a": ["leaf-a"],
+                "child-b": ["leaf-a"],
+                "child-c": [],
+                "leaf-a": [],
+            };
+
+            const ordered = await collectTransitivePaths(["root-a", "root-b"], async (path) => {
+                return graph[path] ?? [];
+            });
+
+            assert.deepEqual(ordered, [
+                "root-a",
+                "root-b",
+                "child-a",
+                "child-b",
+                "child-c",
+                "leaf-a",
+            ]);
+        },
+    },
+    {
+        name: "binds and guards app hooks explicitly",
+        run() {
+            const hooks = createAppHooksStore();
+            assert.throws(() => hooks.getMessage(), /not available/i);
+
+            const fakeHooks = {
+                message: { success() {}, error() {} } as any,
+                notification: {} as any,
+                modal: {} as any,
+            };
+
+            hooks.bind(fakeHooks);
+            assert.equal(hooks.getMessage(), fakeHooks.message);
+            assert.equal(hooks.getNotification(), fakeHooks.notification);
+            assert.equal(hooks.getModal(), fakeHooks.modal);
+
+            hooks.reset();
+            assert.throws(() => hooks.getMessage(), /not available/i);
         },
     },
 ];

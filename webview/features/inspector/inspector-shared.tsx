@@ -3,7 +3,7 @@ import { Divider, Flex, Input, Popconfirm, Space } from "antd";
 import type { FormInstance } from "antd/es/form";
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ExpressionEvaluator } from "../../../behavior3/src/behavior3/evaluator";
+import { ExpressionEvaluator } from "behavior3";
 import {
     hasArgOptions,
     isBoolType,

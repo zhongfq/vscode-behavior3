@@ -145,7 +145,6 @@
     "watch:webview": "vite build --watch --mode development",
     "dev": "npm run watch:webview",
     "package": "vsce package",
-    "postinstall": "git submodule update --init --recursive",
     "check": "tsc --noEmit && tsc --project tsconfig.webview.json --noEmit",
     "test:shared": "node test/run-tests.js"
   },
@@ -169,6 +168,7 @@
     "@antv/g6": "^5.0.51",
     "ahooks": "^3.8.0",
     "antd": "^6.3.4",
+    "behavior3": "^1.0.1",
     "i18next": "^23.12.2",
     "nanoid": "^5.1.6",
     "react": "^18.3.1",

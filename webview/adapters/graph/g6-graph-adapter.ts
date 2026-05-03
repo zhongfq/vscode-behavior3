@@ -11,7 +11,6 @@ import {
 } from "@antv/g6";
 import type {
     DropIntent,
-    GraphAdapter,
     GraphEventHandlers,
     GraphHighlightState,
     GraphNodeVM,
@@ -20,6 +19,7 @@ import type {
     GraphViewport,
     ResolvedGraphModel,
 } from "../../shared/contracts";
+import type { GraphAdapter } from "../../shared/graph-contracts";
 import {
     G6_VECTOR_NODE_H_GAP,
     G6_VECTOR_NODE_MIN_HEIGHT,

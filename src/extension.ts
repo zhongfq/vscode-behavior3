@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { Context, Node, NodeDef } from "../behavior3/src/behavior3";
+import { Context, Node, NodeDef } from "behavior3";
 import { stringifyJson } from "../webview/shared/misc/stringify";
 import { writeTree } from "../webview/shared/misc/util";
 import { composeLoggers, createConsoleLogger, setLogger } from "../webview/shared/misc/logger";

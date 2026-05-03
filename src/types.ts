@@ -2,7 +2,7 @@
  * Shared message protocol types between Extension Host and Webview.
  */
 
-import type { NodeDef } from "../behavior3/src/behavior3/node";
+import type { NodeDef } from "behavior3";
 
 export type { NodeDef };
 

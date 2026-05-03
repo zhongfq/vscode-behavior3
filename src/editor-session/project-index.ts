@@ -2,8 +2,17 @@ import * as path from "path";
 import * as vscode from "vscode";
 import type { PersistedNodeModel, PersistedTreeModel } from "../../webview/shared/contracts";
 import { normalizeWorkdirRelativePath } from "../../webview/shared/protocol";
-import { parsePersistedTreeContent } from "../../webview/shared/tree";
+import {
+    collectReachableSubtreePaths,
+    collectTransitivePaths,
+    parsePersistedTreeContent,
+} from "../../webview/shared/tree";
 
+/**
+ * Extension-host cache for project tree files.
+ * It serves var-decl lookups and subtree dependency tracking without reparsing
+ * the same JSON repeatedly across watchers and webview requests.
+ */
 export interface VarDeclResult {
     usingVars: Record<string, { name: string; desc: string }>;
     importDecls: Array<{ path: string; vars: Array<{ name: string; desc: string }> }>;
@@ -18,22 +27,8 @@ interface CachedTreeEntry {
 const isSameUri = (left: vscode.Uri, right: vscode.Uri) =>
     left.fsPath === right.fsPath || left.toString() === right.toString();
 
-const collectSubtreePaths = (node: PersistedNodeModel | undefined): string[] => {
-    if (!node) {
-        return [];
-    }
-
-    const paths: string[] = [];
-    const stack: PersistedNodeModel[] = [node];
-    while (stack.length > 0) {
-        const current = stack.pop()!;
-        if (current.path) {
-            paths.push(current.path);
-        }
-        current.children?.forEach((child) => stack.push(child));
-    }
-    return paths;
-};
+const collectSubtreePaths = (node: PersistedNodeModel | undefined): string[] =>
+    node ? collectReachableSubtreePaths(node) : [];
 
 export class ProjectIndex {
     private readonly treeCache = new Map<string, CachedTreeEntry>();
@@ -82,6 +77,7 @@ export class ProjectIndex {
     }
 
     async getTransitiveSubtreeRelativePaths(mainContent: string): Promise<Set<string>> {
+        /** Used by watchers to decide which external subtree edits affect this editor. */
         const loaded = new Set<string>();
 
         let tree: PersistedTreeModel;
@@ -91,41 +87,32 @@ export class ProjectIndex {
             return loaded;
         }
 
-        const pending = new Set<string>();
-        for (const subtreePath of collectSubtreePaths(tree.root)) {
-            pending.add(normalizeWorkdirRelativePath(subtreePath));
-        }
-
-        while (pending.size > 0) {
-            const iterator = pending.values().next();
-            if (iterator.done) {
-                break;
+        const orderedPaths = await collectTransitivePaths(
+            collectSubtreePaths(tree.root).map((subtreePath) =>
+                normalizeWorkdirRelativePath(subtreePath)
+            ),
+            async (relativePath) => {
+                const subtree = await this.readTreeFile(relativePath);
+                return subtree?.root
+                    ? collectSubtreePaths(subtree.root).map((childPath) =>
+                          normalizeWorkdirRelativePath(childPath)
+                      )
+                    : [];
             }
+        );
 
-            const relativePath = iterator.value;
-            pending.delete(relativePath);
-            if (loaded.has(relativePath)) {
-                continue;
-            }
+        for (const relativePath of orderedPaths) {
             loaded.add(relativePath);
-
-            const subtree = await this.readTreeFile(relativePath);
-            if (!subtree) {
-                continue;
-            }
-
-            for (const childPath of collectSubtreePaths(subtree.root)) {
-                const normalizedPath = normalizeWorkdirRelativePath(childPath);
-                if (!loaded.has(normalizedPath)) {
-                    pending.add(normalizedPath);
-                }
-            }
         }
 
         return loaded;
     }
 
     async buildUsingVars(mainContent: string): Promise<VarDeclResult | null> {
+        /**
+         * Build the merged variable view exposed to the webview while also
+         * returning ordered import/subtree declarations for inspection UIs.
+         */
         let tree: PersistedTreeModel;
         try {
             tree = parsePersistedTreeContent(mainContent);
@@ -213,6 +200,7 @@ export class ProjectIndex {
             return cached.tree;
         }
 
+        /** Cache both parse success and parse failure so repeated lookups stay cheap. */
         try {
             const tree = parsePersistedTreeContent(content, normalizedPath);
             this.treeCache.set(normalizedPath, {
@@ -279,72 +267,31 @@ export class ProjectIndex {
     }
 
     private async collectOrderedTransitiveImportPaths(seedImports: string[]): Promise<string[]> {
-        const ordered: string[] = [];
-        const seen = new Set<string>();
-        const queue: string[] = [];
-
-        for (const importPath of seedImports) {
-            const normalizedPath = normalizeWorkdirRelativePath(importPath);
-            if (!seen.has(normalizedPath)) {
-                seen.add(normalizedPath);
-                queue.push(normalizedPath);
+        return collectTransitivePaths(
+            seedImports.map((importPath) => normalizeWorkdirRelativePath(importPath)),
+            async (relativePath) => {
+                const tree = await this.readTreeFile(relativePath);
+                return (tree?.import ?? []).map((importPath) =>
+                    normalizeWorkdirRelativePath(importPath)
+                );
             }
-        }
-
-        while (queue.length > 0) {
-            const relativePath = queue.shift()!;
-            ordered.push(relativePath);
-
-            const tree = await this.readTreeFile(relativePath);
-            if (!tree) {
-                continue;
-            }
-
-            for (const importPath of tree.import ?? []) {
-                const normalizedPath = normalizeWorkdirRelativePath(importPath);
-                if (!seen.has(normalizedPath)) {
-                    seen.add(normalizedPath);
-                    queue.push(normalizedPath);
-                }
-            }
-        }
-
-        return ordered;
+        );
     }
 
     private async collectOrderedTransitiveSubtreePaths(
         root: PersistedNodeModel | undefined
     ): Promise<string[]> {
-        const ordered: string[] = [];
-        const seen = new Set<string>();
-        const queue: string[] = [];
-
-        for (const subtreePath of collectSubtreePaths(root)) {
-            const normalizedPath = normalizeWorkdirRelativePath(subtreePath);
-            if (!seen.has(normalizedPath)) {
-                seen.add(normalizedPath);
-                queue.push(normalizedPath);
+        /** Preserve traversal order so the UI shows subtree declarations deterministically. */
+        return collectTransitivePaths(
+            collectSubtreePaths(root).map((subtreePath) => normalizeWorkdirRelativePath(subtreePath)),
+            async (relativePath) => {
+                const tree = await this.readTreeFile(relativePath);
+                return tree?.root
+                    ? collectSubtreePaths(tree.root).map((subtreePath) =>
+                          normalizeWorkdirRelativePath(subtreePath)
+                      )
+                    : [];
             }
-        }
-
-        while (queue.length > 0) {
-            const relativePath = queue.shift()!;
-            ordered.push(relativePath);
-
-            const tree = await this.readTreeFile(relativePath);
-            if (!tree) {
-                continue;
-            }
-
-            for (const subtreePath of collectSubtreePaths(tree.root)) {
-                const normalizedPath = normalizeWorkdirRelativePath(subtreePath);
-                if (!seen.has(normalizedPath)) {
-                    seen.add(normalizedPath);
-                    queue.push(normalizedPath);
-                }
-            }
-        }
-
-        return ordered;
+        );
     }
 }

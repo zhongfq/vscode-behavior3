@@ -11,6 +11,6 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true
   },
-  "include": ["webview/**/*", "behavior3/src/**/*"],
+  "include": ["webview/**/*"],
   "exclude": ["node_modules", "dist", "src"]
 }

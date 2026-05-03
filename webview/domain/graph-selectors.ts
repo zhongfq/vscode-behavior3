@@ -1,4 +1,4 @@
-import { ExpressionEvaluator } from "../../behavior3/src/behavior3/evaluator";
+import { ExpressionEvaluator } from "behavior3";
 import { getNodeType, isExprType, type NodeDef } from "../shared/misc/b3type";
 import { isValidVariableName, isVariadic, parseExpr } from "../shared/misc/b3util";
 import i18n from "../shared/misc/i18n";

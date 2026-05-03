@@ -1,6 +1,5 @@
-import type * as Fs from "fs";
 import "./array";
-import { getFs, hasFs, setFs } from "./b3fs";
+import { hasFs } from "./b3fs";
 import {
     FileVarDecl,
     hasArgOptions,
@@ -19,118 +18,21 @@ import {
     VarDecl,
     VERSION,
 } from "./b3type";
+import { ExpressionEvaluator } from "behavior3";
 import { logger } from "./logger";
-import b3path from "./b3path";
-import { stringifyJson } from "./stringify";
-import { nanoid, readJson, readTreeFromFile, readWorkspace } from "./util";
-import { ExpressionEvaluator } from "../../../behavior3/src/behavior3/evaluator";
+import { nanoid, readJson, readTreeFromFile } from "./util";
+import { buildProjectWithContext } from "./b3-build";
 import { normalizeNodeDefCollection } from "../schema";
-import { loadSubtreeSourceCache } from "../subtree-source-cache";
-import { materializePersistedTree, type MaterializedTreeNode } from "../tree-materializer";
-import { parsePersistedTreeContent } from "../tree";
 
+/**
+ * Shared editor/runtime utilities plus the remaining mutable singleton state
+ * that legacy build-time validation still depends on.
+ */
 export class NodeDefs extends Map<string, NodeDef> {
     override get(key: string): NodeDef {
         return super.get(key) ?? unknownNodeDef;
     }
 }
-
-type Env = {
-    fs: typeof Fs;
-    path: typeof b3path;
-    workdir: string;
-    nodeDefs: NodeDefs;
-    logger: Pick<typeof logger, "debug" | "info" | "warn" | "error" | "log">;
-};
-
-export interface BatchScript {
-    onProcessTree?(tree: TreeData, path: string, errors: string[]): TreeData | null;
-    onProcessNode?(node: NodeData, errors: string[]): NodeData | null;
-    onWriteFile?(path: string, tree: TreeData): void;
-    onComplete?(status: "success" | "failure"): void;
-}
-
-type HookCtor = new (env: Env) => BatchScript;
-
-const hasBatchHookMethod = (obj: unknown): obj is BatchScript => {
-    if (!obj || typeof obj !== "object") {
-        return false;
-    }
-    const candidate = obj as Partial<BatchScript>;
-    return (
-        typeof candidate.onProcessTree === "function" ||
-        typeof candidate.onProcessNode === "function" ||
-        typeof candidate.onWriteFile === "function" ||
-        typeof candidate.onComplete === "function"
-    );
-};
-
-const createBatchHooks = (
-    moduleExports: unknown,
-    env: Env,
-    scriptPath: string
-): BatchScript | undefined => {
-    if (!moduleExports || typeof moduleExports !== "object") {
-        return undefined;
-    }
-    const m = moduleExports as Record<string, unknown>;
-    const ctor = (m.Hook ?? m.default) as HookCtor | undefined;
-    if (typeof ctor === "function") {
-        try {
-            const instance = new ctor(env);
-            if (hasBatchHookMethod(instance)) {
-                return instance;
-            }
-            logger.error("build hook class instance has no supported hook methods");
-        } catch (e) {
-            logger.error("failed to instantiate build hook class", e);
-        }
-    }
-
-    const ext = b3path.extname(scriptPath).toLowerCase();
-    const isJsScript = ext === ".js" || ext === ".mjs" || ext === ".cjs";
-    if (isJsScript) {
-        const legacy = m as unknown as {
-            onProcessTree?: (
-                env: Env,
-                tree: TreeData,
-                path: string,
-                errors: string[]
-            ) => TreeData | null;
-            onProcessNode?: (env: Env, node: NodeData, errors: string[]) => NodeData | null;
-            onWriteFile?: (env: Env, path: string, tree: TreeData) => void;
-            onComplete?: (env: Env, status: "success" | "failure") => void;
-        };
-        if (
-            typeof legacy.onProcessTree === "function" ||
-            typeof legacy.onProcessNode === "function" ||
-            typeof legacy.onWriteFile === "function" ||
-            typeof legacy.onComplete === "function"
-        ) {
-            return {
-                onProcessTree: legacy.onProcessTree
-                    ? (tree, path, errors) =>
-                          legacy.onProcessTree?.(env, tree, path, errors) ?? tree
-                    : undefined,
-                onProcessNode: legacy.onProcessNode
-                    ? (node, errors) => legacy.onProcessNode?.(env, node, errors) ?? node
-                    : undefined,
-                onWriteFile: legacy.onWriteFile
-                    ? (path, tree) => legacy.onWriteFile?.(env, path, tree)
-                    : undefined,
-                onComplete: legacy.onComplete
-                    ? (status) => legacy.onComplete?.(env, status)
-                    : undefined,
-            };
-        }
-    }
-    logger.error(
-        isJsScript
-            ? "build script must export a Hook class (`Hook`/default) or legacy hook functions (JS only)"
-            : "build script must export a Hook class (named export `Hook` or default export)"
-    );
-    return undefined;
-};
 
 export let calcSize: (d: NodeData) => number[] = () => [0, 0];
 export let nodeDefs: NodeDefs = new NodeDefs();
@@ -289,7 +191,7 @@ export const isValidVariableName = (name: string) => {
 };
 
 export const isSubtreeRoot = (data: NodeData) => {
-    return data.path && data.id !== "1";
+    return Boolean(data.path) && data.id !== "1";
 };
 
 export const isNodeEqual = (node1: NodeData, node2: NodeData) => {
@@ -639,7 +541,8 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
                 error(`intput field '${conf.input[i]}' is required`);
                 hasError = true;
             }
-            if (i === conf.input.length - 1 && conf.input.at(-1)?.endsWith("...")) {
+            const lastInput = conf.input[conf.input.length - 1];
+            if (i === conf.input.length - 1 && lastInput?.endsWith("...")) {
                 hasVaridicInput = true;
             }
         }
@@ -668,7 +571,8 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
                 error(`output field '${conf.output[i]}' is required`);
                 hasError = true;
             }
-            if (i === conf.output.length - 1 && conf.output.at(-1)?.endsWith("...")) {
+            const lastOutput = conf.output[conf.output.length - 1];
+            if (i === conf.output.length - 1 && lastOutput?.endsWith("...")) {
                 hasVaridicOutput = true;
             }
         }
@@ -716,6 +620,234 @@ export const normalizeSubtreePathKey = (p: string) =>
         .replace(/\\/g, "/")
         .replace(/^[/\\]+/, "")
         .replace(/^\.\//, "");
+
+interface RefreshVarDeclContext {
+    hasFs: boolean;
+    files: Record<string, number>;
+    workdir: string;
+    usingGroups: Record<string, boolean> | null;
+    usingVars: Record<string, VarDecl> | null;
+    parsedVarDecl: Record<string, ImportDecl>;
+    parsingStack: string[];
+    dfs<T extends { children?: T[] }>(
+        node: T,
+        visitor: (node: T, depth: number) => unknown,
+        depth?: number
+    ): void;
+    normalizeSubtreePathKey(path: string): string;
+    updateUsingGroups(group: string[]): void;
+    updateUsingVars(vars: VarDecl[]): void;
+    readTreeFromFile(path: string): TreeData;
+    alertError(message: string, duration?: number): void;
+    logger: {
+        warn(...args: unknown[]): void;
+        debug(...args: unknown[]): void;
+    };
+}
+
+const collectSubtreePaths = (data: NodeData, walk: RefreshVarDeclContext["dfs"]): string[] => {
+    const list: string[] = [];
+    walk(data, (node) => {
+        if (node.path) {
+            list.push(node.path);
+        }
+    });
+    return list;
+};
+
+/**
+ * Variable declaration refresh stays local to this module because it still
+ * depends on the singleton caches above. Keeping it here avoids a thin
+ * wrapper-only file around mutable shared state.
+ */
+const loadVarDecl = (
+    list: ImportDecl[],
+    arr: Array<VarDecl>,
+    context: RefreshVarDeclContext
+) => {
+    for (const entry of list) {
+        if (!context.files[entry.path]) {
+            context.logger.warn(`file not found: ${context.workdir}/${entry.path}`);
+            continue;
+        }
+
+        let changed = false;
+        if (!entry.modified || context.files[entry.path] > entry.modified) {
+            changed = true;
+        }
+
+        if (!changed) {
+            changed = entry.depends.some(
+                (dependency) =>
+                    context.files[dependency.path] &&
+                    context.files[dependency.path] > dependency.modified
+            );
+        }
+
+        if (!changed) {
+            continue;
+        }
+
+        entry.vars = [];
+        entry.depends = [];
+        entry.modified = context.files[entry.path];
+
+        const vars: Set<VarDecl> = new Set();
+        const depends: Set<string> = new Set();
+        const load = (relativePath: string) => {
+            if (context.parsingStack.includes(relativePath)) {
+                return;
+            }
+
+            const parsedEntry: ImportDecl | undefined = context.parsedVarDecl[relativePath];
+            if (parsedEntry && context.files[relativePath] === parsedEntry.modified) {
+                parsedEntry.depends.forEach((dependency) => depends.add(dependency.path));
+                parsedEntry.vars.forEach((variable) => vars.add(variable));
+                return;
+            }
+
+            context.parsingStack.push(relativePath);
+            try {
+                const model: TreeData = context.readTreeFromFile(
+                    `${context.workdir}/${relativePath}`
+                );
+                model.vars.forEach((variable) => vars.add(variable));
+                model.import.forEach((importPath) => {
+                    load(importPath);
+                    depends.add(importPath);
+                });
+                collectSubtreePaths(model.root, context.dfs).forEach((subtreePath) => {
+                    load(subtreePath);
+                    depends.add(subtreePath);
+                });
+                context.logger.debug(`load var: ${relativePath}`);
+            } catch {
+                context.alertError(`parsing error: ${relativePath}`);
+            }
+            context.parsingStack.pop();
+        };
+
+        load(entry.path);
+        entry.vars = Array.from(vars).sort((a, b) => a.name.localeCompare(b.name));
+        entry.depends = Array.from(depends).map((dependencyPath) => ({
+            path: dependencyPath,
+            modified: context.files[dependencyPath],
+        }));
+        context.parsedVarDecl[entry.path] = {
+            path: entry.path,
+            vars: entry.vars.map((variable) => ({ name: variable.name, desc: variable.desc })),
+            depends: entry.depends.slice(),
+            modified: entry.modified,
+        };
+    }
+
+    list.forEach((entry) => arr.push(...entry.vars));
+};
+
+const refreshVarDeclWebview = (
+    root: NodeData,
+    group: string[],
+    declare: FileVarDecl,
+    context: RefreshVarDeclContext
+) => {
+    const prevSubtreeByPath = new Map(
+        declare.subtree.map((entry) => [context.normalizeSubtreePathKey(entry.path), entry])
+    );
+    declare.subtree = collectSubtreePaths(root, context.dfs).map((subtreePath) => {
+        const previous = prevSubtreeByPath.get(context.normalizeSubtreePathKey(subtreePath));
+        return {
+            path: subtreePath,
+            vars: previous?.vars?.length ? previous.vars.map((variable) => ({ ...variable })) : [],
+            depends: previous?.depends ?? [],
+        };
+    });
+
+    const lastGroup = Array.from(Object.keys(context.usingGroups ?? {})).sort();
+    const sortedGroup = [...group].sort();
+    if (
+        lastGroup.length !== sortedGroup.length ||
+        lastGroup.some((value, index) => value !== sortedGroup[index])
+    ) {
+        context.updateUsingGroups(group);
+        return true;
+    }
+
+    return false;
+};
+
+const refreshVarDeclNode = (
+    root: NodeData,
+    group: string[],
+    declare: FileVarDecl,
+    context: RefreshVarDeclContext
+) => {
+    const filter: Record<string, boolean> = {};
+    const vars: Array<VarDecl> = new (class extends Array<VarDecl> {
+        override push(...items: VarDecl[]): number {
+            for (const item of items) {
+                if (filter[item.name]) {
+                    continue;
+                }
+                filter[item.name] = true;
+                super.push(item);
+            }
+            return this.length;
+        }
+    })();
+
+    vars.push(...declare.vars);
+    context.parsingStack.length = 0;
+    declare.subtree = collectSubtreePaths(root, context.dfs).map((subtreePath) => ({
+        path: subtreePath,
+        vars: [],
+        depends: [],
+    }));
+    loadVarDecl(declare.import, vars, context);
+    loadVarDecl(declare.subtree, vars, context);
+
+    let changed = false;
+    const lastGroup = Array.from(Object.keys(context.usingGroups ?? {})).sort();
+    group.sort();
+    if (lastGroup.length !== group.length || lastGroup.some((value, index) => value !== group[index])) {
+        changed = true;
+        context.logger.debug("refresh group:", lastGroup, group);
+        context.updateUsingGroups(group);
+    }
+
+    const lastVars = Array.from(Object.keys(context.usingVars ?? {})).sort();
+    vars.sort((a, b) => a.name.localeCompare(b.name));
+    if (lastVars.length !== vars.length || lastVars.some((value, index) => value !== vars[index].name)) {
+        changed = true;
+        context.logger.debug("refresh vars:", lastVars, vars);
+        context.updateUsingVars(vars);
+    }
+
+    return changed;
+};
+
+const refreshVarDecl = (root: NodeData, group: string[], declare: FileVarDecl) => {
+    const context: RefreshVarDeclContext = {
+        hasFs: hasFs(),
+        files,
+        workdir,
+        usingGroups,
+        usingVars,
+        parsedVarDecl,
+        parsingStack,
+        dfs,
+        normalizeSubtreePathKey,
+        updateUsingGroups,
+        updateUsingVars,
+        readTreeFromFile,
+        alertError,
+        logger,
+    };
+
+    if (context.hasFs) {
+        return refreshVarDeclNode(root, group, declare, context);
+    }
+    return refreshVarDeclWebview(root, group, declare, context);
+};
 
 /**
  * Return true if any node in the subtree root (raw parsed JSON, before applyTreeDefaults)
@@ -859,342 +991,19 @@ const isValidInputOrOutput = (def: string[], data: string[] | undefined, index: 
     return def[index].includes("?") || data?.[index] || isVariadic(def, index);
 };
 
-const materializedNodeToExpandedTreeData = (node: MaterializedTreeNode): NodeData => {
-    return {
-        $id: node.structuralStableId,
-        id: node.data.id,
-        name: node.data.name,
-        desc: node.data.desc,
-        args: node.data.args ? { ...node.data.args } : undefined,
-        input: node.data.input ? [...node.data.input] : undefined,
-        output: node.data.output ? [...node.data.output] : undefined,
-        children: node.children.map((child) => materializedNodeToExpandedTreeData(child)),
-        debug: node.data.debug,
-        disabled: node.data.disabled,
-        path: node.data.path,
-        $status: node.data.$status,
-    };
-};
-
-const assignSequentialNodeIds = (node: NodeData, nextId = 1): number => {
-    node.id = String(nextId);
-    let currentId = nextId + 1;
-    for (const child of node.children ?? []) {
-        currentId = assignSequentialNodeIds(child, currentId);
-    }
-    return currentId;
-};
-
-export const createBuildData = async (path: string) => {
-    const clearUnnecessaryKey = (data: NodeData | TreeData) => {
-        for (const key in data) {
-            if (key.startsWith("$")) {
-                delete data[key as keyof (NodeData | TreeData)];
-            }
-        }
-    };
-
-    try {
-        const content = getFs().readFileSync(path, "utf-8");
-        const persistedTree = parsePersistedTreeContent(content, path);
-        const subtreeSources = await loadSubtreeSourceCache({
-            root: persistedTree.root,
-            readContent: async (relativePath) => {
-                try {
-                    return getFs().readFileSync(`${workdir}/${relativePath}`, "utf-8");
-                } catch {
-                    return null;
-                }
-            },
-        });
-
-        const materializedRoot = materializePersistedTree({
-            persistedTree,
-            subtreeSources,
-            nodeDefs: Array.from(nodeDefs.values()),
-            subtreeEditable: true,
-        });
-
-        const treeModel: TreeData = {
-            version: persistedTree.version,
-            name: persistedTree.name,
-            desc: persistedTree.desc,
-            prefix: persistedTree.prefix,
-            export: persistedTree.export,
-            group: [...persistedTree.group],
-            import: [...persistedTree.import],
-            vars: persistedTree.vars.map((entry) => ({ ...entry })),
-            custom: { ...persistedTree.custom },
-            $override: { ...persistedTree.$override },
-            root: materializedNodeToExpandedTreeData(materializedRoot),
-        };
-
-        assignSequentialNodeIds(treeModel.root);
-        dfs(treeModel.root, (node) => (node.id = treeModel.prefix + node.id));
-        treeModel.name = b3path.basenameWithoutExt(path);
-        treeModel.root = createFileData(treeModel.root, true);
-        dfs(treeModel.root, (node) => clearUnnecessaryKey(node));
-        clearUnnecessaryKey(treeModel);
-        return treeModel;
-    } catch (e) {
-        logger.log("build error:", path, e);
-    }
-    return null;
-};
-
-export const processBatch = (
-    tree: TreeData | null,
-    path: string,
-    batch: BatchScript,
-    errors: string[]
-) => {
-    if (!tree) {
-        return null;
-    }
-    if (batch.onProcessTree) {
-        tree = batch.onProcessTree(tree, path, errors);
-    }
-    if (!tree) {
-        return null;
-    }
-    if (batch.onProcessNode) {
-        const processNode = (node: NodeData) => {
-            if (node.children) {
-                const children: NodeData[] = [];
-                node.children?.forEach((child) => {
-                    const newChild = processNode(child);
-                    if (newChild) {
-                        children.push(newChild);
-                    }
-                });
-                node.children = children;
-            }
-            return batch.onProcessNode?.(node, errors);
-        };
-        tree.root = processNode(tree.root) ?? ({} as NodeData);
-    }
-    return tree;
-};
-
-/**
- * Fill `files` with mtime for every `.json` under `workdir` (Node / `setFs` only).
- * Desktop Electron does this in `main` before `buildProject`; the VS Code extension must do the same
- * or `loadVarDecl` sees empty `files` and warns "file not found" for imports.
- */
-export const syncFilesFromDisk = () => {
-    if (!hasFs()) {
-        return;
-    }
-    for (const k of Object.keys(files)) {
-        delete files[k];
-    }
-    for (const k of Object.keys(parsedVarDecl)) {
-        delete parsedVarDecl[k];
-    }
-    const fsApi = getFs();
-    const wd = workdir.replace(/[/\\]+$/, "");
-    if (!wd) {
-        return;
-    }
-    for (const absPath of b3path.lsdir(wd, true)) {
-        if (!absPath.endsWith(".json")) {
-            continue;
-        }
-        const rel = b3path.posixPath(absPath.slice(wd.length + 1).replace(/^[\\/]+/, ""));
-        try {
-            files[rel] = fsApi.statSync(absPath).mtimeMs;
-        } catch {
-            /* ignore */
-        }
-    }
-};
-
-/** Non–behavior-tree JSON under the workspace (VS Code / tooling) must not be fed to `readTreeFromFile`. */
-const SKIP_JSON_BASENAMES = new Set([
-    "package.json",
-    "package-lock.json",
-    "jsconfig.json",
-    "components.json",
-]);
-
-const shouldSkipJsonForBuild = (absPath: string): boolean => {
-    const base = b3path.basename(absPath);
-    const lower = base.toLowerCase();
-    if (SKIP_JSON_BASENAMES.has(lower)) {
-        return true;
-    }
-    if (lower === "tsconfig.json" || /^tsconfig\..*\.json$/i.test(base)) {
-        return true;
-    }
-    const norm = b3path.posixPath(absPath).toLowerCase();
-    return ["/.vscode/", "/.git/", "/node_modules/", "/dist/", "/build/"].some((m) =>
-        norm.includes(m)
-    );
-};
-
+/** Single bridge from legacy singleton state into the extracted build pipeline. */
 export const buildProject = async (project: string, buildDir: string) => {
-    if (hasFs()) {
-        syncFilesFromDisk();
-    }
-    let hasError = false;
-    const settings = readWorkspace(project).settings;
-    const buildSetting = settings.buildScript;
-    let buildScriptModule: unknown;
-    let buildScript: BatchScript | undefined;
-    if (settings.checkExpr) {
-        setCheckExpr(true);
-    }
-    if (buildSetting) {
-        const scriptPath = workdir + "/" + buildSetting;
-        try {
-            buildScriptModule = await loadModule(scriptPath);
-        } catch (e) {
-            logger.error(`'${scriptPath}' is not a valid build script`);
-        }
-    }
-    const scriptEnv: Env = {
-        fs: getFs(),
-        path: b3path,
+    return buildProjectWithContext(project, buildDir, {
         workdir,
         nodeDefs,
-        logger,
-    };
-    buildScript = createBatchHooks(buildScriptModule, scriptEnv, buildSetting ?? "");
-
-    const allErrors: string[] = [];
-    for (const path of b3path.lsdir(b3path.dirname(project), true)) {
-        if (path.endsWith(".json") && !shouldSkipJsonForBuild(path)) {
-            const buildpath = buildDir + "/" + path.substring(workdir.length + 1);
-            let tree = await createBuildData(path);
-            const errors: string[] = [];
-            if (buildScript) {
-                tree = processBatch(tree, path, buildScript, errors);
-            }
-            if (!tree) {
-                continue;
-            }
-            if (tree.export === false) {
-                logger.log("skip:", buildpath);
-                continue;
-            }
-            logger.log("build:", buildpath);
-            if (errors.length) {
-                hasError = true;
-            }
-            const declare: FileVarDecl = {
-                import: tree.import.map((v) => ({ path: v, vars: [], depends: [] })),
-                vars: tree.vars.map((v) => ({ name: v.name, desc: v.desc })),
-                subtree: [],
-            };
-            refreshVarDecl(tree.root, tree.group, declare);
-            if (!checkNodeData(tree?.root, (msg) => errors.push(msg))) {
-                hasError = true;
-            }
-            if (errors.length) {
-                allErrors.push(`${path}:`);
-                errors.forEach((v) => allErrors.push(`  ${v}`));
-            }
-            buildScript?.onWriteFile?.(buildpath, tree);
-            getFs().mkdirSync(b3path.dirname(buildpath), { recursive: true });
-            getFs().writeFileSync(buildpath, stringifyJson(tree, { indent: 2 }));
-        }
-    }
-    allErrors.forEach((v) => logger.error(v));
-    buildScript?.onComplete?.(hasError ? "failure" : "success");
-    return hasError;
-};
-
-export const loadModule = async (path: string) => {
-    let tempModulePath: string | null = null;
-    try {
-        if (typeof require !== "undefined" && require.cache) {
-            try {
-                delete require.cache[require.resolve(path)];
-            } catch {
-                /* path may not be in require cache (e.g. first load); avoid ENOENT from resolve */
-            }
-        }
-        if (typeof process !== "undefined" && (process as { type?: string }).type === "renderer") {
-            return await import(/* @vite-ignore */ `${path}?t=${Date.now()}`);
-        } else {
-            const ext = b3path.extname(path).toLowerCase();
-            if (ext === ".ts" || ext === ".mts") {
-                const ts = await import("typescript");
-                const source = getFs().readFileSync(path, "utf8");
-                const transpiled = ts.transpileModule(source, {
-                    compilerOptions: {
-                        module: ts.ModuleKind.ESNext,
-                        target: ts.ScriptTarget.ES2020,
-                        sourceMap: false,
-                        inlineSourceMap: false,
-                        inlineSources: false,
-                        removeComments: false,
-                    },
-                    fileName: path,
-                });
-                const base = b3path.basenameWithoutExt(path);
-                tempModulePath = b3path.join(
-                    b3path.dirname(path),
-                    `${base}.runtime.${Date.now()}.mjs`
-                );
-                getFs().writeFileSync(tempModulePath, transpiled.outputText, "utf8");
-            } else if (ext === ".mjs") {
-                tempModulePath = path;
-            } else {
-                tempModulePath = path.replace(".js", `.runtime.${Date.now()}.mjs`);
-                getFs().copyFileSync(path, tempModulePath);
-            }
-            const modulePath = b3path.posixPath(tempModulePath);
-            const ret = await import(/* @vite-ignore */ `file:///${modulePath}?t=${Date.now()}`);
-            if (tempModulePath !== path) {
-                getFs().unlinkSync(tempModulePath);
-            }
-            return ret;
-        }
-    } catch (e) {
-        logger.error(`failed to load module: ${path}`, e);
-        if (tempModulePath && tempModulePath !== path) {
-            try {
-                getFs().unlinkSync(tempModulePath);
-            } catch {
-                /* ignore temp file cleanup failure */
-            }
-        }
-        return null;
-    }
-};
-
-export const createFileData = (data: NodeData, includeSubtree?: boolean) => {
-    const nodeData: NodeData = {
-        $id: data.$id,
-        id: data.id,
-        name: data.name,
-        desc: data.desc || undefined,
-        args: data.args || undefined,
-        input: data.input || undefined,
-        output: data.output || undefined,
-        debug: data.debug || undefined,
-        disabled: data.disabled || undefined,
-        path: data.path || undefined,
-    };
-    const conf = nodeDefs.get(data.name);
-    if (!conf.input?.length) {
-        nodeData.input = undefined;
-    }
-    if (!conf.output?.length) {
-        nodeData.output = undefined;
-    }
-    if (!conf.args?.length) {
-        nodeData.args = undefined;
-    }
-
-    if (data.children?.length && (includeSubtree || !isSubtreeRoot(data))) {
-        nodeData.children = [];
-        data.children.forEach((child) => {
-            nodeData.children!.push(createFileData(child, includeSubtree));
-        });
-    }
-    return nodeData;
+        files,
+        parsedVarDecl,
+        dfs,
+        isSubtreeRoot,
+        refreshVarDecl,
+        checkNodeData,
+        setCheckExpr,
+    });
 };
 
 export const createNewTree = (name: string) => {
@@ -1219,160 +1028,6 @@ export const createNewTree = (name: string) => {
 export const isTreeFile = (path: string) => {
     const lower = path.toLocaleLowerCase();
     return lower.endsWith(".json");
-};
-
-const loadVarDecl = (list: ImportDecl[], arr: Array<VarDecl>) => {
-    for (const entry of list) {
-        if (!files[entry.path]) {
-            logger.warn(`file not found: ${workdir}/${entry.path}`);
-            continue;
-        }
-
-        let changed = false;
-        if (!entry.modified || files[entry.path] > entry.modified) {
-            changed = true;
-        }
-
-        if (!changed) {
-            changed = entry.depends.some((v) => files[v.path] && files[v.path] > v.modified);
-        }
-
-        if (!changed) {
-            continue;
-        }
-
-        entry.vars = [];
-        entry.depends = [];
-        entry.modified = files[entry.path];
-
-        const vars: Set<VarDecl> = new Set();
-        const depends: Set<string> = new Set();
-        const load = (path: string) => {
-            if (parsingStack.includes(path)) {
-                return;
-            }
-
-            const parsedEntry: ImportDecl | undefined = parsedVarDecl[path];
-            if (parsedEntry && files[path] === parsedEntry.modified) {
-                parsedEntry.depends.forEach((v) => depends.add(v.path));
-                parsedEntry.vars.forEach((v) => vars.add(v));
-                return;
-            }
-
-            parsingStack.push(path);
-            try {
-                const model: TreeData = readTreeFromFile(`${workdir}/${path}`);
-                model.vars.forEach((v) => vars.add(v));
-                model.import.forEach((v) => {
-                    load(v);
-                    depends.add(v);
-                });
-                collectSubtree(model.root).forEach((subPath) => {
-                    load(subPath);
-                    depends.add(subPath);
-                });
-                logger.debug(`load var: ${path}`);
-            } catch (e) {
-                alertError(`parsing error: ${path}`);
-            }
-            parsingStack.pop();
-        };
-        load(entry.path);
-        entry.vars = Array.from(vars).sort((a, b) => a.name.localeCompare(b.name));
-        entry.depends = Array.from(depends).map((v) => ({ path: v, modified: files[v] }));
-        parsedVarDecl[entry.path] = {
-            path: entry.path,
-            vars: entry.vars.map((v) => ({ name: v.name, desc: v.desc })),
-            depends: entry.depends.slice(),
-            modified: entry.modified,
-        };
-    }
-    list.forEach((entry) => arr.push(...entry.vars));
-};
-
-const collectSubtree = (data: NodeData) => {
-    const list: string[] = [];
-    dfs(data, (node) => {
-        if (node.path) {
-            list.push(node.path);
-        }
-    });
-    return list;
-};
-
-/** Webview: do not load vars from disk; preserve subtree entries from host. */
-const refreshVarDeclWebview = (root: NodeData, group: string[], declare: FileVarDecl) => {
-    const prevSubtreeByPath = new Map(
-        declare.subtree.map((s) => [normalizeSubtreePathKey(s.path), s])
-    );
-    declare.subtree = collectSubtree(root).map((path) => {
-        const prev = prevSubtreeByPath.get(normalizeSubtreePathKey(path));
-        return {
-            path,
-            vars: prev?.vars?.length ? prev.vars.map((v) => ({ ...v })) : [],
-            depends: prev?.depends ?? [],
-        };
-    });
-
-    let changed = false;
-    const lastGroup = Array.from(Object.keys(usingGroups ?? {})).sort();
-    const sortedGroup = [...group].sort();
-    if (lastGroup.length !== sortedGroup.length || lastGroup.some((v, i) => v !== sortedGroup[i])) {
-        changed = true;
-        updateUsingGroups(group);
-    }
-
-    return changed;
-};
-
-const refreshVarDeclNode = (root: NodeData, group: string[], declare: FileVarDecl) => {
-    const filter: Record<string, boolean> = {};
-    const vars: Array<VarDecl> = new (class extends Array {
-        override push(...items: VarDecl[]): number {
-            for (const v of items) {
-                if (filter[v.name]) {
-                    continue;
-                }
-                filter[v.name] = true;
-                super.push(v);
-            }
-            return this.length;
-        }
-    })();
-    vars.push(...declare.vars);
-    parsingStack.length = 0;
-    declare.subtree = collectSubtree(root).map((v) => ({
-        path: v,
-        vars: [],
-        depends: [],
-    }));
-    loadVarDecl(declare.import, vars);
-    loadVarDecl(declare.subtree, vars);
-
-    let changed = false;
-    const lastGroup = Array.from(Object.keys(usingGroups ?? {})).sort();
-    group.sort();
-    if (lastGroup.length !== group.length || lastGroup.some((v, i) => v !== group[i])) {
-        changed = true;
-        logger.debug("refresh group:", lastGroup, group);
-        updateUsingGroups(group);
-    }
-
-    const lastVars = Array.from(Object.keys(usingVars ?? {})).sort();
-    vars.sort((a, b) => a.name.localeCompare(b.name));
-    if (lastVars.length !== vars.length || lastVars.some((v, i) => v !== vars[i].name)) {
-        changed = true;
-        logger.debug("refresh vars:", lastVars, vars);
-        updateUsingVars(vars);
-    }
-    return changed;
-};
-
-export const refreshVarDecl = (root: NodeData, group: string[], declare: FileVarDecl) => {
-    if (hasFs()) {
-        return refreshVarDeclNode(root, group, declare);
-    }
-    return refreshVarDeclWebview(root, group, declare);
 };
 
 export { getFs, setFs, hasFs } from "./b3fs";

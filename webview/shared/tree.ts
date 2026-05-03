@@ -7,11 +7,13 @@ import {
 } from "./misc/util";
 import type { PersistedNodeModel, PersistedTreeModel, WorkdirRelativeJsonPath } from "./contracts";
 
+export const cloneJsonValue = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 export const clonePersistedTree = (tree: PersistedTreeModel): PersistedTreeModel =>
-    JSON.parse(JSON.stringify(tree)) as PersistedTreeModel;
+    cloneJsonValue(tree);
 
 export const clonePersistedNode = (node: PersistedNodeModel): PersistedNodeModel =>
-    JSON.parse(JSON.stringify(node)) as PersistedNodeModel;
+    cloneJsonValue(node);
 
 export const parsePersistedTreeContent = (
     content: string,
@@ -76,6 +78,38 @@ export const collectReachableSubtreePaths = (
         }
     });
     return Array.from(paths);
+};
+
+export const collectTransitivePaths = async (
+    seedPaths: Iterable<string>,
+    expand: (path: string) => Promise<Iterable<string> | null | undefined>
+): Promise<string[]> => {
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const queue = Array.from(seedPaths);
+
+    while (queue.length > 0) {
+        const currentPath = queue.shift();
+        if (!currentPath || seen.has(currentPath)) {
+            continue;
+        }
+
+        seen.add(currentPath);
+        ordered.push(currentPath);
+
+        const children = await expand(currentPath);
+        if (!children) {
+            continue;
+        }
+
+        for (const childPath of children) {
+            if (childPath && !seen.has(childPath)) {
+                queue.push(childPath);
+            }
+        }
+    }
+
+    return ordered;
 };
 
 export const applyMainTreeDisplayIds = (
