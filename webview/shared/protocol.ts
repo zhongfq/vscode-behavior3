@@ -1,4 +1,4 @@
-import type { HostToEditorMessage } from "../../src/types";
+import type { HostToEditorMessage } from "./message-protocol";
 import type {
     HostInitPayload,
     HostVarsPayload,

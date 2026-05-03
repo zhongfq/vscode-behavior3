@@ -2,10 +2,10 @@
 import { customAlphabet } from "nanoid";
 import { VERSION, type TreeData, type WorkspaceModel } from "./b3type";
 import { getFs } from "./b3fs";
-import { createNode, dfs } from "./b3util";
 import b3path from "./b3path";
 import { parseTreeContent, parseWorkspaceModelContent } from "../schema";
 import { stringifyJson } from "./stringify";
+import { createNode } from "./tree-model";
 
 export const nanoid = customAlphabet(
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",

@@ -1,8 +1,13 @@
 import * as fs from "fs";
 import * as path from "path";
+import { buildProjectWithContext } from "../../webview/shared/misc/b3-build";
 import { getLogger, setLogger, type Logger } from "../../webview/shared/misc/logger";
-import { buildProject, initWorkdirFromSettingFile, setCheckExpr } from "../../webview/shared/misc/b3util";
+import { createBuildProjectContext } from "../../webview/shared/misc/b3util";
 import { setFs } from "../../webview/shared/misc/b3fs";
+import {
+    findBehaviorSettingFileSync,
+    findBehaviorWorkspaceFileSync,
+} from "../project-path-discovery";
 
 setFs(fs);
 
@@ -30,21 +35,6 @@ export interface BehaviorBuildProjectResult {
 
 const normalizePosixPath = (filePath: string) => filePath.replace(/\\/g, "/");
 
-const isWithinRoot = (rootDir: string, candidateDir: string): boolean => {
-    const relative = path.relative(rootDir, candidateDir);
-    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-};
-
-const toSearchDirectory = (inputPath: string): string => {
-    const resolved = path.resolve(inputPath);
-    if (!fs.existsSync(resolved)) {
-        return path.extname(resolved) ? path.dirname(resolved) : resolved;
-    }
-
-    const stat = fs.statSync(resolved);
-    return stat.isDirectory() ? resolved : path.dirname(resolved);
-};
-
 const ensureExistingFile = (filePath: string, suffix: string, label: string): string => {
     const resolved = path.resolve(filePath);
     if (!resolved.endsWith(suffix)) {
@@ -54,65 +44,6 @@ const ensureExistingFile = (filePath: string, suffix: string, label: string): st
         throw new Error(`${label} does not exist: ${resolved}`);
     }
     return resolved;
-};
-
-const findNearestFileUpward = (
-    searchFrom: string,
-    suffix: string,
-    rootDir?: string
-): string | undefined => {
-    let dir = path.resolve(searchFrom);
-    const boundary = rootDir ? path.resolve(rootDir) : undefined;
-
-    while (true) {
-        if (boundary && !isWithinRoot(boundary, dir)) {
-            break;
-        }
-
-        try {
-            const names = fs.readdirSync(dir);
-            const hit = names.filter((name) => name.endsWith(suffix)).sort()[0];
-            if (hit) {
-                return path.join(dir, hit);
-            }
-        } catch {
-            /* ignore */
-        }
-
-        if (boundary && dir === boundary) {
-            break;
-        }
-
-        const parent = path.dirname(dir);
-        if (parent === dir) {
-            break;
-        }
-        dir = parent;
-    }
-
-    return undefined;
-};
-
-export const findBehaviorWorkspaceFileSync = (
-    projectPath: string,
-    opts?: { rootDir?: string }
-): string | undefined => {
-    const resolved = path.resolve(projectPath);
-    if (resolved.endsWith(".b3-workspace") && fs.existsSync(resolved)) {
-        return resolved;
-    }
-    return findNearestFileUpward(toSearchDirectory(resolved), ".b3-workspace", opts?.rootDir);
-};
-
-export const findBehaviorSettingFileSync = (
-    searchPath: string,
-    opts?: { rootDir?: string }
-): string | undefined => {
-    const resolved = path.resolve(searchPath);
-    if (resolved.endsWith(".b3-setting") && fs.existsSync(resolved)) {
-        return resolved;
-    }
-    return findNearestFileUpward(toSearchDirectory(resolved), ".b3-setting", opts?.rootDir);
 };
 
 export const resolveBehaviorBuildPaths = (
@@ -139,12 +70,9 @@ export const resolveBehaviorBuildPaths = (
     const settingFile =
         options.settingFile
             ? ensureExistingFile(options.settingFile, ".b3-setting", "settingFile")
-            : findBehaviorSettingFileSync(
-                  path.dirname(workspaceFile),
-                  {
-                      rootDir: workspaceRoot ?? path.dirname(workspaceFile),
-                  }
-              );
+            : findBehaviorSettingFileSync(path.dirname(workspaceFile), {
+                  rootDir: workspaceRoot,
+              });
 
     if (!settingFile) {
         throw new Error(
@@ -173,16 +101,16 @@ export const buildBehaviorProject = async (
 
     try {
         fs.mkdirSync(paths.outputDir, { recursive: true });
-        initWorkdirFromSettingFile(
-            normalizePosixPath(paths.workdir),
-            normalizePosixPath(paths.settingFile),
-            () => {}
-        );
-        setCheckExpr(options.checkExpr ?? true);
-
-        const hasError = await buildProject(
+        const buildContext = createBuildProjectContext({
+            workdir: normalizePosixPath(paths.workdir),
+            settingFile: normalizePosixPath(paths.settingFile),
+            checkExpr: options.checkExpr ?? true,
+            alertError: () => {},
+        });
+        const hasError = await buildProjectWithContext(
             normalizePosixPath(paths.workspaceFile),
-            normalizePosixPath(paths.outputDir)
+            normalizePosixPath(paths.outputDir),
+            buildContext
         );
 
         return {

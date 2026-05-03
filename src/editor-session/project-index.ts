@@ -1,6 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import type { PersistedNodeModel, PersistedTreeModel } from "../../webview/shared/contracts";
+import { isBehaviorTreeJsonPath } from "../../webview/shared/misc/behavior-tree-files";
 import { normalizeWorkdirRelativePath } from "../../webview/shared/protocol";
 import {
     collectReachableSubtreePaths,
@@ -63,7 +64,7 @@ export class ProjectIndex {
             );
             for (const uri of uris) {
                 const relativePath = this.uriToWorkdirRelative(uri);
-                if (relativePath) {
+                if (relativePath && isBehaviorTreeJsonPath(relativePath)) {
                     allFiles.push(relativePath);
                 }
             }

@@ -6,8 +6,6 @@ import type { NodeDef } from "behavior3";
 
 export type { NodeDef };
 
-// ─── Editor Webview → Extension Host ────────────────────────────────────────
-
 export type EditorToHostMessage =
     | { type: "ready" }
     | { type: "update"; content: string }
@@ -18,12 +16,10 @@ export type EditorToHostMessage =
     | { type: "build" }
     | { type: "readFile"; requestId: string; path: string; openIfSubtree?: boolean }
     | { type: "saveSubtree"; requestId: string; path: string; content: string }
-    /** Right-click → Save as subtree: pick path under workdir and write JSON from webview. */
+    /** Right-click -> Save as subtree: pick path under workdir and write JSON from webview. */
     | { type: "saveSubtreeAs"; requestId: string; content: string; suggestedBaseName: string }
     /** Forward webview `console.*` to extension Output panel. */
     | { type: "webviewLog"; level: "log" | "info" | "warn" | "error" | "debug"; message: string };
-
-// ─── Extension Host → Editor Webview ────────────────────────────────────────
 
 export type HostToEditorMessage =
     | {

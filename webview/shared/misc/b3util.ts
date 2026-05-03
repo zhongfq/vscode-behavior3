@@ -21,12 +21,13 @@ import {
 import { ExpressionEvaluator } from "behavior3";
 import { logger } from "./logger";
 import { nanoid, readJson, readTreeFromFile } from "./util";
-import { buildProjectWithContext } from "./b3-build";
+import { createNode, dfs, isSubtreeRoot, subtreeNeedsMissingIds } from "./tree-model";
 import { normalizeNodeDefCollection } from "../schema";
 
 /**
- * Shared editor/runtime utilities plus the remaining mutable singleton state
- * that legacy build-time validation still depends on.
+ * Shared editor/runtime utilities plus reusable validation helpers.
+ * The editor still keeps module-level state here, while offline builds create
+ * isolated validation contexts via `createBuildProjectContext`.
  */
 export class NodeDefs extends Map<string, NodeDef> {
     override get(key: string): NodeDef {
@@ -53,6 +54,77 @@ const unknownNodeDef: NodeDef = {
     type: "Action",
 };
 
+type BuildAlertHandler = (msg: string, duration?: number) => void;
+
+interface BuildValidationState {
+    nodeDefs: NodeDefs;
+    groupDefs: string[];
+    usingGroups: Record<string, boolean> | null;
+    usingVars: Record<string, VarDecl> | null;
+    parsedExprs: Record<string, string[]>;
+    checkExpr: boolean;
+}
+
+interface BuildProjectState extends BuildValidationState {
+    workdir: string;
+    files: Record<string, number>;
+    parsedVarDecl: Record<string, ImportDecl>;
+    alertError: BuildAlertHandler;
+}
+
+const createNodeDefsState = (defs: unknown): Pick<BuildValidationState, "nodeDefs" | "groupDefs"> => {
+    const groups = new Set<string>();
+    const loadedNodeDefs = new NodeDefs();
+
+    for (const node of normalizeNodeDefCollection(defs)) {
+        node.args?.forEach((arg) => {
+            if (arg.options && !arg.options[0].source) {
+                arg.options = [
+                    {
+                        source: arg.options as unknown as Array<{ name: string; value: unknown }>,
+                    },
+                ];
+            }
+            arg.options?.forEach((option) => {
+                Object.keys(option.match ?? {}).forEach((key) => {
+                    if (!node.args?.find((entry) => entry.name === key)) {
+                        logger.error(
+                            `match key '${key}' in arg '${arg.name}' of ` +
+                                `node '${node.name}' is not found in args`
+                        );
+                    }
+                });
+            });
+        });
+
+        loadedNodeDefs.set(node.name, node);
+        node.group?.forEach((group) => groups.add(group));
+    }
+
+    return {
+        nodeDefs: loadedNodeDefs,
+        groupDefs: Array.from(groups).sort(),
+    };
+};
+
+const toUsingGroups = (group: string[]): Record<string, boolean> | null => {
+    let next: Record<string, boolean> | null = null;
+    for (const value of group) {
+        next ??= {};
+        next[value] = true;
+    }
+    return next;
+};
+
+const toUsingVars = (vars: VarDecl[]): Record<string, VarDecl> | null => {
+    let next: Record<string, VarDecl> | null = null;
+    for (const variable of vars) {
+        next ??= {};
+        next[variable.name] = variable;
+    }
+    return next;
+};
+
 export const initWorkdir = (path: string, handler: typeof alertError) => {
     const posix = path.replace(/\\/g, "/");
     initWorkdirFromSettingFile(posix, `${posix}/node-config.b3-setting`, handler);
@@ -66,58 +138,18 @@ export const initWorkdirFromSettingFile = (
 ) => {
     workdir = workdirPath.replace(/\\/g, "/");
     alertError = handler;
-    const nodeDefData = normalizeNodeDefCollection(readJson(settingFilePath) as unknown);
-    const groups: Set<string> = new Set();
-    nodeDefs = new NodeDefs();
-    for (const node of nodeDefData) {
-        node.args?.forEach((arg) => {
-            if (arg.options && !arg.options[0].source) {
-                arg.options = [
-                    {
-                        source: arg.options as unknown as Array<{ name: string; value: unknown }>,
-                    },
-                ];
-            }
-            arg.options?.forEach((option) => {
-                Object.keys(option.match ?? {}).forEach((key) => {
-                    if (!node.args?.find((v) => v.name === key)) {
-                        logger.error(
-                            `match key '${key}' in arg '${arg.name}' of ` +
-                                `node '${node.name}' is not found in args`
-                        );
-                    }
-                });
-            });
-        });
-        nodeDefs.set(node.name, node);
-        node.group?.forEach((g) => groups.add(g));
-    }
-    groupDefs = Array.from(groups).sort();
+    const loaded = createNodeDefsState(readJson(settingFilePath) as unknown);
+    nodeDefs = loaded.nodeDefs;
+    groupDefs = loaded.groupDefs;
 };
 
 /** Webview: receive pre-loaded defs from extension host (no disk). */
 export const initWithNodeDefs = (defs: NodeDef[], handler: typeof alertError, check: boolean) => {
     alertError = handler;
     checkExpr = check;
-    const groups: Set<string> = new Set();
-    nodeDefs = new NodeDefs();
-    for (const node of normalizeNodeDefCollection(defs as unknown)) {
-        node.args?.forEach((arg) => {
-            if (
-                arg.options &&
-                !Array.isArray((arg.options as Array<{ source: unknown }>)[0]?.source)
-            ) {
-                arg.options = [
-                    {
-                        source: arg.options as unknown as Array<{ name: string; value: unknown }>,
-                    },
-                ];
-            }
-        });
-        nodeDefs.set(node.name, node);
-        node.group?.forEach((g) => groups.add(g));
-    }
-    groupDefs = Array.from(groups).sort();
+    const loaded = createNodeDefsState(defs as unknown);
+    nodeDefs = loaded.nodeDefs;
+    groupDefs = loaded.groupDefs;
 };
 
 export const setSizeCalculator = (calc: (d: NodeData) => number[]) => {
@@ -125,73 +157,33 @@ export const setSizeCalculator = (calc: (d: NodeData) => number[]) => {
 };
 
 export const updateUsingGroups = (group: string[]) => {
-    usingGroups = null;
-    for (const g of group) {
-        usingGroups ??= {};
-        usingGroups[g] = true;
-    }
+    usingGroups = toUsingGroups(group);
 };
 
 export const updateUsingVars = (vars: VarDecl[]) => {
-    usingVars = null;
-    for (const v of vars) {
-        usingVars ??= {};
-        usingVars[v.name] = v;
-    }
+    usingVars = toUsingVars(vars);
 };
 
 export const setCheckExpr = (check: boolean) => {
     checkExpr = check;
 };
 
-export const parseExpr = (expr: string) => {
-    if (parsedExprs[expr]) {
-        return parsedExprs[expr];
+const parseExprWithCache = (expr: string, exprCache: Record<string, string[]>) => {
+    if (exprCache[expr]) {
+        return exprCache[expr];
     }
     const result = expr
         .split(/[^a-zA-Z0-9_.'"]/)
         .map((v) => v.split(".")[0])
         .filter((v) => isValidVariableName(v));
-    parsedExprs[expr] = result;
+    exprCache[expr] = result;
     return result;
 };
 
-export const dfs = <T extends { children?: T[] }>(
-    node: T,
-    visitor: (node: T, depth: number) => unknown,
-    depth: number = 0
-) => {
-    const traverse = (n: T, d: number) => {
-        if (visitor(n, d) === false) {
-            return false;
-        }
-        if (n.children) {
-            for (const child of n.children) {
-                if (traverse(child, d + 1) === false) {
-                    return false;
-                }
-            }
-        }
-    };
-    traverse(node, depth);
-};
-
-export const isNewVersion = (version: string) => {
-    const [major, minor, patch] = version.split(".").map(Number);
-    const [major2, minor2, patch2] = VERSION.split(".").map(Number);
-    return (
-        major > major2 ||
-        (major === major2 && minor > minor2) ||
-        (major === major2 && minor === minor2 && patch > patch2)
-    );
-};
+export const parseExpr = (expr: string) => parseExprWithCache(expr, parsedExprs);
 
 export const isValidVariableName = (name: string) => {
     return /^[a-zA-Z_$][a-zA-Z_$0-9]*$/.test(name) && !keyWords.includes(name);
-};
-
-export const isSubtreeRoot = (data: NodeData) => {
-    return Boolean(data.path) && data.id !== "1";
 };
 
 export const isNodeEqual = (node1: NodeData, node2: NodeData) => {
@@ -400,6 +392,14 @@ export const checkOneof = (arg: NodeArg, argValue: unknown, inputValue: unknown)
     return (argValue !== "" && inputValue === "") || (argValue === "" && inputValue !== "");
 };
 
+const isValidChildrenWithNodeDefs = (data: NodeData, defs: NodeDefs) => {
+    const def = defs.get(data.name);
+    if (def.children !== undefined && def.children !== -1) {
+        return (data.children?.filter((child) => !child.disabled).length || 0) === def.children;
+    }
+    return true;
+};
+
 export const isValidNodeData = (data: NodeData) => {
     const def = nodeDefs.get(data.name);
     if (def.input) {
@@ -416,7 +416,7 @@ export const isValidNodeData = (data: NodeData) => {
             }
         }
     }
-    if (!isValidChildren(data)) {
+    if (!isValidChildrenWithNodeDefs(data, nodeDefs)) {
         return false;
     }
     if (def.args) {
@@ -430,12 +430,16 @@ export const isValidNodeData = (data: NodeData) => {
     return true;
 };
 
-export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorPrinter) => {
+const checkNodeDataWithState = (
+    data: NodeData | null | undefined,
+    printer: ErrorPrinter,
+    state: Pick<BuildValidationState, "nodeDefs" | "usingGroups" | "usingVars" | "parsedExprs" | "checkExpr">
+) => {
     if (!data) {
         return false;
     }
     const error = !printer ? () => {} : (msg: string) => printer(formatError(data, msg));
-    const conf = nodeDefs.get(data.name);
+    const conf = state.nodeDefs.get(data.name);
     if (conf.name === unknownNodeDef.name) {
         error(`undefined node: ${data.name}`);
         return false;
@@ -445,16 +449,16 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
 
     if (conf.group) {
         const groups = Array.isArray(conf.group) ? conf.group : [conf.group];
-        if (!groups.some((g) => usingGroups?.[g])) {
+        if (!groups.some((g) => state.usingGroups?.[g])) {
             error(`node group '${conf.group}' is not enabled`);
             hasError = true;
         }
     }
 
-    if (usingVars) {
+    if (state.usingVars) {
         if (data.input) {
             for (const v of data.input) {
-                if (v && !usingVars[v]) {
+                if (v && !state.usingVars[v]) {
                     error(`input variable '${v}' is not defined`);
                     hasError = true;
                 }
@@ -462,7 +466,7 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
         }
         if (data.output) {
             for (const v of data.output) {
-                if (v && !usingVars[v]) {
+                if (v && !state.usingVars[v]) {
                     error(`output variable '${v}' is not defined`);
                     hasError = true;
                 }
@@ -474,23 +478,23 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
         for (const arg of conf.args) {
             const value = data.args?.[arg.name] as string | string[] | undefined;
             if (isExprType(arg.type) && value) {
-                if (usingVars) {
+                if (state.usingVars) {
                     const vars: string[] = [];
                     if (typeof value === "string") {
-                        vars.push(...parseExpr(value));
+                        vars.push(...parseExprWithCache(value, state.parsedExprs));
                     } else if (Array.isArray(value)) {
                         for (const v of value) {
-                            vars.push(...parseExpr(v));
+                            vars.push(...parseExprWithCache(v, state.parsedExprs));
                         }
                     }
                     for (const v of vars) {
-                        if (v && !usingVars[v]) {
+                        if (v && !state.usingVars[v]) {
                             error(`expr variable '${arg.name}' is not defined`);
                             hasError = true;
                         }
                     }
                 }
-                if (checkExpr) {
+                if (state.checkExpr) {
                     const exprs: string[] = [];
                     if (typeof value === "string") {
                         exprs.push(value);
@@ -515,7 +519,7 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
         }
     }
 
-    if (!isValidChildren(data)) {
+    if (!isValidChildrenWithNodeDefs(data, state.nodeDefs)) {
         hasError = true;
         const count = data.children?.filter((c) => !c.disabled).length || 0;
         error(`expect ${conf.children} children, but got ${count}`);
@@ -603,7 +607,7 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
 
     if (data.children) {
         for (const child of data.children) {
-            if (!checkNodeData(child, printer)) {
+            if (!checkNodeDataWithState(child, printer, state)) {
                 hasError = true;
             }
         }
@@ -614,6 +618,15 @@ export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorP
     return !hasError;
 };
 
+export const checkNodeData = (data: NodeData | null | undefined, printer: ErrorPrinter) =>
+    checkNodeDataWithState(data, printer, {
+        nodeDefs,
+        usingGroups,
+        usingVars,
+        parsedExprs,
+        checkExpr,
+    });
+
 /** Align with extension `tree-editor-provider.normalizePathKey` for subtree path lookup. */
 export const normalizeSubtreePathKey = (p: string) =>
     p
@@ -622,7 +635,6 @@ export const normalizeSubtreePathKey = (p: string) =>
         .replace(/^\.\//, "");
 
 interface RefreshVarDeclContext {
-    hasFs: boolean;
     files: Record<string, number>;
     workdir: string;
     usingGroups: Record<string, boolean> | null;
@@ -656,9 +668,8 @@ const collectSubtreePaths = (data: NodeData, walk: RefreshVarDeclContext["dfs"])
 };
 
 /**
- * Variable declaration refresh stays local to this module because it still
- * depends on the singleton caches above. Keeping it here avoids a thin
- * wrapper-only file around mutable shared state.
+ * Variable declaration refresh shares the same import/subtree expansion rules
+ * between the live editor state and offline build contexts.
  */
 const loadVarDecl = (
     list: ImportDecl[],
@@ -825,44 +836,108 @@ const refreshVarDeclNode = (
     return changed;
 };
 
-const refreshVarDecl = (root: NodeData, group: string[], declare: FileVarDecl) => {
-    const context: RefreshVarDeclContext = {
-        hasFs: hasFs(),
-        files,
-        workdir,
-        usingGroups,
-        usingVars,
-        parsedVarDecl,
-        parsingStack,
-        dfs,
-        normalizeSubtreePathKey,
-        updateUsingGroups,
-        updateUsingVars,
-        readTreeFromFile,
-        alertError,
-        logger,
-    };
+const createRefreshVarDeclContext = (
+    state: Pick<
+        BuildProjectState,
+        "files" | "workdir" | "usingGroups" | "usingVars" | "parsedVarDecl" | "alertError"
+    >,
+    updates: Pick<RefreshVarDeclContext, "updateUsingGroups" | "updateUsingVars">
+): RefreshVarDeclContext => ({
+    files: state.files,
+    workdir: state.workdir,
+    usingGroups: state.usingGroups,
+    usingVars: state.usingVars,
+    parsedVarDecl: state.parsedVarDecl,
+    parsingStack: [],
+    dfs,
+    normalizeSubtreePathKey,
+    updateUsingGroups: updates.updateUsingGroups,
+    updateUsingVars: updates.updateUsingVars,
+    readTreeFromFile,
+    alertError: state.alertError,
+    logger,
+});
 
-    if (context.hasFs) {
+const refreshVarDecl = (root: NodeData, group: string[], declare: FileVarDecl) => {
+    const context = createRefreshVarDeclContext(
+        {
+            files,
+            workdir,
+            usingGroups,
+            usingVars,
+            parsedVarDecl,
+            alertError,
+        },
+        {
+            updateUsingGroups,
+            updateUsingVars,
+        }
+    );
+
+    if (hasFs()) {
         return refreshVarDeclNode(root, group, declare, context);
     }
     return refreshVarDeclWebview(root, group, declare, context);
 };
 
-/**
- * Return true if any node in the subtree root (raw parsed JSON, before applyTreeDefaults)
- * is missing a `$id`. Used to decide whether to write-back $id to the subtree file.
- */
-export const subtreeNeedsMissingIds = (root: unknown): boolean => {
-    if (!root || typeof root !== "object") return false;
-    const node = root as { $id?: string; children?: unknown[] };
-    if (!node.$id) return true;
-    if (node.children) {
-        for (const child of node.children) {
-            if (subtreeNeedsMissingIds(child)) return true;
-        }
-    }
-    return false;
+export const createBuildProjectContext = (options: {
+    workdir: string;
+    settingFile: string;
+    checkExpr: boolean;
+    alertError?: BuildAlertHandler;
+}) => {
+    /**
+     * Offline builds should validate against their own node defs, file mtimes,
+     * var-decl cache, and expression cache instead of mutating editor globals.
+     */
+    const loaded = createNodeDefsState(readJson(options.settingFile) as unknown);
+    const state: BuildProjectState = {
+        nodeDefs: loaded.nodeDefs,
+        groupDefs: loaded.groupDefs,
+        usingGroups: null,
+        usingVars: null,
+        parsedExprs: {},
+        checkExpr: options.checkExpr,
+        workdir: options.workdir.replace(/\\/g, "/"),
+        files: {},
+        parsedVarDecl: {},
+        alertError: options.alertError ?? (() => {}),
+    };
+
+    const setLocalCheckExpr = (check: boolean) => {
+        state.checkExpr = check;
+    };
+
+    const updateLocalUsingGroups = (group: string[]) => {
+        state.usingGroups = toUsingGroups(group);
+    };
+
+    const updateLocalUsingVars = (vars: VarDecl[]) => {
+        state.usingVars = toUsingVars(vars);
+    };
+
+    return {
+        workdir: state.workdir,
+        nodeDefs: state.nodeDefs,
+        checkExprOverride: state.checkExpr,
+        files: state.files,
+        parsedVarDecl: state.parsedVarDecl,
+        dfs,
+        isSubtreeRoot,
+        refreshVarDecl: (root: NodeData, group: string[], declare: FileVarDecl) =>
+            refreshVarDeclNode(
+                root,
+                group,
+                declare,
+                createRefreshVarDeclContext(state, {
+                    updateUsingGroups: updateLocalUsingGroups,
+                    updateUsingVars: updateLocalUsingVars,
+                })
+            ),
+        checkNodeData: (data: NodeData | null | undefined, printer: ErrorPrinter) =>
+            checkNodeDataWithState(data, printer, state),
+        setCheckExpr: setLocalCheckExpr,
+    };
 };
 
 /**
@@ -930,54 +1005,8 @@ export const computeNodeOverride = (
     return hasDiff ? diff : null;
 };
 
-const parsingStack: string[] = [];
-
-export const createNode = (data: NodeData, includeChildren: boolean = true) => {
-    const node: NodeData = {
-        $id: data.$id,
-        id: data.id,
-        name: data.name,
-        desc: data.desc,
-        path: data.path,
-        debug: data.debug,
-        disabled: data.disabled,
-    };
-    if (data.input) {
-        node.input = [];
-        for (const v of data.input) {
-            node.input.push(v ?? "");
-        }
-    }
-    if (data.output) {
-        node.output = [];
-        for (const v of data.output) {
-            node.output.push(v ?? "");
-        }
-    }
-    if (data.args) {
-        node.args = {};
-        for (const k in data.args) {
-            const v = data.args[k];
-            if (v !== undefined) {
-                node.args[k] = v;
-            }
-        }
-    }
-    if (data.children && !isSubtreeRoot(data) && includeChildren) {
-        node.children = [];
-        for (const child of data.children) {
-            node.children.push(createNode(child));
-        }
-    }
-    return node;
-};
-
 export const isValidChildren = (data: NodeData) => {
-    const def = nodeDefs.get(data.name);
-    if (def.children !== undefined && def.children !== -1) {
-        return (data.children?.filter((c) => !c.disabled).length || 0) === def.children;
-    }
-    return true;
+    return isValidChildrenWithNodeDefs(data, nodeDefs);
 };
 
 export const isVariadic = (def: string[], i: number) => {
@@ -989,21 +1018,6 @@ export const isVariadic = (def: string[], i: number) => {
 
 const isValidInputOrOutput = (def: string[], data: string[] | undefined, index: number) => {
     return def[index].includes("?") || data?.[index] || isVariadic(def, index);
-};
-
-/** Single bridge from legacy singleton state into the extracted build pipeline. */
-export const buildProject = async (project: string, buildDir: string) => {
-    return buildProjectWithContext(project, buildDir, {
-        workdir,
-        nodeDefs,
-        files,
-        parsedVarDecl,
-        dfs,
-        isSubtreeRoot,
-        refreshVarDecl,
-        checkNodeData,
-        setCheckExpr,
-    });
 };
 
 export const createNewTree = (name: string) => {
@@ -1030,4 +1044,5 @@ export const isTreeFile = (path: string) => {
     return lower.endsWith(".json");
 };
 
+export { createNode, dfs, isSubtreeRoot, subtreeNeedsMissingIds };
 export { getFs, setFs, hasFs } from "./b3fs";

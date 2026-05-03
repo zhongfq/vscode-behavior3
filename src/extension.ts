@@ -129,10 +129,10 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             try {
-                // Align with desktop createProject (`behavior3editor/src/contexts/workspace-context.ts`):
-                // - write `node-config.b3-setting` (node defs)
-                // - write `example.json` (default example tree)
-                // - write `.b3-workspace` containing `{ nodeConf, metadata }`
+                // Create the minimal v2 project layout:
+                // - `node-config.b3-setting` for node definitions
+                // - `example.json` as the starter tree
+                // - `workspace.b3-workspace` for project-level settings
                 await fs.promises.mkdir(projectDir, { recursive: false });
 
                 await fs.promises.writeFile(
@@ -161,13 +161,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 await fs.promises.writeFile(
                     path.join(projectDir, "workspace.b3-workspace"),
-                    stringifyJson(
-                        {
-                            nodeConf: "node-config.b3-setting",
-                            metadata: [],
-                        },
-                        { indent: 2 }
-                    ),
+                    stringifyJson({ settings: {} }, { indent: 2 }),
                     "utf-8"
                 );
 

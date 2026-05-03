@@ -2,16 +2,12 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { logger } from "../webview/shared/misc/logger";
+import type { NodeDef } from "../webview/shared/message-protocol";
 import { parseNodeDefsContent, parseWorkspaceModelContent } from "../webview/shared/schema";
-import type { NodeDef } from "./types";
-
-/** True if `dir` is the workspace root or a subdirectory of it. */
-function dirIsInWorkspaceTree(workspaceRoot: string, dir: string): boolean {
-    const root = path.resolve(workspaceRoot);
-    const d = path.resolve(dir);
-    const rel = path.relative(root, d);
-    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
-}
+import {
+    findBehaviorSettingFileSync,
+    findBehaviorWorkspaceFileSync,
+} from "./project-path-discovery";
 
 /**
  * Walk from the opened file's directory up to the workspace root; return the first `*.b3-setting` found.
@@ -21,30 +17,9 @@ export function findB3SettingPath(
     documentUri: vscode.Uri,
     workspaceFolder: vscode.Uri | undefined
 ): string | undefined {
-    const root = workspaceFolder?.fsPath;
-    let dir = path.resolve(path.dirname(documentUri.fsPath));
-
-    while (true) {
-        if (root && !dirIsInWorkspaceTree(root, dir)) {
-            break;
-        }
-        try {
-            const names = fs.readdirSync(dir);
-            const hit = names.filter((n) => n.endsWith(".b3-setting")).sort();
-            if (hit.length > 0) {
-                return path.join(dir, hit[0]);
-            }
-        } catch {
-            /* ignore */
-        }
-        if (root && path.resolve(dir) === path.resolve(root)) {
-            break;
-        }
-        const parent = path.dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-    }
-    return undefined;
+    return findBehaviorSettingFileSync(documentUri.fsPath, {
+        rootDir: workspaceFolder?.fsPath,
+    });
 }
 
 /**
@@ -55,30 +30,9 @@ export function findB3WorkspacePath(
     documentUri: vscode.Uri,
     workspaceFolder: vscode.Uri | undefined
 ): string | undefined {
-    const root = workspaceFolder?.fsPath;
-    let dir = path.resolve(path.dirname(documentUri.fsPath));
-
-    while (true) {
-        if (root && !dirIsInWorkspaceTree(root, dir)) {
-            break;
-        }
-        try {
-            const names = fs.readdirSync(dir);
-            const hit = names.filter((n) => n.endsWith(".b3-workspace")).sort();
-            if (hit.length > 0) {
-                return path.join(dir, hit[0]);
-            }
-        } catch {
-            /* ignore */
-        }
-        if (root && path.resolve(dir) === path.resolve(root)) {
-            break;
-        }
-        const parent = path.dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-    }
-    return undefined;
+    return findBehaviorWorkspaceFileSync(documentUri.fsPath, {
+        rootDir: workspaceFolder?.fsPath,
+    });
 }
 
 /**

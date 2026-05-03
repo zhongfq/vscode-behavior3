@@ -12,7 +12,11 @@ import {
     watchSettingFile,
     watchWorkspaceFile,
 } from "../setting-resolver";
-import type { EditorToHostMessage, HostToEditorMessage, NodeDef } from "../types";
+import type {
+    EditorToHostMessage,
+    HostToEditorMessage,
+    NodeDef,
+} from "../../webview/shared/message-protocol";
 import { isDocumentVersionNewer } from "../../webview/shared/document-version";
 import { normalizeWorkdirRelativePath } from "../../webview/shared/protocol";
 import { stringifyJson } from "../../webview/shared/misc/stringify";

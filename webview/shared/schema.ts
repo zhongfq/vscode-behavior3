@@ -1,6 +1,5 @@
 import { customAlphabet } from "nanoid";
 import type { NodeDef } from "behavior3";
-import { DOCUMENT_VERSION } from "./document-version";
 import type { NodeData, TreeData, VarDecl, WorkspaceModel } from "./misc/b3type";
 
 const generateId = customAlphabet(
@@ -410,7 +409,7 @@ export const normalizeTreeData = (value: unknown): TreeData => {
     const record = expectPlainRecord(value, "tree file");
 
     return {
-        version: asOptionalString(record.version) ?? DOCUMENT_VERSION,
+        version: asRequiredString(record.version, "tree file version"),
         name: asRequiredString(record.name, "tree file name"),
         prefix: asOptionalString(record.prefix) ?? "",
         desc: asOptionalString(record.desc),

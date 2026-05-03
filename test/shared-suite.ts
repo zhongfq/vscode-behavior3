@@ -198,6 +198,33 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
         },
     },
     {
+        name: "requires explicit tree file version",
+        run() {
+            assert.throws(
+                () =>
+                    parsePersistedTreeContent(
+                        JSON.stringify({
+                            name: "main",
+                            prefix: "",
+                            group: [],
+                            import: [],
+                            vars: [],
+                            custom: {},
+                            $override: {},
+                            root: {
+                                $id: "root",
+                                id: "1",
+                                name: "Sequence",
+                                children: [],
+                            },
+                        }),
+                        "main.json"
+                    ),
+                /tree file version/i
+            );
+        },
+    },
+    {
         name: "collects transitive paths breadth-first without duplicates",
         async run() {
             const graph: Record<string, string[]> = {
@@ -324,6 +351,77 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 });
 
                 assert.equal(result.hasError, false);
+                assert.equal(fs.existsSync(path.join(outputDir, "main.json")), true);
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true });
+            }
+        },
+    },
+    {
+        name: "rejects legacy function-style build scripts",
+        async run() {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-build-hook-"));
+            const workspaceFile = path.join(root, "workspace.b3-workspace");
+            const settingFile = path.join(root, "node-config.b3-setting");
+            const treeFile = path.join(root, "main.json");
+            const buildScriptFile = path.join(root, "legacy-build.js");
+            const outputDir = path.join(root, "dist");
+
+            try {
+                fs.writeFileSync(
+                    workspaceFile,
+                    JSON.stringify({
+                        settings: {
+                            buildScript: "legacy-build.js",
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    settingFile,
+                    JSON.stringify([
+                        {
+                            name: "Root",
+                            type: "Composite",
+                            desc: "",
+                            children: -1,
+                        },
+                    ])
+                );
+                fs.writeFileSync(
+                    treeFile,
+                    JSON.stringify({
+                        version: "2.0.0",
+                        name: "main",
+                        prefix: "",
+                        group: [],
+                        import: [],
+                        vars: [],
+                        custom: {},
+                        $override: {},
+                        root: {
+                            $id: "root",
+                            id: "1",
+                            name: "Root",
+                            children: [],
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    buildScriptFile,
+                    [
+                        "export function onProcessTree(tree) {",
+                        "  return tree;",
+                        "}",
+                        "",
+                    ].join("\n")
+                );
+
+                const result = await buildBehaviorProject({
+                    projectPath: treeFile,
+                    outputDir,
+                });
+
+                assert.equal(result.hasError, true);
                 assert.equal(fs.existsSync(path.join(outputDir, "main.json")), true);
             } finally {
                 fs.rmSync(root, { recursive: true, force: true });

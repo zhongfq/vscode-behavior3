@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import type { NodeDef } from "./types";
+import type { NodeDef } from "../webview/shared/message-protocol";
 
 /** True if `candidate` is inside `root` (same volume). */
 function filePathIsUnderRoot(root: string, candidate: string): boolean {

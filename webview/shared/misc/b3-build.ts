@@ -1,6 +1,7 @@
 import type * as Fs from "fs";
 import { getFs, hasFs } from "./b3fs";
 import type { FileVarDecl, ImportDecl, NodeData, NodeDef, TreeData } from "./b3type";
+import { isBehaviorTreeJsonPath } from "./behavior-tree-files";
 import { logger } from "./logger";
 import b3path from "./b3path";
 import { stringifyJson } from "./stringify";
@@ -39,6 +40,7 @@ type OptionalRequire = {
 interface BuildContext {
     workdir: string;
     nodeDefs: ReadonlyMap<string, NodeDef>;
+    checkExprOverride?: boolean;
     files: Record<string, number>;
     parsedVarDecl: Record<string, ImportDecl>;
     dfs<T extends { children?: T[] }>(
@@ -68,15 +70,8 @@ const hasBatchHookMethod = (obj: unknown): obj is BatchScript => {
     );
 };
 
-const createBatchHooks = (
-    moduleExports: unknown,
-    env: Env,
-    scriptPath: string
-): BatchScript | undefined => {
-    /**
-     * Support both the new Hook-class API and the historical JS function hooks
-     * so existing build scripts keep working while the runtime becomes stricter.
-     */
+const createBatchHooks = (moduleExports: unknown, env: Env): BatchScript | undefined => {
+    /** Build scripts must expose one Hook-class entry so runtime behavior stays uniform. */
     if (!moduleExports || typeof moduleExports !== "object") {
         return undefined;
     }
@@ -94,49 +89,7 @@ const createBatchHooks = (
         }
     }
 
-    const ext = b3path.extname(scriptPath).toLowerCase();
-    const isJsScript = ext === ".js" || ext === ".mjs" || ext === ".cjs";
-    if (isJsScript) {
-        const legacy = moduleRecord as {
-            onProcessTree?: (
-                env: Env,
-                tree: TreeData,
-                path: string,
-                errors: string[]
-            ) => TreeData | null;
-            onProcessNode?: (env: Env, node: NodeData, errors: string[]) => NodeData | null;
-            onWriteFile?: (env: Env, path: string, tree: TreeData) => void;
-            onComplete?: (env: Env, status: "success" | "failure") => void;
-        };
-
-        if (
-            typeof legacy.onProcessTree === "function" ||
-            typeof legacy.onProcessNode === "function" ||
-            typeof legacy.onWriteFile === "function" ||
-            typeof legacy.onComplete === "function"
-        ) {
-            return {
-                onProcessTree: legacy.onProcessTree
-                    ? (tree, path, errors) => legacy.onProcessTree?.(env, tree, path, errors) ?? tree
-                    : undefined,
-                onProcessNode: legacy.onProcessNode
-                    ? (node, errors) => legacy.onProcessNode?.(env, node, errors) ?? node
-                    : undefined,
-                onWriteFile: legacy.onWriteFile
-                    ? (path, tree) => legacy.onWriteFile?.(env, path, tree)
-                    : undefined,
-                onComplete: legacy.onComplete
-                    ? (status) => legacy.onComplete?.(env, status)
-                    : undefined,
-            };
-        }
-    }
-
-    logger.error(
-        isJsScript
-            ? "build script must export a Hook class (`Hook`/default) or legacy hook functions (JS only)"
-            : "build script must export a Hook class (named export `Hook` or default export)"
-    );
+    logger.error("build script must export a Hook class (named export `Hook` or default export)");
     return undefined;
 };
 
@@ -347,29 +300,6 @@ export const syncFilesFromDiskWithContext = (
     }
 };
 
-/** Non-behavior-tree JSON under the workspace must not be fed to `readTreeFromFile`. */
-const SKIP_JSON_BASENAMES = new Set([
-    "package.json",
-    "package-lock.json",
-    "jsconfig.json",
-    "components.json",
-]);
-
-const shouldSkipJsonForBuild = (absPath: string): boolean => {
-    const base = b3path.basename(absPath);
-    const lower = base.toLowerCase();
-    if (SKIP_JSON_BASENAMES.has(lower)) {
-        return true;
-    }
-    if (lower === "tsconfig.json" || /^tsconfig\..*\.json$/i.test(base)) {
-        return true;
-    }
-    const normalized = b3path.posixPath(absPath).toLowerCase();
-    return ["/.vscode/", "/.git/", "/node_modules/", "/dist/", "/build/"].some((marker) =>
-        normalized.includes(marker)
-    );
-};
-
 const getOptionalRequire = (): OptionalRequire | undefined => {
     const candidate = (globalThis as typeof globalThis & { require?: unknown }).require;
     return candidate && typeof candidate === "function"
@@ -381,7 +311,7 @@ export const loadRuntimeModule = async (modulePath: string) => {
     let tempModulePath: string | null = null;
     try {
         /**
-         * Build scripts may be TS/JS/CJS/MJS and can be edited between runs.
+         * Build scripts may be TS/JS/MJS and can be edited between runs.
          * We evict require cache, transpile TS on the fly when needed, and load
          * through a timestamped ESM path so every build sees the latest script.
          */
@@ -423,9 +353,14 @@ export const loadRuntimeModule = async (modulePath: string) => {
             getFs().writeFileSync(tempModulePath, transpiled.outputText, "utf8");
         } else if (ext === ".mjs") {
             tempModulePath = modulePath;
-        } else {
+        } else if (ext === ".js") {
             tempModulePath = modulePath.replace(".js", `.runtime.${Date.now()}.mjs`);
             getFs().copyFileSync(modulePath, tempModulePath);
+        } else {
+            logger.error(
+                `unsupported build script extension '${ext || "(none)"}': ${modulePath}`
+            );
+            return null;
         }
 
         const normalizedModulePath = b3path.posixPath(tempModulePath);
@@ -467,9 +402,7 @@ export const buildProjectWithContext = async (
     const settings = readWorkspace(project).settings;
     const buildSetting = settings.buildScript;
     let buildScriptModule: unknown;
-    if (settings.checkExpr) {
-        context.setCheckExpr(true);
-    }
+    context.setCheckExpr(context.checkExprOverride ?? settings.checkExpr ?? true);
     if (buildSetting) {
         const scriptPath = context.workdir + "/" + buildSetting;
         try {
@@ -486,11 +419,14 @@ export const buildProjectWithContext = async (
         nodeDefs: context.nodeDefs,
         logger,
     };
-    const buildScript = createBatchHooks(buildScriptModule, scriptEnv, buildSetting ?? "");
+    const buildScript = createBatchHooks(buildScriptModule, scriptEnv);
+    if (buildSetting && (!buildScriptModule || !buildScript)) {
+        hasError = true;
+    }
 
     const allErrors: string[] = [];
     for (const candidatePath of b3path.lsdir(b3path.dirname(project), true)) {
-        if (!candidatePath.endsWith(".json") || shouldSkipJsonForBuild(candidatePath)) {
+        if (!isBehaviorTreeJsonPath(candidatePath)) {
             continue;
         }
 

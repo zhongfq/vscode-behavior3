@@ -5,9 +5,9 @@ import {
     readFileContentFromDisk,
     TreeEditorDocument,
 } from "./editor-session/document-sync";
+import type { HostToEditorMessage } from "../webview/shared/message-protocol";
 import type { ActiveTreeEditorWebview } from "./editor-session/tree-editor-webview-session";
 import { resolveTreeEditorSession } from "./editor-session/tree-editor-webview-session";
-import type { HostToEditorMessage } from "./types";
 
 /**
  * Read the Vite-generated HTML for the active webview entry and rewrite all

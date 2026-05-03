@@ -93,10 +93,7 @@ Use a `Hook` class. The extension constructs it once with `env`, then calls meth
 - `onWriteFile(path, tree)`
 - `onComplete(status)`
 
-For compatibility:
-
-- `.ts` / `.mts`: must export a class via named `Hook` or `default`
-- `.js` / `.mjs`: support class export and legacy function-style exports
+All supported script files must export a class via named `Hook` or `default`.
 
 For TypeScript authoring hints, see:
 

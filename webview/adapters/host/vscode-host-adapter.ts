@@ -1,4 +1,4 @@
-import type { EditorToHostMessage, HostToEditorMessage } from "../../../src/types";
+import type { EditorToHostMessage, HostToEditorMessage } from "../../shared/message-protocol";
 import {
     composeLoggers,
     createConsoleLogger,

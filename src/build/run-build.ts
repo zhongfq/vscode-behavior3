@@ -4,7 +4,10 @@ import * as vscode from "vscode";
 import { buildBehaviorProject } from "./build-cli";
 import { getLogger, logger, setLogger, type Logger } from "../../webview/shared/misc/logger";
 import { getBehavior3OutputChannel } from "../output-channel";
-import { findB3SettingPath, findB3WorkspacePath } from "../setting-resolver";
+import {
+    findBehaviorSettingFileSync,
+    findBehaviorWorkspaceFileSync,
+} from "../project-path-discovery";
 import { TreeEditorProvider } from "../tree-editor-provider";
 
 /**
@@ -56,20 +59,6 @@ export async function saveLastBuildOutput(
     outputDirFsPath: string
 ): Promise<void> {
     await context.workspaceState.update(getWorkspaceStateKey(workspaceFolder), outputDirFsPath);
-}
-
-/**
- * Resolve `.b3-setting` path (same rules as `setting-resolver.resolveNodeDefs`, synchronous).
- * @param searchFromDir Optional directory to start walking upward from (e.g. dirname of `.b3-workspace`).
- */
-export function resolveSettingFilePathSync(
-    workspaceRootFsPath: string,
-    searchFromDir?: string
-): string | undefined {
-    const start = searchFromDir ?? workspaceRootFsPath;
-    const anchor = vscode.Uri.file(path.join(path.resolve(start), ".behavior3-anchor"));
-    const rootUri = vscode.Uri.file(path.resolve(workspaceRootFsPath));
-    return findB3SettingPath(anchor, rootUri);
 }
 
 /**
@@ -130,9 +119,10 @@ export async function runBuild(context: vscode.ExtensionContext): Promise<void> 
         }
 
         const workspaceRoot = folder.uri.fsPath;
-        const walkAnchorUri =
-            treeUri ?? vscode.Uri.file(path.join(workspaceRoot, ".behavior3-build-anchor"));
-        const workspaceFile = findB3WorkspacePath(walkAnchorUri, folder.uri);
+        const workspaceSearchPath = treeUri?.fsPath ?? workspaceRoot;
+        const workspaceFile = findBehaviorWorkspaceFileSync(workspaceSearchPath, {
+            rootDir: workspaceRoot,
+        });
         if (!workspaceFile) {
             void vscode.window.showErrorMessage(
                 treeUri
@@ -142,10 +132,9 @@ export async function runBuild(context: vscode.ExtensionContext): Promise<void> 
             return;
         }
 
-        const settingPath = resolveSettingFilePathSync(
-            workspaceRoot,
-            workspaceFile ? path.dirname(workspaceFile) : undefined
-        );
+        const settingPath = findBehaviorSettingFileSync(path.dirname(workspaceFile), {
+            rootDir: workspaceRoot,
+        });
         if (!settingPath) {
             void vscode.window.showErrorMessage(
                 "No .b3-setting file found. Place a *.b3-setting next to your behavior trees or in a parent folder."
