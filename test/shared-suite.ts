@@ -4,10 +4,19 @@ import os from "node:os";
 import path from "node:path";
 import { createAppHooksStore } from "../webview/shared/misc/hooks";
 import { buildBehaviorProject, resolveBehaviorBuildPaths } from "../src/build/build-cli";
-import { normalizeNodeDefCollection, parseWorkspaceModelContent } from "../webview/shared/schema";
+import { buildResolvedGraphModel } from "../webview/domain/graph-selectors";
+import {
+    normalizeNodeDefCollection,
+    parseNodeDefsContent,
+    parseWorkspaceModelContent,
+} from "../webview/shared/schema";
 import { loadSubtreeSourceCache } from "../webview/shared/subtree-source-cache";
 import { materializePersistedTree } from "../webview/shared/tree-materializer";
-import { collectTransitivePaths, parsePersistedTreeContent } from "../webview/shared/tree";
+import {
+    collectTransitivePaths,
+    parsePersistedTreeContent,
+    serializePersistedTree,
+} from "../webview/shared/tree";
 
 const tests: Array<{ name: string; run(): Promise<void> | void }> = [
     {
@@ -26,6 +35,39 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
 
             assert.equal(defs.length, 1);
             assert.equal(defs[0]?.args?.[0]?.type, "expr?");
+        },
+    },
+    {
+        name: "normalizes boolean node arg alias",
+        run() {
+            const defs = normalizeNodeDefCollection([
+                {
+                    name: "Flag",
+                    type: "Action",
+                    desc: "",
+                    args: [{ name: "enabled", type: "boolean?", desc: "" }],
+                },
+            ]);
+
+            assert.equal(defs[0]?.args?.[0]?.type, "bool?");
+        },
+    },
+    {
+        name: "parses sample node config",
+        run() {
+            const defs = parseNodeDefsContent(
+                fs.readFileSync(path.join(process.cwd(), "sample/node-config.b3-setting"), "utf-8")
+            );
+
+            assert.equal(
+                defs.some((def) => def.name === "Attack"),
+                true
+            );
+            assert.equal(
+                defs.find((def) => def.name === "TestB3")?.args?.find((arg) => arg.name === "open")
+                    ?.type,
+                "bool"
+            );
         },
     },
     {
@@ -49,6 +91,174 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
         },
     },
     {
+        name: "skips variable declaration checks when none are declared",
+        run() {
+            const graphModel = buildResolvedGraphModel(
+                {
+                    rootKey: "1",
+                    nodeOrder: ["1"],
+                    nodesByInstanceKey: {
+                        "1": {
+                            ref: {
+                                instanceKey: "1",
+                                displayId: "1",
+                                structuralStableId: "root",
+                                sourceStableId: "root",
+                                sourceTreePath: null,
+                                subtreeStack: [],
+                            },
+                            parentKey: null,
+                            childKeys: [],
+                            depth: 0,
+                            renderedIdLabel: "1",
+                            name: "Clear",
+                            output: ["context"],
+                            subtreeNode: false,
+                            subtreeEditable: true,
+                        },
+                    },
+                },
+                [{ name: "Clear", type: "Action", desc: "", output: ["variable"] }],
+                undefined,
+                {
+                    usingVars: {},
+                    usingGroups: null,
+                    checkExpr: true,
+                }
+            );
+
+            assert.equal(graphModel.nodes[0]?.nodeStyleKind, "Action");
+
+            const strictGraphModel = buildResolvedGraphModel(
+                {
+                    rootKey: "1",
+                    nodeOrder: ["1"],
+                    nodesByInstanceKey: {
+                        "1": {
+                            ref: {
+                                instanceKey: "1",
+                                displayId: "1",
+                                structuralStableId: "root",
+                                sourceStableId: "root",
+                                sourceTreePath: null,
+                                subtreeStack: [],
+                            },
+                            parentKey: null,
+                            childKeys: [],
+                            depth: 0,
+                            renderedIdLabel: "1",
+                            name: "Clear",
+                            output: ["context"],
+                            subtreeNode: false,
+                            subtreeEditable: true,
+                        },
+                    },
+                },
+                [{ name: "Clear", type: "Action", desc: "", output: ["variable"] }],
+                undefined,
+                {
+                    usingVars: {
+                        target: { name: "target", desc: "" },
+                    },
+                    usingGroups: null,
+                    checkExpr: true,
+                }
+            );
+
+            assert.equal(strictGraphModel.nodes[0]?.nodeStyleKind, "Error");
+        },
+    },
+    {
+        name: "normalizes legacy node $id and $override on open",
+        run() {
+            const tree = parsePersistedTreeContent(
+                JSON.stringify({
+                    version: "2.0.0",
+                    name: "legacy",
+                    prefix: "",
+                    group: [],
+                    import: ["vars/legacy.json"],
+                    vars: [{ name: "legacyVar", desc: "legacy variable" }],
+                    custom: {},
+                    $override: {
+                        "legacy-leaf": {
+                            desc: "from-legacy",
+                        },
+                    },
+                    root: {
+                        $id: "legacy-root",
+                        id: "1",
+                        name: "Sequence",
+                        children: [
+                            {
+                                $id: "legacy-leaf",
+                                id: "2",
+                                name: "Log",
+                            },
+                        ],
+                    },
+                }),
+                "legacy.json"
+            );
+
+            assert.equal(tree.root.uuid, "legacy-root");
+            assert.equal(tree.root.children?.[0]?.uuid, "legacy-leaf");
+            assert.equal(tree.overrides["legacy-leaf"]?.desc, "from-legacy");
+            assert.deepEqual(tree.variables.imports, ["vars/legacy.json"]);
+            assert.deepEqual(tree.variables.locals, [
+                { name: "legacyVar", desc: "legacy variable" },
+            ]);
+
+            const serialized = serializePersistedTree(tree);
+            const serializedTree = JSON.parse(serialized) as Record<string, unknown>;
+            assert.match(serialized, /"uuid": "legacy-root"/);
+            assert.match(serialized, /"overrides"/);
+            assert.deepEqual(serializedTree.variables, {
+                imports: ["vars/legacy.json"],
+                locals: [{ name: "legacyVar", desc: "legacy variable" }],
+            });
+            assert.equal(serializedTree.import, undefined);
+            assert.equal(serializedTree.vars, undefined);
+            assert.doesNotMatch(serialized, /"\$id"/);
+            assert.doesNotMatch(serialized, /"\$override"/);
+        },
+    },
+    {
+        name: "parses migrated sample tree files with variables",
+        run() {
+            const sampleTreeFiles = [
+                "sample/vars/declare-core.json",
+                "sample/vars/declare-vars.json",
+                "sample/vars/subtree.json",
+                "sample/vars/test-subtree.json",
+                "sample/vars/test-vars.json",
+                "sample/workdir/hero.json",
+                "sample/workdir/monster.json",
+                "sample/workdir/sub/subtree1.json",
+                "sample/workdir/sub/subtree2.json",
+                "sample/workdir/subtree1.json",
+                "sample/workdir/subtree2.json",
+            ];
+
+            for (const relativePath of sampleTreeFiles) {
+                const tree = parsePersistedTreeContent(
+                    fs.readFileSync(path.join(process.cwd(), relativePath), "utf-8"),
+                    relativePath
+                );
+
+                assert.ok(Array.isArray(tree.variables.imports), relativePath);
+                assert.ok(Array.isArray(tree.variables.locals), relativePath);
+
+                const serializedTree = JSON.parse(serializePersistedTree(tree)) as Record<
+                    string,
+                    unknown
+                >;
+                assert.equal(serializedTree.import, undefined, relativePath);
+                assert.equal(serializedTree.vars, undefined, relativePath);
+            }
+        },
+    },
+    {
         name: "loads subtree sources and applies override precedence in materialization",
         async run() {
             const mainTree = parsePersistedTreeContent(
@@ -57,21 +267,23 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                     name: "main",
                     prefix: "M",
                     group: [],
-                    import: [],
-                    vars: [],
+                    variables: {
+                        imports: [],
+                        locals: [],
+                    },
                     custom: {},
-                    $override: {
+                    overrides: {
                         leaf: {
                             desc: "from-main",
                         },
                     },
                     root: {
-                        $id: "root",
+                        uuid: "root",
                         id: "1",
                         name: "Wrapper",
                         children: [
                             {
-                                $id: "subref",
+                                uuid: "subref",
                                 id: "2",
                                 name: "SubtreeRef",
                                 path: "sub.json",
@@ -94,21 +306,23 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                         name: "sub",
                         prefix: "",
                         group: [],
-                        import: [],
-                        vars: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
                         custom: {},
-                        $override: {
+                        overrides: {
                             leaf: {
                                 desc: "from-subtree",
                             },
                         },
                         root: {
-                            $id: "sub-root",
+                            uuid: "sub-root",
                             id: "1",
                             name: "SubtreeRoot",
                             children: [
                                 {
-                                    $id: "leaf",
+                                    uuid: "leaf",
                                     id: "2",
                                     name: "Leaf",
                                 },
@@ -167,12 +381,14 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                     name: "main",
                     prefix: "",
                     group: [],
-                    import: [],
-                    vars: [],
+                    variables: {
+                        imports: [],
+                        locals: [],
+                    },
                     custom: {},
-                    $override: {},
+                    overrides: {},
                     root: {
-                        $id: "root",
+                        uuid: "root",
                         id: "1",
                         name: "Missing",
                         path: "missing.json",
@@ -207,12 +423,14 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                             name: "main",
                             prefix: "",
                             group: [],
-                            import: [],
-                            vars: [],
+                            variables: {
+                                imports: [],
+                                locals: [],
+                            },
                             custom: {},
-                            $override: {},
+                            overrides: {},
                             root: {
-                                $id: "root",
+                                uuid: "root",
                                 id: "1",
                                 name: "Sequence",
                                 children: [],
@@ -315,17 +533,19 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                         name: "main",
                         prefix: "",
                         group: [],
-                        import: [],
-                        vars: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
                         custom: {},
-                        $override: {},
+                        overrides: {},
                         root: {
-                            $id: "root",
+                            uuid: "root",
                             id: "1",
                             name: "Sequence",
                             children: [
                                 {
-                                    $id: "leaf",
+                                    uuid: "leaf",
                                     id: "2",
                                     name: "Log",
                                 },
@@ -394,12 +614,14 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                         name: "main",
                         prefix: "",
                         group: [],
-                        import: [],
-                        vars: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
                         custom: {},
-                        $override: {},
+                        overrides: {},
                         root: {
-                            $id: "root",
+                            uuid: "root",
                             id: "1",
                             name: "Root",
                             children: [],
@@ -408,12 +630,7 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 );
                 fs.writeFileSync(
                     buildScriptFile,
-                    [
-                        "export function onProcessTree(tree) {",
-                        "  return tree;",
-                        "}",
-                        "",
-                    ].join("\n")
+                    ["export function onProcessTree(tree) {", "  return tree;", "}", ""].join("\n")
                 );
 
                 const result = await buildBehaviorProject({

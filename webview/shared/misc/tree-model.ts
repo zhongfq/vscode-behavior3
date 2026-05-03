@@ -1,4 +1,5 @@
 import type { NodeData } from "./b3type";
+import { generateUuid } from "../stable-id";
 
 export const dfs = <T extends { children?: T[] }>(
     node: T,
@@ -25,8 +26,9 @@ export const isSubtreeRoot = (data: Pick<NodeData, "path" | "id">) => {
 };
 
 export const createNode = (data: NodeData, includeChildren: boolean = true): NodeData => {
+    const stableIdentity = data as NodeData & { $id?: string };
     const node: NodeData = {
-        $id: data.$id,
+        uuid: stableIdentity.uuid || stableIdentity.$id || generateUuid(),
         id: data.id,
         name: data.name,
         desc: data.desc,
@@ -74,8 +76,8 @@ export const subtreeNeedsMissingIds = (root: unknown): boolean => {
         return false;
     }
 
-    const node = root as { $id?: string; children?: unknown[] };
-    if (!node.$id) {
+    const node = root as { uuid?: string; $id?: string; children?: unknown[] };
+    if (!node.uuid || node.$id) {
         return true;
     }
 

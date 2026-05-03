@@ -1,4 +1,4 @@
-export const DOCUMENT_VERSION = "2.0.0";
+export const DOCUMENT_VERSION = "2.1.0";
 
 export const compareDocumentVersion = (left: string, right: string): number => {
     const leftParts = left.split(".").map(Number);

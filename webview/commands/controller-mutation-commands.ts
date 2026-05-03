@@ -2,7 +2,7 @@ import { VERSION } from "../shared/misc/b3type";
 import { computeNodeOverride } from "../shared/misc/b3util";
 import i18n from "../shared/misc/i18n";
 import { stringifyJson } from "../shared/misc/stringify";
-import { nanoid } from "../shared/misc/util";
+import { generateUuid } from "../shared/stable-id";
 import type {
     DropIntent,
     EditorCommand,
@@ -48,16 +48,20 @@ export const createMutationCommands = (
             const nextPrefix = payload.prefix ?? "";
             const nextExport = payload.export !== false;
             const nextGroup = [...payload.group];
-            const nextVars = cloneVars(payload.vars).sort((a, b) => a.name.localeCompare(b.name));
-            const nextImportRefs = [...payload.importRefs].sort((a, b) => a.localeCompare(b));
+            const nextVars = cloneVars(payload.variables.locals).sort((a, b) =>
+                a.name.localeCompare(b.name)
+            );
+            const nextImportRefs = [...payload.variables.imports].sort((a, b) =>
+                a.localeCompare(b)
+            );
 
             if (
                 tree.desc === nextDesc &&
                 tree.prefix === nextPrefix &&
                 (tree.export !== false) === nextExport &&
                 isJsonEqual(tree.group, nextGroup) &&
-                isJsonEqual(tree.vars, nextVars) &&
-                isJsonEqual(tree.import, nextImportRefs)
+                isJsonEqual(tree.variables.locals, nextVars) &&
+                isJsonEqual(tree.variables.imports, nextImportRefs)
             ) {
                 return;
             }
@@ -67,8 +71,10 @@ export const createMutationCommands = (
             nextTree.prefix = nextPrefix;
             nextTree.export = nextExport;
             nextTree.group = nextGroup;
-            nextTree.vars = nextVars;
-            nextTree.import = nextImportRefs;
+            nextTree.variables = {
+                imports: nextImportRefs,
+                locals: nextVars,
+            };
             await runtime.commitTreeMutation(nextTree, {
                 syncSubtreeSources: false,
                 rebuildGraph: tree.prefix !== nextPrefix || !isJsonEqual(tree.group, nextGroup),
@@ -80,12 +86,14 @@ export const createMutationCommands = (
         async updateNode(payload: UpdateNodeInput) {
             const currentTree = deps.documentStore.getState().persistedTree;
             const selectedSnapshot = deps.selectionStore.getState().selectedNodeSnapshot;
-            const resolvedNode = runtime.getResolvedGraph()?.nodesByInstanceKey[payload.target.instanceKey] ?? null;
+            const resolvedNode =
+                runtime.getResolvedGraph()?.nodesByInstanceKey[payload.target.instanceKey] ?? null;
             if (!currentTree || !resolvedNode) {
                 return;
             }
 
-            const nextName = String(payload.data.name ?? resolvedNode.name).trim() || resolvedNode.name;
+            const nextName =
+                String(payload.data.name ?? resolvedNode.name).trim() || resolvedNode.name;
             const nextDesc = payload.data.desc?.trim() || undefined;
             const nextPath = payload.data.path?.trim() || undefined;
             const nextDebug = Boolean(payload.data.debug);
@@ -116,7 +124,7 @@ export const createMutationCommands = (
                 }
 
                 const editedNode: PersistedNodeModel = {
-                    $id: resolvedNode.ref.sourceStableId,
+                    uuid: resolvedNode.ref.sourceStableId,
                     id: resolvedNode.ref.displayId,
                     name: nextName,
                     desc: nextDesc,
@@ -135,9 +143,9 @@ export const createMutationCommands = (
                 );
 
                 if (diff) {
-                    tree.$override[payload.target.sourceStableId] = diff;
+                    tree.overrides[payload.target.sourceStableId] = diff;
                 } else {
-                    delete tree.$override[payload.target.sourceStableId];
+                    delete tree.overrides[payload.target.sourceStableId];
                 }
 
                 await runtime.commitTreeMutation(tree);
@@ -151,9 +159,12 @@ export const createMutationCommands = (
 
             const isDetachingSubtree = Boolean(selectedSnapshot?.data.path) && !payload.data.path;
             if (isDetachingSubtree) {
-                const detached = runtime.buildPersistedNodeFromResolved(payload.target.instanceKey, {
-                    clearPathOnRoot: true,
-                });
+                const detached = runtime.buildPersistedNodeFromResolved(
+                    payload.target.instanceKey,
+                    {
+                        clearPathOnRoot: true,
+                    }
+                );
                 if (detached) {
                     detached.name = nextName;
                     detached.desc = nextDesc;
@@ -184,8 +195,10 @@ export const createMutationCommands = (
         async performDrop(intent: DropIntent) {
             const currentTree = deps.documentStore.getState().persistedTree;
             const resolvedGraph = runtime.getResolvedGraph();
-            const sourceResolved = resolvedGraph?.nodesByInstanceKey[intent.source.instanceKey] ?? null;
-            const targetResolved = resolvedGraph?.nodesByInstanceKey[intent.target.instanceKey] ?? null;
+            const sourceResolved =
+                resolvedGraph?.nodesByInstanceKey[intent.source.instanceKey] ?? null;
+            const targetResolved =
+                resolvedGraph?.nodesByInstanceKey[intent.target.instanceKey] ?? null;
 
             if (!currentTree || !resolvedGraph || !sourceResolved || !targetResolved) {
                 return;
@@ -222,7 +235,12 @@ export const createMutationCommands = (
                 throw new Error(i18n.t("node.addChildToSubtreeRefDenied"));
             }
 
-            if (runtime.isDescendantInstance(sourceResolved.ref.instanceKey, targetResolved.ref.instanceKey)) {
+            if (
+                runtime.isDescendantInstance(
+                    sourceResolved.ref.instanceKey,
+                    targetResolved.ref.instanceKey
+                )
+            ) {
                 throw new Error(i18n.t("node.moveIntoDescendantDenied"));
             }
 
@@ -241,7 +259,9 @@ export const createMutationCommands = (
             }
 
             const sourceSiblings = sourceLocation.parent.children ?? [];
-            const sourceIndex = sourceSiblings.findIndex((entry) => entry.$id === sourceLocation.node.$id);
+            const sourceIndex = sourceSiblings.findIndex(
+                (entry) => entry.uuid === sourceLocation.node.uuid
+            );
             if (sourceIndex < 0) {
                 return;
             }
@@ -261,7 +281,7 @@ export const createMutationCommands = (
                 }
 
                 const targetIndex = targetParent.children.findIndex(
-                    (entry) => entry.$id === targetLocation.node.$id
+                    (entry) => entry.uuid === targetLocation.node.uuid
                 );
                 if (targetIndex < 0) {
                     return;
@@ -320,7 +340,10 @@ export const createMutationCommands = (
             }
 
             const tree = clonePersistedTree(currentTree);
-            const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+            const targetNode = findPersistedNodeByStableId(
+                tree.root,
+                selected.ref.structuralStableId
+            );
             if (!targetNode) {
                 return;
             }
@@ -332,7 +355,7 @@ export const createMutationCommands = (
 
             await runtime.commitTreeMutation(tree, {
                 prepareSelection: () => {
-                    runtime.selectPendingNodeState(nextNode.$id);
+                    runtime.selectPendingNodeState(nextNode.uuid);
                 },
             });
         },
@@ -350,13 +373,16 @@ export const createMutationCommands = (
             }
 
             const tree = clonePersistedTree(currentTree);
-            const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+            const targetNode = findPersistedNodeByStableId(
+                tree.root,
+                selected.ref.structuralStableId
+            );
             if (!targetNode) {
                 return;
             }
 
             const nextNode: PersistedNodeModel = {
-                $id: nanoid(),
+                uuid: generateUuid(),
                 id: "",
                 name: "unknown",
             };
@@ -365,7 +391,7 @@ export const createMutationCommands = (
 
             await runtime.commitTreeMutation(tree, {
                 prepareSelection: () => {
-                    runtime.selectPendingNodeState(nextNode.$id);
+                    runtime.selectPendingNodeState(nextNode.uuid);
                 },
             });
         },
@@ -388,13 +414,16 @@ export const createMutationCommands = (
             }
 
             const tree = clonePersistedTree(currentTree);
-            const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+            const targetNode = findPersistedNodeByStableId(
+                tree.root,
+                selected.ref.structuralStableId
+            );
             if (!targetNode) {
                 return;
             }
 
             const replacement = clonePersistedNode(snapshot);
-            replacement.$id = targetNode.$id;
+            replacement.uuid = targetNode.uuid;
             for (const child of replacement.children ?? []) {
                 runtime.assignFreshStableIds(child);
             }
@@ -405,7 +434,7 @@ export const createMutationCommands = (
 
             await runtime.commitTreeMutation(tree, {
                 prepareSelection: () => {
-                    runtime.selectPendingNodeState(replacement.$id);
+                    runtime.selectPendingNodeState(replacement.uuid);
                 },
             });
         },
@@ -435,9 +464,9 @@ export const createMutationCommands = (
             }
 
             location.parent.children = location.parent.children.filter(
-                (entry) => entry.$id !== location.node.$id
+                (entry) => entry.uuid !== location.node.uuid
             );
-            const nextSelection = location.parent.$id;
+            const nextSelection = location.parent.uuid;
 
             await runtime.commitTreeMutation(tree, {
                 prepareSelection: () => {
@@ -454,7 +483,9 @@ export const createMutationCommands = (
             }
             const current = resolvedGraph.nodesByInstanceKey[ref.instanceKey];
             const lastSubtreePath =
-                ref.subtreeStack.length > 0 ? ref.subtreeStack[ref.subtreeStack.length - 1] : undefined;
+                ref.subtreeStack.length > 0
+                    ? ref.subtreeStack[ref.subtreeStack.length - 1]
+                    : undefined;
             const path = current?.path ?? lastSubtreePath;
             if (!path) {
                 return;
@@ -495,10 +526,12 @@ export const createMutationCommands = (
                 desc: subtreeRoot.desc,
                 export: true,
                 group: [],
-                import: [],
-                vars: [],
+                variables: {
+                    imports: [],
+                    locals: [],
+                },
                 custom: {},
-                $override: {},
+                overrides: {},
                 root: subtreeRoot,
             };
 
@@ -512,7 +545,10 @@ export const createMutationCommands = (
             }
 
             const tree = clonePersistedTree(currentTree);
-            const targetNode = findPersistedNodeByStableId(tree.root, selected.ref.structuralStableId);
+            const targetNode = findPersistedNodeByStableId(
+                tree.root,
+                selected.ref.structuralStableId
+            );
             if (!targetNode) {
                 return;
             }
@@ -522,7 +558,7 @@ export const createMutationCommands = (
 
             await runtime.commitTreeMutation(tree, {
                 prepareSelection: () => {
-                    runtime.selectPendingNodeState(targetNode.$id);
+                    runtime.selectPendingNodeState(targetNode.uuid);
                 },
             });
             runtime.notifySuccess(i18n.t("node.subtreeSaveSuccess", { path: targetNode.path }));

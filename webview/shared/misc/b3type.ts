@@ -27,8 +27,8 @@ export interface NodeData {
     disabled?: boolean;
     path?: string;
 
-    // nanoid, for override
-    $id: string;
+    // Stable node identity, for overrides
+    uuid: string;
 
     // for runtime
     $mtime?: number;
@@ -39,6 +39,11 @@ export interface NodeData {
 export interface VarDecl {
     name: string;
     desc: string;
+}
+
+export interface TreeVariables {
+    imports: string[];
+    locals: VarDecl[];
 }
 
 export interface GroupDecl {
@@ -69,12 +74,11 @@ export interface TreeData {
     desc?: string;
     export?: boolean;
     group: string[];
-    import: string[];
-    vars: VarDecl[];
+    variables: TreeVariables;
     custom: Record<string, string | number | boolean | object>;
     root: NodeData;
 
-    $override: {
+    overrides: {
         [key: string]: Pick<NodeData, "desc" | "input" | "output" | "args" | "debug" | "disabled">;
     };
 }

@@ -57,7 +57,7 @@
     - 更新节点定义并重建必要的派生状态
     - 与 `workspaceStore.settings` 的热更新配合使用，但只负责 node defs 本身
 - `applyHostVars(payload)`
-    - 更新宿主计算出的 vars/import/subtree declare 视图
+    - 更新宿主计算出的 variables/import/subtree declare 视图
 - `markSubtreeChanged()`
     - 标记 subtree 依赖失效，并在下一次刷新时重载
 
@@ -87,7 +87,7 @@
 - `undo()`
 - `redo()`
 
-这些命令是唯一允许修改 persisted tree 或 `$override` 的入口。
+这些命令是唯一允许修改 persisted tree 或 `overrides` 的入口。
 
 ### 文件与构建
 

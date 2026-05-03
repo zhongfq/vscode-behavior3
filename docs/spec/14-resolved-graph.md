@@ -52,11 +52,11 @@ materialized subtree root 向下展开出的外部节点实例。它存在于 re
 
 ### Source Stable Id
 
-提供当前实例内容的 persisted node `$id`。
+提供当前实例内容的 persisted node `uuid`。
 
 ### Structural Stable Id
 
-当前实例在主文档结构中的锚点 `$id`。
+当前实例在主文档结构中的锚点 `uuid`。
 
 规则：
 
@@ -86,8 +86,8 @@ resolved graph 内唯一实例 key。
 
 ## 前提
 
-1. 所有 persisted node 在进入 resolve 前都应具备 `$id`。
-2. subtree source cache 中的树也应经过相同的默认值与 `$id` 规范化。
+1. 所有 persisted node 在进入 resolve 前都应具备 `uuid`。
+2. subtree source cache 中的树也应经过相同的默认值与 `uuid` 规范化。
 3. 路径已统一为 `WorkdirRelativeJsonPath`。
 
 ## 不变量
@@ -122,8 +122,8 @@ resolved graph 内唯一实例 key。
 
 规则：
 
-- `sourceStableId = node.$id`
-- `structuralStableId = node.$id`
+- `sourceStableId = node.uuid`
+- `structuralStableId = node.uuid`
 - `sourceTreePath = null`
 - children 来自 `node.children`
 
@@ -136,8 +136,8 @@ resolved graph 内唯一实例 key。
 
 规则：
 
-- `sourceStableId = subtree.root.$id`
-- `structuralStableId = linkNode.$id`
+- `sourceStableId = subtree.root.uuid`
+- `structuralStableId = linkNode.uuid`
 - `sourceTreePath = linkNode.path`
 - `subtreeStack = parentStack + [linkNode.path]`
 - 节点可视内容来自 `subtree.root`
@@ -145,7 +145,7 @@ resolved graph 内唯一实例 key。
 
 override 规则：
 
-- 若允许编辑 subtree 节点属性，则当前主文档 `$override[sourceStableId]` 可覆盖该 root 的可编辑字段
+- 若允许编辑 subtree 节点属性，则当前主文档 `overrides[sourceStableId]` 可覆盖该 root 的可编辑字段
 - `path` 始终来自 structural link node，而不是 subtree root
 
 ### C. Subtree Internal Node
@@ -156,11 +156,11 @@ override 规则：
 
 规则：
 
-- `sourceStableId = sourceNode.$id`
-- `structuralStableId = sourceNode.$id`
+- `sourceStableId = sourceNode.uuid`
+- `structuralStableId = sourceNode.uuid`
 - `sourceTreePath = 当前 subtree 文件路径`
 - `subtreeNode = true`
-- 若允许编辑 subtree 节点属性，则可通过当前主文档 `$override[sourceStableId]` 覆盖字段
+- 若允许编辑 subtree 节点属性，则可通过当前主文档 `overrides[sourceStableId]` 覆盖字段
 
 ### D. Missing / Invalid / Cyclic Subtree
 
@@ -243,7 +243,7 @@ override 规则：
 
 当 `subtreeEditable === true` 且当前实例来自 subtree source 时：
 
-- 查找当前主文档 `$override[sourceStableId]`
+- 查找当前主文档 `overrides[sourceStableId]`
 - 覆盖允许编辑的字段
 
 ### Step 5. 注入解析元数据

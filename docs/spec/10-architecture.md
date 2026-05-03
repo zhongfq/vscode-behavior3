@@ -155,7 +155,7 @@ Domain
 ### 文档修改
 
 1. Inspector 或图交互触发 command
-2. controller 修改 persisted tree 或 `$override`
+2. controller 修改 persisted tree 或 `overrides`
 3. 必要时同步 subtree source cache
 4. rebuild resolved graph
 5. graph adapter full render

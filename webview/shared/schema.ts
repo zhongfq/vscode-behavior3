@@ -1,16 +1,9 @@
-import { customAlphabet } from "nanoid";
 import type { NodeDef } from "behavior3";
 import type { NodeData, TreeData, VarDecl, WorkspaceModel } from "./misc/b3type";
-
-const generateId = customAlphabet(
-    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-    10
-);
+import { generateUuid } from "./stable-id";
 
 const NODE_DEF_TYPES = new Set<NodeDef["type"]>(["Action", "Decorator", "Condition", "Composite"]);
-const NODE_STATUS_VALUES = new Set<
-    NonNullable<NonNullable<NodeDef["status"]>[number]>
->([
+const NODE_STATUS_VALUES = new Set<NonNullable<NonNullable<NodeDef["status"]>[number]>>([
     "success",
     "failure",
     "running",
@@ -22,8 +15,7 @@ const NODE_STATUS_VALUES = new Set<
     "&success",
     "&failure",
 ]);
-const NODE_ARG_TYPE_PATTERN =
-    /^(bool|int|float|string|json|expr|code)(\[\])?(\?)?$/;
+const NODE_ARG_TYPE_PATTERN = /^(bool|boolean|int|float|string|json|expr|code)(\[\])?(\?)?$/;
 const CHILDREN_ARITIES = new Set<NonNullable<NodeDef["children"]>>([-1, 0, 1, 2, 3]);
 
 type PlainRecord = Record<string, unknown>;
@@ -83,7 +75,7 @@ const asVarDeclArray = (value: unknown, label: string): VarDecl[] => {
 };
 
 const normalizeNodeArgType = (value: string): string => {
-    const normalized = value.replace(/^code/, "expr");
+    const normalized = value.replace(/^code/, "expr").replace(/^boolean/, "bool");
     if (!NODE_ARG_TYPE_PATTERN.test(value)) {
         throw new Error(`unsupported node arg type: ${value}`);
     }
@@ -132,9 +124,7 @@ const normalizeNodeArgOptions = (
                   Object.entries(expectPlainRecord(match, `${label}[${index}].match`)).map(
                       ([key, matchValue]) => {
                           if (!Array.isArray(matchValue)) {
-                              throw new Error(
-                                  `${label}[${index}].match.${key} must be an array`
-                              );
+                              throw new Error(`${label}[${index}].match.${key} must be an array`);
                           }
                           return [key, [...matchValue]];
                       }
@@ -161,10 +151,7 @@ const normalizeNodeArgOptions = (
     });
 };
 
-const normalizeNodeArgs = (
-    value: unknown,
-    label: string
-): NodeDef["args"] | undefined => {
+const normalizeNodeArgs = (value: unknown, label: string): NodeDef["args"] | undefined => {
     if (value === undefined) {
         return undefined;
     }
@@ -244,16 +231,13 @@ const normalizeNodeDef = (value: unknown, label: string): NodeDef => {
     };
 };
 
-const normalizeOverrideMap = (
-    value: unknown,
-    label: string
-): TreeData["$override"] => {
+const normalizeOverrideMap = (value: unknown, label: string): TreeData["overrides"] => {
     if (value === undefined) {
         return {};
     }
 
     const record = expectPlainRecord(value, label);
-    const normalized: TreeData["$override"] = {};
+    const normalized: TreeData["overrides"] = {};
 
     for (const [key, entry] of Object.entries(record)) {
         const patch = expectPlainRecord(entry, `${label}.${key}`);
@@ -264,7 +248,10 @@ const normalizeOverrideMap = (
 
         normalized[key] = {
             desc: asOptionalString(patch.desc),
-            input: patch.input === undefined ? undefined : asStringArray(patch.input, `${label}.${key}.input`),
+            input:
+                patch.input === undefined
+                    ? undefined
+                    : asStringArray(patch.input, `${label}.${key}.input`),
             output:
                 patch.output === undefined
                     ? undefined
@@ -286,11 +273,7 @@ const normalizeCustomRecord = (value: unknown): TreeData["custom"] => {
     const record = expectPlainRecord(value, "tree file custom");
     const normalized: TreeData["custom"] = {};
     for (const [key, entry] of Object.entries(record)) {
-        if (
-            typeof entry === "string" ||
-            typeof entry === "number" ||
-            typeof entry === "boolean"
-        ) {
+        if (typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean") {
             normalized[key] = entry;
             continue;
         }
@@ -301,6 +284,16 @@ const normalizeCustomRecord = (value: unknown): TreeData["custom"] => {
         throw new Error(`tree file custom.${key} must be a string, number, boolean, or object`);
     }
     return normalized;
+};
+
+const normalizeStableUuid = (record: PlainRecord): string => {
+    if (typeof record.uuid === "string" && record.uuid) {
+        return record.uuid;
+    }
+    if (typeof record.$id === "string" && record.$id) {
+        return record.$id;
+    }
+    return generateUuid();
 };
 
 const normalizeNodeData = (value: unknown, label: string): NodeData => {
@@ -316,10 +309,7 @@ const normalizeNodeData = (value: unknown, label: string): NodeData => {
     }
 
     return {
-        $id:
-            typeof record.$id === "string" && record.$id
-                ? record.$id
-                : generateId(),
+        uuid: normalizeStableUuid(record),
         id: record.id === undefined ? "" : String(record.id),
         name: asRequiredString(record.name, `${label}.name`),
         desc: asOptionalString(record.desc),
@@ -338,10 +328,7 @@ const normalizeNodeData = (value: unknown, label: string): NodeData => {
             ) ?? [],
         debug: typeof record.debug === "boolean" ? record.debug : undefined,
         disabled: typeof record.disabled === "boolean" ? record.disabled : undefined,
-        path:
-            typeof record.path === "string" && record.path.trim()
-                ? record.path
-                : undefined,
+        path: typeof record.path === "string" && record.path.trim() ? record.path : undefined,
         $status:
             typeof record.$status === "number" && Number.isFinite(record.$status)
                 ? record.$status
@@ -407,6 +394,12 @@ export const parseWorkspaceModelContent = (content: string): WorkspaceModel => {
 
 export const normalizeTreeData = (value: unknown): TreeData => {
     const record = expectPlainRecord(value, "tree file");
+    const overridesValue = record.overrides === undefined ? record.$override : record.overrides;
+    const variablesValue = record.variables;
+    const variablesRecord =
+        variablesValue === undefined
+            ? undefined
+            : expectPlainRecord(variablesValue, "tree file variables");
 
     return {
         version: asRequiredString(record.version, "tree file version"),
@@ -415,11 +408,19 @@ export const normalizeTreeData = (value: unknown): TreeData => {
         desc: asOptionalString(record.desc),
         export: typeof record.export === "boolean" ? record.export : undefined,
         group: asStringArray(record.group, "tree file group"),
-        import: asStringArray(record.import, "tree file import"),
-        vars: asVarDeclArray(record.vars, "tree file vars"),
+        variables: {
+            imports: asStringArray(
+                variablesRecord?.imports ?? record.import,
+                variablesRecord ? "tree file variables.imports" : "tree file import"
+            ),
+            locals: asVarDeclArray(
+                variablesRecord?.locals ?? record.vars,
+                variablesRecord ? "tree file variables.locals" : "tree file vars"
+            ),
+        },
         custom: normalizeCustomRecord(record.custom),
         root: normalizeNodeData(record.root, "tree file root"),
-        $override: normalizeOverrideMap(record.$override, "tree file $override"),
+        overrides: normalizeOverrideMap(overridesValue, "tree file overrides"),
     };
 };
 

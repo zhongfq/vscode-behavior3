@@ -110,7 +110,7 @@ G6 只翻译事件，不拥有业务规则。
 ### 视口稳定性
 
 - 非导航型交互应尽量保持当前视口
-  例如字段提交、selection 变化、变量高亮、宿主 vars/import/subtree decl 回流
+  例如字段提交、selection 变化、变量高亮、宿主 variables/import/subtree decl 回流
 - full render 与 graph 容器 resize 后都应恢复原视口
 - 显式导航型交互允许移动视口
   例如搜索结果聚焦、用户拖动画布、用户缩放画布
@@ -141,7 +141,7 @@ G6 只翻译事件，不拥有业务规则。
 
 ### `applyHostVars(payload)`
 
-- 更新 vars/import/subtree declare 相关派生数据
+- 更新 variables/import/subtree declare 相关派生数据
 - 默认不推进 history
 
 ### `markSubtreeChanged()`
@@ -171,12 +171,12 @@ G6 只翻译事件，不拥有业务规则。
 #### B. Materialized Subtree Root
 
 - `path` 相关修改落到 structural link node
-- subtree 内容字段修改落到 `$override[sourceStableId]`
+- subtree 内容字段修改落到 `overrides[sourceStableId]`
 - 不直接改 subtree source 文件
 
 #### C. Subtree Internal Node
 
-- 仅允许写 `$override[sourceStableId]`
+- 仅允许写 `overrides[sourceStableId]`
 - 不允许直接改结构
 
 ### `performDrop(intent)`
@@ -195,7 +195,7 @@ G6 只翻译事件，不拥有业务规则。
 
 - 将 clipboard snapshot 粘贴回主文档结构
 - 默认优先作为 child，其次作为 sibling
-- 粘贴节点必须生成新的稳定 `$id`
+- 粘贴节点必须生成新的稳定 `uuid`
 
 ### `insertNode()`
 

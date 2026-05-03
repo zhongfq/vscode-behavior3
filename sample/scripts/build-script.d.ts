@@ -43,8 +43,10 @@ export type BuildTree = {
   export?: boolean;
   prefix: string;
   group: string[];
-  import: string[];
-  vars: Array<{ name: string; desc: string }>;
+  variables: {
+    imports: string[];
+    locals: Array<{ name: string; desc: string }>;
+  };
   root: BuildNode;
 };
 

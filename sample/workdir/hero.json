@@ -1,102 +1,156 @@
 {
-  "version": "1.8.0",
-  "name": "hero",
+  "custom": {
+  },
   "desc": "英雄测试AI",
-  "firstid": 1,
   "export": true,
-  "group": ["Client", "Server"],
-  "import": [],
-  "vars": [],
+  "group": [
+    "Client",
+    "Server"
+  ],
+  "name": "hero",
+  "overrides": {
+  },
+  "prefix": "",
   "root": {
-    "id": 1,
-    "name": "Selector",
-    "desc": "英雄测试AI",
     "children": [
       {
-        "id": 2,
-        "name": "Sequence",
-        "desc": "攻击",
         "children": [
           {
-            "id": 3,
-            "name": "FindEnemy",
             "args": {
-              "x": 0,
-              "y": 0,
+              "h": 50,
               "w": 100,
-              "h": 50
-            },
-            "output": ["enemy"]
-          },
-          {
-            "id": 4,
-            "name": "Attack",
-            "input": ["enemy"]
-          },
-          {
-            "id": 5,
-            "name": "Wait",
-            "args": {
-              "time": 10
-            }
-          }
-        ]
-      },
-      {
-        "id": 6,
-        "name": "Sequence",
-        "desc": "移动",
-        "children": [
-          {
-            "id": 7,
-            "name": "FindEnemy",
-            "args": {
-              "w": 1000,
-              "h": 500,
               "x": 0,
               "y": 0
             },
-            "output": ["enemy"]
+            "children": [
+            ],
+            "id": "3",
+            "name": "FindEnemy",
+            "output": [
+              "enemy"
+            ],
+            "uuid": "MuLGfZb3O2"
           },
           {
-            "id": 8,
-            "name": "MoveToTarget",
-            "input": ["enemy"]
+            "children": [
+            ],
+            "id": "4",
+            "input": [
+              "enemy"
+            ],
+            "name": "Attack",
+            "uuid": "g6Zhc6E1my"
+          },
+          {
+            "args": {
+              "time": 10
+            },
+            "children": [
+            ],
+            "id": "5",
+            "name": "Wait",
+            "uuid": "ZP30cnDzoB"
           }
-        ]
+        ],
+        "desc": "攻击",
+        "id": "2",
+        "name": "Sequence",
+        "uuid": "odQMomPeP6"
       },
       {
-        "id": 9,
-        "name": "Sequence",
-        "desc": "逃跑",
         "children": [
           {
-            "id": 10,
-            "name": "GetHp",
-            "output": ["hp"]
+            "args": {
+              "h": 500,
+              "w": 1000,
+              "x": 0,
+              "y": 0
+            },
+            "children": [
+            ],
+            "id": "7",
+            "name": "FindEnemy",
+            "output": [
+              "enemy"
+            ],
+            "uuid": "6lHw4CuGu2"
           },
           {
-            "id": 11,
-            "name": "Cmp",
+            "children": [
+            ],
+            "id": "8",
+            "input": [
+              "enemy"
+            ],
+            "name": "MoveToTarget",
+            "uuid": "MJsiyZu8Hs"
+          }
+        ],
+        "desc": "移动",
+        "id": "6",
+        "name": "Sequence",
+        "uuid": "CkdzEb5BN7"
+      },
+      {
+        "children": [
+          {
+            "children": [
+            ],
+            "id": "10",
+            "name": "GetHp",
+            "output": [
+              "hp"
+            ],
+            "uuid": "HkKobxfT7U"
+          },
+          {
             "args": {
               "lt": 50
             },
-            "input": ["hp"]
+            "children": [
+            ],
+            "id": "11",
+            "input": [
+              "hp"
+            ],
+            "name": "Cmp",
+            "uuid": "3c3B1tX8Oo"
           },
           {
-            "id": 12,
-            "name": "MoveToPos",
             "args": {
               "x": 0,
               "y": 0
-            }
+            },
+            "children": [
+            ],
+            "id": "12",
+            "name": "MoveToPos",
+            "uuid": "rM2friQr5k"
           }
-        ]
+        ],
+        "desc": "逃跑",
+        "id": "9",
+        "name": "Sequence",
+        "uuid": "stz3gzpVVn"
       },
       {
-        "id": 13,
-        "name": "Idle"
+        "children": [
+        ],
+        "id": "13",
+        "name": "Idle",
+        "uuid": "wbqne3xYgD"
       }
+    ],
+    "desc": "英雄测试AI",
+    "id": "1",
+    "name": "Selector",
+    "uuid": "RS9i7i9xDM"
+  },
+  "variables": {
+    "imports": [
+    ],
+    "locals": [
     ]
-  }
+  },
+  "version": "2.1.0"
 }

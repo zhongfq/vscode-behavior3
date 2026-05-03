@@ -1,17 +1,4 @@
 {
-  "$override": {
-    "Rc5aDruW5M": {
-      "args": {
-        "x": 4,
-        "y": 5
-      }
-    },
-    "z56njSp7U6": {
-      "output": [
-        "version"
-      ]
-    }
-  },
   "custom": {
   },
   "desc": "",
@@ -19,30 +6,29 @@
   "group": [
     "Client"
   ],
-  "import": [
-    "vars/declare-core.json"
-  ],
   "name": "test-subtree",
+  "overrides": {
+  },
   "prefix": "",
   "root": {
-    "$id": "tSW6GXY2SB",
     "children": [
       {
-        "$id": "OUL4MGlC0Q",
         "args": {
           "message": "hello"
         },
+        "children": [
+        ],
         "id": "2",
-        "name": "Log"
+        "name": "Log",
+        "uuid": "meewVyRxJx"
       },
       {
-        "$id": "LHYLmXFNdH",
         "id": "3",
         "name": "Selector",
-        "path": "vars/subtree.json"
+        "path": "vars/subtree.json",
+        "uuid": "seIXAVvNzW"
       },
       {
-        "$id": "n4ByJBOzNv",
         "args": {
           "check": "1",
           "name": "1",
@@ -50,22 +36,27 @@
           "status": "RUNNING",
           "time": 1
         },
-        "id": "6",
-        "input": [
+        "children": [
         ],
+        "id": "6",
         "name": "TestB3",
-        "output": [
-        ]
+        "uuid": "XsAZjDOttC"
       }
     ],
     "id": "1",
-    "name": "Sequence"
+    "name": "Sequence",
+    "uuid": "v4gG2JRNM3"
   },
-  "vars": [
-    {
-      "desc": "测试",
-      "name": "test"
-    }
-  ],
-  "version": "2.0.0"
+  "variables": {
+    "imports": [
+      "vars/declare-core.json"
+    ],
+    "locals": [
+      {
+        "desc": "测试",
+        "name": "test"
+      }
+    ]
+  },
+  "version": "2.1.0"
 }

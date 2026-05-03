@@ -1,9 +1,4 @@
-import {
-    basenameWithoutExt,
-    readTree,
-    treeDataForPersistence,
-    writeTree,
-} from "./misc/util";
+import { basenameWithoutExt, readTree, treeDataForPersistence, writeTree } from "./misc/util";
 import { subtreeNeedsMissingIds } from "./misc/tree-model";
 import type { PersistedNodeModel, PersistedTreeModel, WorkdirRelativeJsonPath } from "./contracts";
 
@@ -48,7 +43,7 @@ export const findPersistedNodeByStableId = (
 ): PersistedNodeModel | null => {
     let found: PersistedNodeModel | null = null;
     walkPersistedNodes(root, (node) => {
-        if (!found && node.$id === stableId) {
+        if (!found && node.uuid === stableId) {
             found = node;
         }
     });
@@ -117,7 +112,7 @@ export const applyMainTreeDisplayIds = (
     idsByStableId: Record<string, string>
 ) => {
     walkPersistedNodes(root, (node) => {
-        const nextId = idsByStableId[node.$id];
+        const nextId = idsByStableId[node.uuid];
         if (nextId) {
             node.id = nextId;
         }
@@ -126,8 +121,18 @@ export const applyMainTreeDisplayIds = (
 
 export const hasMissingStableIds = (content: string): boolean => {
     try {
-        const parsed = JSON.parse(content) as { root?: unknown };
-        return subtreeNeedsMissingIds(parsed.root);
+        const parsed = JSON.parse(content) as {
+            root?: unknown;
+            $override?: unknown;
+            import?: unknown;
+            vars?: unknown;
+        };
+        return (
+            subtreeNeedsMissingIds(parsed.root) ||
+            parsed.$override !== undefined ||
+            parsed.import !== undefined ||
+            parsed.vars !== undefined
+        );
     } catch {
         return false;
     }

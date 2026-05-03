@@ -19,16 +19,16 @@
 它包含：
 
 - 树级元数据：`version`、`name`、`prefix`、`desc`、`export`
-- 依赖数据：`group`、`import`、`vars`
+- 依赖数据：`group`、`variables.imports`、`variables.locals`
 - 扩展字段：`custom`
 - 根节点：`root`
-- subtree override：`$override`
+- subtree override：`overrides`
 
 ### 2. PersistedNodeModel
 
 每个 persisted node 至少包含：
 
-- `$id`
+- `uuid`
     - 稳定 identity，用于 override、selection restore、diff
 - `id`
     - 原始存档里的节点 id，保留用于 round-trip
@@ -90,7 +90,7 @@
 - `structuralStableId`
     - 当前实例在主文档结构里的锚点
 - `sourceStableId`
-    - 来源 persisted node 的 `$id`
+    - 来源 persisted node 的 `uuid`
 - `displayId`
     - resolved graph 内面向用户的逻辑图节点编号
 - `instanceKey`
@@ -107,7 +107,7 @@
 
 ### 存储位置
 
-subtree internal node 的编辑结果写入主树的 `$override`。
+subtree internal node 的编辑结果写入主树的 `overrides`。
 
 key：
 
@@ -127,7 +127,7 @@ value：
 1. override 只描述“相对来源节点基线的差异”。
 2. 若差异为空，应删除该 override 项。
 3. override 不直接回写 subtree source 文件。
-4. 主树节点编辑不使用 `$override`。
+4. 主树节点编辑不使用 `overrides`。
 
 ## History Model
 
@@ -151,7 +151,7 @@ history 存储主文档的序列化文本快照。
 - search / highlight 变化
 - viewport 变化
 - graph 纯视觉重绘
-- host vars / nodeDefs 的外部刷新
+- host variables / nodeDefs 的外部刷新
 
 ### Undo / Redo Rules
 
@@ -168,7 +168,7 @@ history 存储主文档的序列化文本快照。
 ### 保存输入
 
 - 当前 `persistedTree`
-- 当前树级元数据与 `$override`
+- 当前树级元数据与 `overrides`
 
 ### 保存输出
 
@@ -190,7 +190,7 @@ history 存储主文档的序列化文本快照。
 declare 相关数据分为两层：
 
 - 持久化层
-    - `group`、`import`、`vars`
+    - `group`、`variables.imports`、`variables.locals`
 - 宿主补充层
     - `usingVars`、`importDecls`、`subtreeDecls`
 

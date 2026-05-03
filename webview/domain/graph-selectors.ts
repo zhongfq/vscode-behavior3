@@ -1,6 +1,6 @@
 import { ExpressionEvaluator } from "behavior3";
 import { getNodeType, isExprType, type NodeDef } from "../shared/misc/b3type";
-import { isValidVariableName, isVariadic, parseExpr } from "../shared/misc/b3util";
+import { hasDeclaredVars, isValidVariableName, isVariadic, parseExpr } from "../shared/misc/b3util";
 import i18n from "../shared/misc/i18n";
 import type {
     GraphHighlightState,
@@ -86,6 +86,7 @@ const hasValidationIssue = (params: {
     checkExpr: boolean;
 }) => {
     const { node, defsByName, usingVars, usingGroups, checkExpr } = params;
+    const declaredVars = hasDeclaredVars(usingVars) ? usingVars : null;
     if (node.resolutionError) {
         return false;
     }
@@ -108,7 +109,7 @@ const hasValidationIssue = (params: {
             if (value && !isValidVariableName(value)) {
                 return true;
             }
-            if (value && usingVars && !usingVars[value]) {
+            if (value && declaredVars && !declaredVars[value]) {
                 return true;
             }
         }
@@ -120,7 +121,7 @@ const hasValidationIssue = (params: {
             if (value && !isValidVariableName(value)) {
                 return true;
             }
-            if (value && usingVars && !usingVars[value]) {
+            if (value && declaredVars && !declaredVars[value]) {
                 return true;
             }
         }
@@ -139,7 +140,7 @@ const hasValidationIssue = (params: {
             }
 
             for (const variable of parseExpr(expr)) {
-                if (usingVars && variable && !usingVars[variable]) {
+                if (declaredVars && variable && !declaredVars[variable]) {
                     return true;
                 }
             }
@@ -205,13 +206,17 @@ export const buildResolvedGraphModel = (
             checkExpr: validation?.checkExpr ?? false,
         });
         const nodeStyleKind =
-            node.resolutionError || invalid || warningText ? "Error" : def ? getNodeType(def) : "Error";
+            node.resolutionError || invalid || warningText
+                ? "Error"
+                : def
+                  ? getNodeType(def)
+                  : "Error";
         const accentColor =
             nodeStyleKind === "Error"
                 ? (nodeColors?.[nodeStyleKind] ?? DEFAULT_NODE_COLORS[nodeStyleKind])
-                : (def?.color?.trim() ||
+                : def?.color?.trim() ||
                   nodeColors?.[nodeStyleKind] ||
-                  DEFAULT_NODE_COLORS[nodeStyleKind]);
+                  DEFAULT_NODE_COLORS[nodeStyleKind];
 
         nodes.push({
             ref: node.ref,

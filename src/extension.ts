@@ -372,6 +372,7 @@ function isLikelyBehaviorTreeJson(content: string): boolean {
     try {
         const parsed = JSON.parse(content) as {
             root?: unknown;
+            variables?: unknown;
             vars?: unknown;
             import?: unknown;
         };
@@ -389,6 +390,22 @@ function isLikelyBehaviorTreeJson(content: string): boolean {
             typeof root.id === "number";
         if (!hasTreeNodeShape) {
             return false;
+        }
+        if (parsed.variables !== undefined) {
+            if (
+                !parsed.variables ||
+                typeof parsed.variables !== "object" ||
+                Array.isArray(parsed.variables)
+            ) {
+                return false;
+            }
+            const variables = parsed.variables as Record<string, unknown>;
+            if (variables.imports !== undefined && !Array.isArray(variables.imports)) {
+                return false;
+            }
+            if (variables.locals !== undefined && !Array.isArray(variables.locals)) {
+                return false;
+            }
         }
         if (parsed.vars !== undefined && !Array.isArray(parsed.vars)) {
             return false;

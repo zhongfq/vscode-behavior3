@@ -122,14 +122,16 @@ export class ProjectIndex {
         }
 
         const usingVars: Record<string, { name: string; desc: string }> = {};
-        for (const entry of tree.vars ?? []) {
+        for (const entry of tree.variables.locals) {
             if (entry.name) {
                 usingVars[entry.name] = { name: entry.name, desc: entry.desc ?? "" };
             }
         }
 
         const visited = new Set<string>();
-        const importSeeds = (tree.import ?? []).filter((entry): entry is string => typeof entry === "string");
+        const importSeeds = tree.variables.imports.filter(
+            (entry): entry is string => typeof entry === "string"
+        );
 
         for (const importPath of importSeeds) {
             await this.readVarsFromFile(importPath, visited, usingVars);
@@ -223,7 +225,7 @@ export class ProjectIndex {
         if (!tree) {
             return [];
         }
-        return (tree.vars ?? [])
+        return tree.variables.locals
             .filter((entry) => entry.name)
             .map((entry) => ({ name: entry.name, desc: entry.desc ?? "" }));
     }
@@ -245,7 +247,7 @@ export class ProjectIndex {
             return localVars;
         }
 
-        for (const entry of tree.vars ?? []) {
+        for (const entry of tree.variables.locals) {
             if (!entry.name) {
                 continue;
             }
@@ -256,7 +258,7 @@ export class ProjectIndex {
             }
         }
 
-        for (const importPath of tree.import ?? []) {
+        for (const importPath of tree.variables.imports) {
             await this.readVarsFromFile(importPath, visitedForGlobal, globalVars);
         }
 
@@ -272,7 +274,7 @@ export class ProjectIndex {
             seedImports.map((importPath) => normalizeWorkdirRelativePath(importPath)),
             async (relativePath) => {
                 const tree = await this.readTreeFile(relativePath);
-                return (tree?.import ?? []).map((importPath) =>
+                return (tree?.variables.imports ?? []).map((importPath) =>
                     normalizeWorkdirRelativePath(importPath)
                 );
             }

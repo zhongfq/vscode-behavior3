@@ -1,16 +1,10 @@
 // Browser + extension host: string-based readTree for webview; file-based helpers use getFs (after setFs).
-import { customAlphabet } from "nanoid";
 import { VERSION, type TreeData, type WorkspaceModel } from "./b3type";
 import { getFs } from "./b3fs";
 import b3path from "./b3path";
 import { parseTreeContent, parseWorkspaceModelContent } from "../schema";
 import { stringifyJson } from "./stringify";
 import { createNode } from "./tree-model";
-
-export const nanoid = customAlphabet(
-    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-    10
-);
 
 export const parseJson = <T>(text: string): T => {
     return JSON.parse(text) as T;
@@ -24,14 +18,16 @@ export const treeDataForPersistence = (data: TreeData, name: string): TreeData =
         version: VERSION,
         name,
         desc: data.desc,
-        prefix: data.prefix,
+        prefix: data.prefix ?? "",
         export: data.export,
-        group: data.group,
-        import: data.import,
-        vars: data.vars,
+        group: data.group ?? [],
+        variables: {
+            imports: data.variables?.imports ?? [],
+            locals: data.variables?.locals ?? [],
+        },
         root: createNode(data.root),
-        custom: data.custom,
-        $override: data.$override,
+        custom: data.custom ?? {},
+        overrides: data.overrides ?? {},
     };
 };
 
@@ -68,7 +64,8 @@ export const readWorkspace = (path: string) => {
 
 /** Load tree from disk path (extension build). */
 export const readTreeFromFile = (path: string): TreeData => {
-    return applyTreeDefaults(readJson(path) as TreeData);
+    const str = getFs().readFileSync(path, "utf-8");
+    return applyTreeDefaults(parseTreeContent(str));
 };
 
 export const writeTreeToFile = (path: string, data: TreeData) => {
@@ -76,14 +73,16 @@ export const writeTreeToFile = (path: string, data: TreeData) => {
         version: VERSION,
         name: b3path.basenameWithoutExt(path),
         desc: data.desc,
-        prefix: data.prefix,
+        prefix: data.prefix ?? "",
         export: data.export,
-        group: data.group,
-        import: data.import,
-        vars: data.vars,
+        group: data.group ?? [],
+        variables: {
+            imports: data.variables?.imports ?? [],
+            locals: data.variables?.locals ?? [],
+        },
         root: data.root,
-        custom: data.custom,
-        $override: data.$override,
+        custom: data.custom ?? {},
+        overrides: data.overrides ?? {},
     });
 };
 

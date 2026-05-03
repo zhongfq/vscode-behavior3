@@ -81,14 +81,14 @@ const applyArgDefaults = (node: PersistedNodeModel, def: NodeDef | null) => {
 const buildResolvedExternalNode = (
     sourceNode: PersistedNodeModel,
     overrideChain: PersistedTreeModel[],
-    rootOverride: PersistedTreeModel["$override"]
+    rootOverride: PersistedTreeModel["overrides"]
 ) => {
     const value = clonePersistedNode(sourceNode);
     for (const tree of [...overrideChain].reverse()) {
-        applyPatchIfAny(value, tree.$override[sourceNode.$id]);
+        applyPatchIfAny(value, tree.overrides[sourceNode.uuid]);
     }
     const subtreeOriginal = clonePersistedNode(value);
-    applyPatchIfAny(value, rootOverride[sourceNode.$id]);
+    applyPatchIfAny(value, rootOverride[sourceNode.uuid]);
     return { value, subtreeOriginal };
 };
 
@@ -246,7 +246,7 @@ export const materializePersistedTree = (params: {
             const external = buildResolvedExternalNode(
                 sourceNode,
                 overrideChain,
-                params.persistedTree.$override
+                params.persistedTree.overrides
             );
             sourceNode = external.value;
             subtreeOriginal = external.subtreeOriginal;
@@ -255,7 +255,7 @@ export const materializePersistedTree = (params: {
             const external = buildResolvedExternalNode(
                 sourceNode,
                 context.overrideSourceChain,
-                params.persistedTree.$override
+                params.persistedTree.overrides
             );
             sourceNode = external.value;
             subtreeOriginal = external.subtreeOriginal;
@@ -298,17 +298,15 @@ export const materializePersistedTree = (params: {
         sourceNode.children = children.map((child) => child.data);
         sourceNode.$status = computeNodeStatusBits(
             sourceNode.name,
-            children
-                .filter((child) => !child.data.disabled)
-                .map((child) => child.data.$status),
+            children.filter((child) => !child.data.disabled).map((child) => child.data.$status),
             defsByName
         );
 
         return {
             data: sourceNode,
             children,
-            structuralStableId: structuredNode.$id,
-            sourceStableId: sourceNode.$id,
+            structuralStableId: structuredNode.uuid,
+            sourceStableId: sourceNode.uuid,
             sourceTreePath: sourceTreePath ?? null,
             subtreeStack: materialized
                 ? [...context.subtreeStack, normalizedPath!]

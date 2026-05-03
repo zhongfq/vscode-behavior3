@@ -102,7 +102,7 @@
 要求：
 
 - 主树节点编辑直接修改 persisted tree。
-- subtree internal node 编辑不直接改 subtree source，而是写入当前主树的 `$override`。
+- subtree internal node 编辑不直接改 subtree source，而是写入当前主树的 `overrides`。
 - 当 subtree override 恢复为与基线一致时，应自动删除对应 override 记录。
 
 ### BB-12 Undo / Redo / Dirty
@@ -142,8 +142,8 @@
 
 每轮重要改动后，至少人工验证以下路径：
 
-1. 打开一个含主树、子树、变量和 import 的文档，确认初始化、默认视口、Inspector 基础状态正常。
+1. 打开一个含主树、子树、变量和 `variables.imports` 的文档，确认初始化、默认视口、Inspector 基础状态正常。
 2. 点击节点、点击空白、搜索跳转、变量高亮，确认 selection/search/highlight 互不污染。
 3. 拖动一个普通节点做 `before` / `after` / `child`，确认允许与拒绝规则都正确。
-4. 修改主树节点与 subtree internal node，确认 persisted tree 与 `$override` 的行为不同。
+4. 修改主树节点与 subtree internal node，确认 persisted tree 与 `overrides` 的行为不同。
 5. 执行 undo/redo、保存、外部文件变更、子树文件变更，确认图层和 Inspector 状态能回到可解释结果。

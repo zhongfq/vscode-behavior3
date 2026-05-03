@@ -15,11 +15,8 @@ import type {
     SaveSubtreeAsResponse,
     SaveSubtreeResponse,
     WorkdirRelativeJsonPath,
-    } from "../../shared/contracts";
-import {
-    normalizeHostInitMessage,
-    normalizeHostVarsMessage,
-} from "../../shared/protocol";
+} from "../../shared/contracts";
+import { normalizeHostInitMessage, normalizeHostVarsMessage } from "../../shared/protocol";
 
 declare function acquireVsCodeApi(): {
     postMessage(message: EditorToHostMessage): void;
@@ -74,6 +71,13 @@ const formatLogArg = (value: unknown): string => {
         // ignore serialization failure
     }
     return String(value);
+};
+
+const formatRuntimeError = (value: unknown): string => {
+    if (value instanceof Error) {
+        return value.stack ?? value.message;
+    }
+    return formatLogArg(value);
 };
 
 const postMessage = (message: EditorToHostMessage) => {
@@ -132,6 +136,14 @@ setLogger(composeLoggers(createConsoleLogger(), createForwardLogger()));
 export const createVsCodeHostAdapter = (): HostAdapter => {
     return {
         connect(onMessage) {
+            const reportRuntimeError = (scope: string, error: unknown) => {
+                postMessage({
+                    type: "webviewLog",
+                    level: "error",
+                    message: `[webview:${scope}] ${formatRuntimeError(error)}`,
+                });
+            };
+
             const dispatchHostEvent = (message: HostToEditorMessage) => {
                 switch (message.type) {
                     case "readFileResult":
@@ -214,11 +226,29 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
             };
 
             const handler = (event: MessageEvent<HostToEditorMessage>) => {
-                dispatchHostEvent(event.data);
+                try {
+                    dispatchHostEvent(event.data);
+                } catch (error) {
+                    reportRuntimeError("message", error);
+                }
+            };
+
+            const errorHandler = (event: ErrorEvent) => {
+                reportRuntimeError("error", event.error ?? event.message);
+            };
+
+            const rejectionHandler = (event: PromiseRejectionEvent) => {
+                reportRuntimeError("unhandledrejection", event.reason);
             };
 
             window.addEventListener("message", handler);
-            return () => window.removeEventListener("message", handler);
+            window.addEventListener("error", errorHandler);
+            window.addEventListener("unhandledrejection", rejectionHandler);
+            return () => {
+                window.removeEventListener("message", handler);
+                window.removeEventListener("error", errorHandler);
+                window.removeEventListener("unhandledrejection", rejectionHandler);
+            };
         },
 
         sendReady() {

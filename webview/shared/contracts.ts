@@ -6,7 +6,7 @@ export type AbsoluteFsPath = string;
 export type WorkdirRelativeJsonPath = string;
 
 export interface PersistedNodeModel {
-    $id: string;
+    uuid: string;
     id: string;
     name: string;
     desc?: string;
@@ -27,11 +27,13 @@ export interface PersistedTreeModel {
     desc?: string;
     export?: boolean;
     group: string[];
-    import: WorkdirRelativeJsonPath[];
-    vars: VarDecl[];
+    variables: {
+        imports: WorkdirRelativeJsonPath[];
+        locals: VarDecl[];
+    };
     custom: Record<string, string | number | boolean | object>;
     root: PersistedNodeModel;
-    $override: Record<
+    overrides: Record<
         string,
         Pick<PersistedNodeModel, "desc" | "input" | "output" | "args" | "debug" | "disabled">
     >;
@@ -139,8 +141,10 @@ export interface UpdateTreeMetaInput {
     prefix?: string;
     export?: boolean;
     group: string[];
-    vars: VarDecl[];
-    importRefs: WorkdirRelativeJsonPath[];
+    variables: {
+        imports: WorkdirRelativeJsonPath[];
+        locals: VarDecl[];
+    };
 }
 
 export interface UpdateNodeInput {

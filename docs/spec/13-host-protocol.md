@@ -106,9 +106,9 @@
 - `displayId`
     - 用户可搜索的逻辑图节点 id
 - `structuralStableId`
-    - 当前实例在主文档结构里的锚点 `$id`
+    - 当前实例在主文档结构里的锚点 `uuid`
 - `sourceStableId`
-    - 来源 persisted node 的稳定 `$id`
+    - 来源 persisted node 的稳定 `uuid`
 - `sourceTreePath`
     - 来源树文件；主树为 `null`
 - `subtreeStack`

@@ -1,27 +1,40 @@
 {
-  "version": "1.8.0",
-  "name": "declare-core",
+  "custom": {
+  },
   "desc": "",
-  "firstid": 1,
   "export": true,
-  "group": [],
-  "import": [],
-  "vars": [
-    {
-      "name": "context",
-      "desc": "上下文"
-    },
-    {
-      "name": "version",
-      "desc": "版本"
-    }
+  "group": [
   ],
+  "name": "declare-core",
+  "overrides": {
+  },
+  "prefix": "",
   "root": {
-    "id": 1,
-    "name": "Wait",
     "args": {
       "time": 1
     },
-    "input": ["version"]
-  }
+    "children": [
+    ],
+    "id": "1",
+    "input": [
+      "version"
+    ],
+    "name": "Wait",
+    "uuid": "8mIDY6nMdq"
+  },
+  "variables": {
+    "imports": [
+    ],
+    "locals": [
+      {
+        "desc": "上下文",
+        "name": "context"
+      },
+      {
+        "desc": "版本",
+        "name": "version"
+      }
+    ]
+  },
+  "version": "2.1.0"
 }

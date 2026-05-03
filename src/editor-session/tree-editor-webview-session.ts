@@ -1,6 +1,10 @@
 import * as path from "path";
 import * as vscode from "vscode";
-import { normalizeTreeContentForWrite, readFileContentFromDisk, TreeEditorDocument } from "./document-sync";
+import {
+    normalizeTreeContentForWrite,
+    readFileContentFromDisk,
+    TreeEditorDocument,
+} from "./document-sync";
 import { getBehavior3OutputChannel } from "../output-channel";
 import { mapNodeDefsIconsForWebview } from "../node-def-icons";
 import { ProjectIndex, type VarDeclResult } from "./project-index";
@@ -211,6 +215,21 @@ function getEditorLanguage(setting: string): "zh" | "en" {
     return envLanguage.startsWith("zh") ? "zh" : "en";
 }
 
+function formatRuntimeError(error: unknown): string {
+    if (error instanceof Error) {
+        return error.stack ?? error.message;
+    }
+    return String(error);
+}
+
+function logRuntimeError(scope: string, error: unknown): void {
+    getBehavior3OutputChannel().error(`[${scope}] ${formatRuntimeError(error)}`);
+}
+
+function logAsyncRuntimeError(scope: string): (error: unknown) => void {
+    return (error) => logRuntimeError(scope, error);
+}
+
 export async function resolveTreeEditorSession({
     document,
     webviewPanel,
@@ -303,7 +322,9 @@ export async function resolveTreeEditorSession({
 
     /** Cache the transitive subtree closure of the current main document. */
     const refreshTrackedSubtreeRefs = async () => {
-        state.cachedSubtreeRefs = await projectIndex.getTransitiveSubtreeRelativePaths(document.content);
+        state.cachedSubtreeRefs = await projectIndex.getTransitiveSubtreeRelativePaths(
+            document.content
+        );
     };
 
     const updateFileVersionState = (content: string, opts?: { showWarning?: boolean }): void => {
@@ -333,7 +354,8 @@ export async function resolveTreeEditorSession({
         void postMessage({ type: "subtreeFileChanged" });
     };
 
-    const isMainDocumentUri = (uri: vscode.Uri): boolean => uri.toString() === document.uri.toString();
+    const isMainDocumentUri = (uri: vscode.Uri): boolean =>
+        uri.toString() === document.uri.toString();
 
     const scheduleParentSubtreeRefresh = () => {
         state.subtreeRefreshTimer = clearRefreshTimer(state.subtreeRefreshTimer);
@@ -720,7 +742,10 @@ export async function resolveTreeEditorSession({
     };
 
     const mainDocumentWatcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(path.dirname(document.uri.fsPath), path.basename(document.uri.fsPath))
+        new vscode.RelativePattern(
+            path.dirname(document.uri.fsPath),
+            path.basename(document.uri.fsPath)
+        )
     );
     const subtreeFileWatcher = vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(projectRootUri.fsPath, "**/*.json")
@@ -732,16 +757,18 @@ export async function resolveTreeEditorSession({
      */
     const sessionDisposables: vscode.Disposable[] = [
         watchSettingFile(workspaceFolderUri, () => {
-            void refreshSettings({ refreshDefs: true });
+            void refreshSettings({ refreshDefs: true }).catch(
+                logAsyncRuntimeError("watch setting")
+            );
         }),
         watchWorkspaceFile(workspaceFolderUri, () => {
-            void refreshSettings();
+            void refreshSettings().catch(logAsyncRuntimeError("watch workspace"));
         }),
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (!event.affectsConfiguration("behavior3")) {
                 return;
             }
-            void refreshSettings();
+            void refreshSettings().catch(logAsyncRuntimeError("configuration changed"));
         }),
         mainDocumentWatcher,
         subtreeFileWatcher,
@@ -759,7 +786,7 @@ export async function resolveTreeEditorSession({
             void postMessage({
                 type: "themeChanged",
                 theme: getVSCodeTheme(),
-            });
+            }).then(undefined, logAsyncRuntimeError("theme changed"));
         }),
     ];
 
@@ -769,55 +796,61 @@ export async function resolveTreeEditorSession({
          * needed, and keep protocol branching close to the session lifecycle.
          */
         webviewPanel.webview.onDidReceiveMessage(async (msg: EditorToHostMessage) => {
-            switch (msg.type) {
-                case "ready":
-                    await handleReadyMessage();
-                    break;
+            try {
+                switch (msg.type) {
+                    case "ready":
+                        await handleReadyMessage();
+                        break;
 
-                case "update":
-                    await enqueueMainDocumentOperation(async () => {
-                        if (blockEditingForNewerFile()) {
-                            return;
-                        }
-                        applyContentFromWebview(msg.content);
-                    });
-                    break;
+                    case "update":
+                        await enqueueMainDocumentOperation(async () => {
+                            if (blockEditingForNewerFile()) {
+                                return;
+                            }
+                            applyContentFromWebview(msg.content);
+                        });
+                        break;
 
-                case "saveDocument":
-                    await handleSaveDocumentMessage(msg);
-                    break;
+                    case "saveDocument":
+                        await handleSaveDocumentMessage(msg);
+                        break;
 
-                case "revertDocument":
-                    await handleRevertDocumentMessage(msg);
-                    break;
+                    case "revertDocument":
+                        await handleRevertDocumentMessage(msg);
+                        break;
 
-                case "treeSelected":
-                    await handleTreeSelectedMessage(msg);
-                    break;
+                    case "treeSelected":
+                        await handleTreeSelectedMessage(msg);
+                        break;
 
-                case "requestSetting":
-                    await refreshSettings({ refreshDefs: true });
-                    break;
+                    case "requestSetting":
+                        await refreshSettings({ refreshDefs: true });
+                        break;
 
-                case "build":
-                    void vscode.commands.executeCommand("behavior3.build");
-                    break;
+                    case "build":
+                        void vscode.commands
+                            .executeCommand("behavior3.build")
+                            .then(undefined, logAsyncRuntimeError("command:behavior3.build"));
+                        break;
 
-                case "webviewLog":
-                    handleWebviewLogMessage(msg);
-                    break;
+                    case "webviewLog":
+                        handleWebviewLogMessage(msg);
+                        break;
 
-                case "readFile":
-                    await handleReadFileMessage(msg);
-                    break;
+                    case "readFile":
+                        await handleReadFileMessage(msg);
+                        break;
 
-                case "saveSubtree":
-                    await handleSaveSubtreeMessage(msg);
-                    break;
+                    case "saveSubtree":
+                        await handleSaveSubtreeMessage(msg);
+                        break;
 
-                case "saveSubtreeAs":
-                    await handleSaveSubtreeAsMessage(msg);
-                    break;
+                    case "saveSubtreeAs":
+                        await handleSaveSubtreeAsMessage(msg);
+                        break;
+                }
+            } catch (error) {
+                logRuntimeError(`webview message:${msg.type}`, error);
             }
         })
     );

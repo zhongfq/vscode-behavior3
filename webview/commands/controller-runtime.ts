@@ -1,7 +1,7 @@
 import type { StoreApi } from "zustand/vanilla";
 import i18n from "../shared/misc/i18n";
 import { stringifyJson } from "../shared/misc/stringify";
-import { nanoid } from "../shared/misc/util";
+import { generateUuid } from "../shared/stable-id";
 import type { AppHooksStore } from "../shared/misc/hooks";
 import type {
     DocumentState,
@@ -87,10 +87,7 @@ export interface ControllerRuntime {
     scheduleTreeSelected(immediate?: boolean): void;
     getNodeDef(name: string): NodeDef | null;
     selectTreeState(opts?: { clearVariableFocus?: boolean }): boolean;
-    selectResolvedNodeState(
-        instanceKey: string,
-        opts?: { clearVariableFocus?: boolean }
-    ): boolean;
+    selectResolvedNodeState(instanceKey: string, opts?: { clearVariableFocus?: boolean }): boolean;
     selectPendingNodeState(stableId: string): void;
     clearActiveVariableFocus(): boolean;
     getSelectedResolvedNode(): ResolvedNodeModel | null;
@@ -114,14 +111,8 @@ export interface ControllerRuntime {
     getSerializedCurrentTree(): string | null;
     matchesCurrentDocumentSnapshot(content: string): boolean;
     resetDocumentHistory(): void;
-    applyDocumentTree(
-        tree: PersistedTreeModel,
-        opts?: ControllerApplyTreeOptions
-    ): Promise<void>;
-    commitTreeMutation(
-        tree: PersistedTreeModel,
-        opts?: ControllerCommitTreeOptions
-    ): Promise<void>;
+    applyDocumentTree(tree: PersistedTreeModel, opts?: ControllerApplyTreeOptions): Promise<void>;
+    commitTreeMutation(tree: PersistedTreeModel, opts?: ControllerCommitTreeOptions): Promise<void>;
 }
 
 export const cloneVars = <T extends { name: string; desc: string }>(entries: T[]): T[] =>
@@ -232,7 +223,7 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
         return {
             ref: node.ref,
             data: {
-                $id: node.ref.sourceStableId,
+                uuid: node.ref.sourceStableId,
                 id: node.ref.displayId,
                 name: node.name,
                 desc: node.desc,
@@ -362,13 +353,18 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
             throw new Error("invalid clipboard node");
         }
 
-        const candidate = value as Partial<PersistedNodeModel>;
+        const candidate = value as Partial<PersistedNodeModel> & { $id?: unknown };
         if (typeof candidate.name !== "string" || !candidate.name.trim()) {
             throw new Error("invalid clipboard node");
         }
 
         const normalized: PersistedNodeModel = {
-            $id: typeof candidate.$id === "string" && candidate.$id ? candidate.$id : nanoid(),
+            uuid:
+                typeof candidate.uuid === "string" && candidate.uuid
+                    ? candidate.uuid
+                    : typeof candidate.$id === "string" && candidate.$id
+                      ? candidate.$id
+                      : generateUuid(),
             id: typeof candidate.id === "string" ? candidate.id : "",
             name: candidate.name,
             desc: typeof candidate.desc === "string" ? candidate.desc : undefined,
@@ -417,7 +413,7 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
     };
 
     const assignFreshStableIds = (node: PersistedNodeModel) => {
-        node.$id = nanoid();
+        node.uuid = generateUuid();
         for (const child of node.children ?? []) {
             assignFreshStableIds(child);
         }
@@ -430,7 +426,7 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
         let found: { node: PersistedNodeModel; parent: PersistedNodeModel | null } | null = null;
 
         walkPersistedNodes(root, (node, parent) => {
-            if (!found && node.$id === stableId) {
+            if (!found && node.uuid === stableId) {
                 found = { node, parent };
             }
         });
@@ -474,7 +470,9 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
             }
 
             const node: PersistedNodeModel = {
-                $id: isRoot ? resolvedNode.ref.structuralStableId : resolvedNode.ref.sourceStableId,
+                uuid: isRoot
+                    ? resolvedNode.ref.structuralStableId
+                    : resolvedNode.ref.sourceStableId,
                 id: resolvedNode.ref.displayId,
                 name: resolvedNode.name,
                 desc: resolvedNode.desc,
@@ -701,7 +699,10 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
         }));
     };
 
-    const setDocumentTree = (tree: PersistedTreeModel, opts?: { savedSnapshot?: string | null }) => {
+    const setDocumentTree = (
+        tree: PersistedTreeModel,
+        opts?: { savedSnapshot?: string | null }
+    ) => {
         deps.documentStore.setState((state) => {
             const nextSavedSnapshot = opts?.savedSnapshot ?? state.lastSavedSnapshot;
             return {

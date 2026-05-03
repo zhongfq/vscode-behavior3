@@ -20,9 +20,10 @@ import {
 } from "./b3type";
 import { ExpressionEvaluator } from "behavior3";
 import { logger } from "./logger";
-import { nanoid, readJson, readTreeFromFile } from "./util";
+import { readJson, readTreeFromFile } from "./util";
 import { createNode, dfs, isSubtreeRoot, subtreeNeedsMissingIds } from "./tree-model";
 import { normalizeNodeDefCollection } from "../schema";
+import { generateUuid } from "../stable-id";
 
 /**
  * Shared editor/runtime utilities plus reusable validation helpers.
@@ -72,7 +73,9 @@ interface BuildProjectState extends BuildValidationState {
     alertError: BuildAlertHandler;
 }
 
-const createNodeDefsState = (defs: unknown): Pick<BuildValidationState, "nodeDefs" | "groupDefs"> => {
+const createNodeDefsState = (
+    defs: unknown
+): Pick<BuildValidationState, "nodeDefs" | "groupDefs"> => {
     const groups = new Set<string>();
     const loadedNodeDefs = new NodeDefs();
 
@@ -123,6 +126,12 @@ const toUsingVars = (vars: VarDecl[]): Record<string, VarDecl> | null => {
         next[variable.name] = variable;
     }
     return next;
+};
+
+export const hasDeclaredVars = (
+    vars: Record<string, VarDecl> | null | undefined
+): vars is Record<string, VarDecl> => {
+    return Boolean(vars && Object.keys(vars).length > 0);
 };
 
 export const initWorkdir = (path: string, handler: typeof alertError) => {
@@ -433,7 +442,10 @@ export const isValidNodeData = (data: NodeData) => {
 const checkNodeDataWithState = (
     data: NodeData | null | undefined,
     printer: ErrorPrinter,
-    state: Pick<BuildValidationState, "nodeDefs" | "usingGroups" | "usingVars" | "parsedExprs" | "checkExpr">
+    state: Pick<
+        BuildValidationState,
+        "nodeDefs" | "usingGroups" | "usingVars" | "parsedExprs" | "checkExpr"
+    >
 ) => {
     if (!data) {
         return false;
@@ -446,6 +458,7 @@ const checkNodeDataWithState = (
     }
 
     let hasError = false;
+    const declaredVars = hasDeclaredVars(state.usingVars) ? state.usingVars : null;
 
     if (conf.group) {
         const groups = Array.isArray(conf.group) ? conf.group : [conf.group];
@@ -455,10 +468,10 @@ const checkNodeDataWithState = (
         }
     }
 
-    if (state.usingVars) {
+    if (declaredVars) {
         if (data.input) {
             for (const v of data.input) {
-                if (v && !state.usingVars[v]) {
+                if (v && !declaredVars[v]) {
                     error(`input variable '${v}' is not defined`);
                     hasError = true;
                 }
@@ -466,7 +479,7 @@ const checkNodeDataWithState = (
         }
         if (data.output) {
             for (const v of data.output) {
-                if (v && !state.usingVars[v]) {
+                if (v && !declaredVars[v]) {
                     error(`output variable '${v}' is not defined`);
                     hasError = true;
                 }
@@ -478,7 +491,7 @@ const checkNodeDataWithState = (
         for (const arg of conf.args) {
             const value = data.args?.[arg.name] as string | string[] | undefined;
             if (isExprType(arg.type) && value) {
-                if (state.usingVars) {
+                if (declaredVars) {
                     const vars: string[] = [];
                     if (typeof value === "string") {
                         vars.push(...parseExprWithCache(value, state.parsedExprs));
@@ -488,7 +501,7 @@ const checkNodeDataWithState = (
                         }
                     }
                     for (const v of vars) {
-                        if (v && !state.usingVars[v]) {
+                        if (v && !declaredVars[v]) {
                             error(`expr variable '${arg.name}' is not defined`);
                             hasError = true;
                         }
@@ -671,11 +684,7 @@ const collectSubtreePaths = (data: NodeData, walk: RefreshVarDeclContext["dfs"])
  * Variable declaration refresh shares the same import/subtree expansion rules
  * between the live editor state and offline build contexts.
  */
-const loadVarDecl = (
-    list: ImportDecl[],
-    arr: Array<VarDecl>,
-    context: RefreshVarDeclContext
-) => {
+const loadVarDecl = (list: ImportDecl[], arr: Array<VarDecl>, context: RefreshVarDeclContext) => {
     for (const entry of list) {
         if (!context.files[entry.path]) {
             context.logger.warn(`file not found: ${context.workdir}/${entry.path}`);
@@ -722,8 +731,8 @@ const loadVarDecl = (
                 const model: TreeData = context.readTreeFromFile(
                     `${context.workdir}/${relativePath}`
                 );
-                model.vars.forEach((variable) => vars.add(variable));
-                model.import.forEach((importPath) => {
+                model.variables.locals.forEach((variable) => vars.add(variable));
+                model.variables.imports.forEach((importPath) => {
                     load(importPath);
                     depends.add(importPath);
                 });
@@ -819,7 +828,10 @@ const refreshVarDeclNode = (
     let changed = false;
     const lastGroup = Array.from(Object.keys(context.usingGroups ?? {})).sort();
     group.sort();
-    if (lastGroup.length !== group.length || lastGroup.some((value, index) => value !== group[index])) {
+    if (
+        lastGroup.length !== group.length ||
+        lastGroup.some((value, index) => value !== group[index])
+    ) {
         changed = true;
         context.logger.debug("refresh group:", lastGroup, group);
         context.updateUsingGroups(group);
@@ -827,7 +839,10 @@ const refreshVarDeclNode = (
 
     const lastVars = Array.from(Object.keys(context.usingVars ?? {})).sort();
     vars.sort((a, b) => a.name.localeCompare(b.name));
-    if (lastVars.length !== vars.length || lastVars.some((value, index) => value !== vars[index].name)) {
+    if (
+        lastVars.length !== vars.length ||
+        lastVars.some((value, index) => value !== vars[index].name)
+    ) {
         changed = true;
         context.logger.debug("refresh vars:", lastVars, vars);
         context.updateUsingVars(vars);
@@ -1026,15 +1041,17 @@ export const createNewTree = (name: string) => {
         name,
         prefix: "",
         group: [],
-        import: [],
-        vars: [],
+        variables: {
+            imports: [],
+            locals: [],
+        },
         root: {
             id: "1",
             name: "Sequence",
-            $id: nanoid(),
+            uuid: generateUuid(),
         },
         custom: {},
-        $override: {},
+        overrides: {},
     };
     return tree;
 };

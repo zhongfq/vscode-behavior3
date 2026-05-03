@@ -1,30 +1,46 @@
 {
-  "version": "1.8.0",
-  "name": "subtree1",
+  "custom": {
+  },
   "desc": "子树1",
-  "firstid": 1,
-  "group": [],
-  "import": [],
-  "vars": [],
+  "group": [
+  ],
+  "name": "subtree1",
+  "overrides": {
+  },
+  "prefix": "",
   "root": {
-    "id": 1,
-    "name": "Sequence",
-    "desc": "新建行为树",
     "children": [
       {
-        "id": 2,
-        "name": "Log",
         "args": {
           "message": "hello"
-        }
+        },
+        "children": [
+        ],
+        "id": "2",
+        "name": "Log",
+        "uuid": "bkYaBWucyG"
       },
       {
-        "id": 3,
-        "name": "Wait",
         "args": {
           "time": 1
-        }
+        },
+        "children": [
+        ],
+        "id": "3",
+        "name": "Wait",
+        "uuid": "cpFihEvrHz"
       }
+    ],
+    "desc": "新建行为树",
+    "id": "1",
+    "name": "Sequence",
+    "uuid": "VAq8MRi4L9"
+  },
+  "variables": {
+    "imports": [
+    ],
+    "locals": [
     ]
-  }
+  },
+  "version": "2.1.0"
 }

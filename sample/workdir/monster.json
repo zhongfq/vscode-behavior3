@@ -1,72 +1,100 @@
 {
-  "version": "1.8.0",
-  "name": "monster",
+  "custom": {
+  },
   "desc": "怪物测试AI",
-  "firstid": 1,
   "export": true,
-  "group": ["Test"],
-  "import": [],
-  "vars": [],
+  "group": [
+    "Test"
+  ],
+  "name": "monster",
+  "overrides": {
+  },
+  "prefix": "",
   "root": {
-    "id": 1,
-    "name": "Sequence",
-    "desc": "怪物测试AI",
     "children": [
       {
-        "id": 2,
-        "name": "Sequence",
-        "desc": "攻击",
         "children": [
           {
-            "id": 3,
-            "name": "GetHp",
-            "output": ["hp"],
             "children": [
               {
-                "id": 4,
-                "name": "Sequence",
                 "desc": "新建行为树",
-                "path": "workdir/subtree2.json"
+                "id": "4",
+                "name": "Sequence",
+                "path": "workdir/subtree2.json",
+                "uuid": "FIeYzrwZcn"
               }
-            ]
+            ],
+            "id": "3",
+            "name": "GetHp",
+            "output": [
+              "hp"
+            ],
+            "uuid": "kQ2D8EHrT1"
           },
           {
-            "id": 6,
-            "name": "Cmp",
             "args": {
-              "value": "hp",
-              "gt": 50
+              "gt": 50,
+              "value": "hp"
             },
-            "input": ["hp"]
+            "children": [
+            ],
+            "id": "6",
+            "input": [
+              "hp"
+            ],
+            "name": "Cmp",
+            "uuid": "YlB5hnshqC"
           },
           {
-            "id": 7,
-            "name": "TestB3",
-            "desc": "攻击",
             "args": {
-              "time": 1,
-              "open": true,
               "check": "1",
               "name": "1",
-              "status": "FAILURE"
-            }
+              "open": true,
+              "status": "FAILURE",
+              "time": 1
+            },
+            "children": [
+            ],
+            "desc": "攻击",
+            "id": "7",
+            "name": "TestB3",
+            "uuid": "yVjZBJEf1c"
           },
           {
-            "id": 8,
-            "name": "Sequence",
             "desc": "新建行为树",
-            "path": "workdir/subtree1.json"
+            "id": "8",
+            "name": "Sequence",
+            "path": "workdir/subtree1.json",
+            "uuid": "Y1hJNaM3Us"
           }
-        ]
+        ],
+        "desc": "攻击",
+        "id": "2",
+        "name": "Sequence",
+        "uuid": "OFSze5nXMV"
       },
       {
-        "id": 11,
-        "name": "Log",
-        "desc": "逃跑",
         "args": {
           "message": "Run!"
-        }
+        },
+        "children": [
+        ],
+        "desc": "逃跑",
+        "id": "11",
+        "name": "Log",
+        "uuid": "JSrq3ZHiO1"
       }
+    ],
+    "desc": "怪物测试AI",
+    "id": "1",
+    "name": "Sequence",
+    "uuid": "aHjQsnRFnd"
+  },
+  "variables": {
+    "imports": [
+    ],
+    "locals": [
     ]
-  }
+  },
+  "version": "2.1.0"
 }

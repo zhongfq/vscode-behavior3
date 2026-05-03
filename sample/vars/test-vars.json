@@ -1,5 +1,14 @@
 {
-  "$override": {
+  "custom": {
+  },
+  "desc": "",
+  "export": true,
+  "group": [
+    "Client",
+    "Server"
+  ],
+  "name": "test-vars",
+  "overrides": {
     "n4ByJBOzNv": {
       "args": {
         "open": true,
@@ -23,78 +32,71 @@
       ]
     }
   },
-  "custom": {
-  },
-  "desc": "",
-  "export": true,
-  "group": [
-    "Client",
-    "Server"
-  ],
-  "import": [
-    "vars/declare-core.json",
-    "vars/declare-vars.json"
-  ],
-  "name": "test-vars",
   "prefix": "A",
   "root": {
-    "$id": "jmQVFO674o",
     "children": [
       {
-        "$id": "jrdDQ2IaJT",
         "id": "2",
         "name": "Sequence",
-        "path": "vars/test-subtree.json"
+        "path": "vars/test-subtree.json",
+        "uuid": "jrdDQ2IaJT"
       },
       {
-        "$id": "ZpXcZl6oDz",
         "args": {
           "w": 1,
           "x": 1,
           "y": 1
         },
-        "id": "8",
-        "input": [
+        "children": [
         ],
+        "id": "8",
         "name": "FindEnemy",
         "output": [
           "target1"
-        ]
+        ],
+        "uuid": "ZpXcZl6oDz"
       },
       {
-        "$id": "2LzD04xCDS",
+        "children": [
+        ],
         "id": "9",
         "input": [
           "target1"
         ],
-        "name": "Attack"
+        "name": "Attack",
+        "uuid": "2LzD04xCDS"
       },
       {
-        "$id": "vkbssyIliL",
         "args": {
           "value": "target[0].x > 0 "
         },
+        "children": [
+        ],
         "id": "10",
-        "name": "Check"
+        "name": "Check",
+        "uuid": "vkbssyIliL"
       },
       {
-        "$id": "IQrhE8LPc5",
+        "children": [
+        ],
         "id": "11",
         "input": [
           "target"
         ],
-        "name": "MoveToTarget"
+        "name": "MoveToTarget",
+        "uuid": "IQrhE8LPc5"
       },
       {
-        "$id": "qS2lvvtrTI",
+        "children": [
+        ],
         "id": "12",
         "name": "Clear",
         "output": [
           "test"
-        ]
+        ],
+        "uuid": "qS2lvvtrTI"
       },
       {
-        "$id": "ofZMb7TDwp",
         "args": {
           "check": "1",
           "name": "1",
@@ -102,11 +104,13 @@
           "status": "FAILURE",
           "time": 1
         },
+        "children": [
+        ],
         "id": "13",
-        "name": "TestB3"
+        "name": "TestB3",
+        "uuid": "ofZMb7TDwp"
       },
       {
-        "$id": "0SCKW5eqY6",
         "args": {
           "check": "1",
           "name": "1",
@@ -114,54 +118,64 @@
           "status": "RUNNING",
           "time": 1
         },
+        "children": [
+        ],
         "id": "14",
-        "name": "TestB3"
+        "name": "TestB3",
+        "uuid": "0SCKW5eqY6"
       },
       {
-        "$id": "R27WGek92H",
+        "children": [
+        ],
         "id": "15",
         "name": "Clear",
         "output": [
           "context"
-        ]
+        ],
+        "uuid": "R27WGek92H"
       },
       {
-        "$id": "3o4RYMLKXE",
         "args": {
           "builtin": "afterRunFailure"
         },
-        "id": "16",
-        "input": [
+        "children": [
         ],
+        "id": "16",
         "name": "Listen",
-        "output": [
-        ]
+        "uuid": "3o4RYMLKXE"
       },
       {
-        "$id": "WHf37oUmnE",
         "args": {
         },
+        "children": [
+        ],
         "id": "17",
         "input": [
           "context"
         ],
         "name": "TestOneof",
-        "output": [
-        ]
+        "uuid": "WHf37oUmnE"
       }
     ],
     "id": "1",
-    "name": "Sequence"
+    "name": "Sequence",
+    "uuid": "jmQVFO674o"
   },
-  "vars": [
-    {
-      "desc": "目标",
-      "name": "target"
-    },
-    {
-      "desc": "其它目标",
-      "name": "target1"
-    }
-  ],
-  "version": "2.0.0"
+  "variables": {
+    "imports": [
+      "vars/declare-core.json",
+      "vars/declare-vars.json"
+    ],
+    "locals": [
+      {
+        "desc": "目标",
+        "name": "target"
+      },
+      {
+        "desc": "其它目标",
+        "name": "target1"
+      }
+    ]
+  },
+  "version": "2.1.0"
 }

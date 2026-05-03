@@ -18,6 +18,7 @@ import {
 import {
     dfs,
     getNodeArgRawType,
+    hasDeclaredVars,
     isNodeArgArray,
     isNodeArgOptional,
     isValidVariableName,
@@ -117,7 +118,7 @@ export const createVariableOptions = (
     const options: VariableOption[] = [];
     const seen = new Set<string>();
 
-    if (usingVars) {
+    if (hasDeclaredVars(usingVars)) {
         Object.values(usingVars).forEach((variable) => {
             if (seen.has(variable.name)) {
                 return;
@@ -280,7 +281,8 @@ export const validateVariableValue = (
     if (!isValidVariableName(value)) {
         return i18n.t("node.invalidVariableName");
     }
-    if (usingVars && !usingVars[value]) {
+    const declaredVars = hasDeclaredVars(usingVars) ? usingVars : null;
+    if (declaredVars && !declaredVars[value]) {
         return i18n.t("node.undefinedVariable", { variable: value });
     }
     return null;
@@ -291,6 +293,8 @@ export const validateExpressionValues = (
     usingVars: Record<string, VarDecl> | null,
     checkExpr: boolean
 ): string | null => {
+    const declaredVars = hasDeclaredVars(usingVars) ? usingVars : null;
+
     for (const entry of entries) {
         if (!entry) {
             continue;
@@ -298,7 +302,7 @@ export const validateExpressionValues = (
 
         const variables = parseExpr(entry);
         for (const variable of variables) {
-            if (usingVars && !usingVars[variable]) {
+            if (declaredVars && !declaredVars[variable]) {
                 return i18n.t("node.undefinedVariable", { variable });
             }
         }

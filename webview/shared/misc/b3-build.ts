@@ -50,10 +50,7 @@ interface BuildContext {
     ): void;
     isSubtreeRoot(data: NodeData): boolean;
     refreshVarDecl(root: NodeData, group: string[], declare: FileVarDecl): boolean;
-    checkNodeData(
-        data: NodeData | null | undefined,
-        printer: (message: string) => void
-    ): boolean;
+    checkNodeData(data: NodeData | null | undefined, printer: (message: string) => void): boolean;
     setCheckExpr(check: boolean): void;
 }
 
@@ -96,7 +93,7 @@ const createBatchHooks = (moduleExports: unknown, env: Env): BatchScript | undef
 const materializedNodeToExpandedTreeData = (node: MaterializedTreeNode): NodeData => {
     const data = node.data;
     return {
-        $id: data.$id,
+        uuid: data.uuid,
         id: data.id,
         name: data.name,
         desc: data.desc,
@@ -122,7 +119,7 @@ const assignSequentialNodeIds = (node: NodeData, nextId = 1): number => {
 
 const clearInternalKeys = (data: NodeData | TreeData) => {
     for (const key in data) {
-        if (key.startsWith("$")) {
+        if (key === "uuid" || key === "overrides" || key.startsWith("$")) {
             delete data[key as keyof (NodeData | TreeData)];
         }
     }
@@ -134,7 +131,7 @@ export const createFileDataWithContext = (
     context: Pick<BuildContext, "nodeDefs" | "isSubtreeRoot">
 ): NodeData => {
     const nodeData: NodeData = {
-        $id: data.$id,
+        uuid: data.uuid,
         id: data.id,
         name: data.name,
         desc: data.desc || undefined,
@@ -202,10 +199,12 @@ export const createBuildDataWithContext = async (
             prefix: persistedTree.prefix,
             export: persistedTree.export,
             group: [...persistedTree.group],
-            import: [...persistedTree.import],
-            vars: persistedTree.vars.map((entry) => ({ ...entry })),
+            variables: {
+                imports: [...persistedTree.variables.imports],
+                locals: persistedTree.variables.locals.map((entry) => ({ ...entry })),
+            },
             custom: { ...persistedTree.custom },
-            $override: { ...persistedTree.$override },
+            overrides: { ...persistedTree.overrides },
             root: materializedNodeToExpandedTreeData(materializedRoot),
         };
 
@@ -357,9 +356,7 @@ export const loadRuntimeModule = async (modulePath: string) => {
             tempModulePath = modulePath.replace(".js", `.runtime.${Date.now()}.mjs`);
             getFs().copyFileSync(modulePath, tempModulePath);
         } else {
-            logger.error(
-                `unsupported build script extension '${ext || "(none)"}': ${modulePath}`
-            );
+            logger.error(`unsupported build script extension '${ext || "(none)"}': ${modulePath}`);
             return null;
         }
 
@@ -448,8 +445,15 @@ export const buildProjectWithContext = async (
             hasError = true;
         }
         const declare: FileVarDecl = {
-            import: tree.import.map((importPath) => ({ path: importPath, vars: [], depends: [] })),
-            vars: tree.vars.map((variable) => ({ name: variable.name, desc: variable.desc })),
+            import: tree.variables.imports.map((importPath) => ({
+                path: importPath,
+                vars: [],
+                depends: [],
+            })),
+            vars: tree.variables.locals.map((variable) => ({
+                name: variable.name,
+                desc: variable.desc,
+            })),
             subtree: [],
         };
         context.refreshVarDecl(tree.root, tree.group, declare);

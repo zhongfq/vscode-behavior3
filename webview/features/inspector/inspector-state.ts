@@ -205,11 +205,11 @@ export const createTreeInspectorFormValues = (
         prefix: document.prefix ?? "",
         export: document.export !== false,
         group: document.group,
-        vars: document.vars.map((variable) => ({
+        vars: document.variables.locals.map((variable) => ({
             ...variable,
             count: variableUsageCount[variable.name] ?? 0,
         })),
-        importRefs: document.import.map((path) => ({ path })),
+        importRefs: document.variables.imports.map((path) => ({ path })),
     };
 };
 
@@ -219,14 +219,16 @@ export const createTreeMetaPayload = (values: TreeInspectorFormValues) => {
         prefix: values.prefix ?? "",
         export: values.export !== false,
         group: values.group ?? [],
-        importRefs: (values.importRefs ?? [])
-            .map((entry) => entry.path?.trim())
-            .filter((entry): entry is string => Boolean(entry)),
-        vars: (values.vars ?? [])
-            .filter((entry) => entry.name?.trim())
-            .map((entry) => ({
-                name: entry.name.trim(),
-                desc: entry.desc.trim(),
-            })),
+        variables: {
+            imports: (values.importRefs ?? [])
+                .map((entry) => entry.path?.trim())
+                .filter((entry): entry is string => Boolean(entry)),
+            locals: (values.vars ?? [])
+                .filter((entry) => entry.name?.trim())
+                .map((entry) => ({
+                    name: entry.name.trim(),
+                    desc: entry.desc.trim(),
+                })),
+        },
     };
 };
