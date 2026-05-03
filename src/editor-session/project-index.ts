@@ -2,7 +2,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import type { PersistedNodeModel, PersistedTreeModel } from "../../webview/shared/contracts";
 import { isBehaviorTreeJsonPath } from "../../webview/shared/misc/behavior-tree-files";
-import { normalizeWorkdirRelativePath } from "../../webview/shared/protocol";
+import { parseWorkdirRelativeJsonPath } from "../../webview/shared/protocol";
 import {
     collectReachableSubtreePaths,
     collectTransitivePaths,
@@ -30,6 +30,17 @@ const isSameUri = (left: vscode.Uri, right: vscode.Uri) =>
 
 const collectSubtreePaths = (node: PersistedNodeModel | undefined): string[] =>
     node ? collectReachableSubtreePaths(node) : [];
+
+const normalizePathList = (paths: Iterable<string>): string[] => {
+    const normalized: string[] = [];
+    for (const entry of paths) {
+        const path = parseWorkdirRelativeJsonPath(entry);
+        if (path) {
+            normalized.push(path);
+        }
+    }
+    return normalized;
+};
 
 export class ProjectIndex {
     private readonly treeCache = new Map<string, CachedTreeEntry>();
@@ -89,16 +100,10 @@ export class ProjectIndex {
         }
 
         const orderedPaths = await collectTransitivePaths(
-            collectSubtreePaths(tree.root).map((subtreePath) =>
-                normalizeWorkdirRelativePath(subtreePath)
-            ),
+            normalizePathList(collectSubtreePaths(tree.root)),
             async (relativePath) => {
                 const subtree = await this.readTreeFile(relativePath);
-                return subtree?.root
-                    ? collectSubtreePaths(subtree.root).map((childPath) =>
-                          normalizeWorkdirRelativePath(childPath)
-                      )
-                    : [];
+                return subtree?.root ? normalizePathList(collectSubtreePaths(subtree.root)) : [];
             }
         );
 
@@ -129,9 +134,7 @@ export class ProjectIndex {
         }
 
         const visited = new Set<string>();
-        const importSeeds = tree.variables.imports.filter(
-            (entry): entry is string => typeof entry === "string"
-        );
+        const importSeeds = [...tree.variables.imports];
 
         for (const importPath of importSeeds) {
             await this.readVarsFromFile(importPath, visited, usingVars);
@@ -170,7 +173,7 @@ export class ProjectIndex {
         if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
             return undefined;
         }
-        return normalizeWorkdirRelativePath(relativePath);
+        return parseWorkdirRelativeJsonPath(relativePath) ?? undefined;
     }
 
     private async readWorkspaceFileContent(fileUri: vscode.Uri): Promise<string> {
@@ -187,7 +190,10 @@ export class ProjectIndex {
     }
 
     private async readTreeFile(relativePath: string): Promise<PersistedTreeModel | null> {
-        const normalizedPath = normalizeWorkdirRelativePath(relativePath);
+        const normalizedPath = parseWorkdirRelativeJsonPath(relativePath);
+        if (!normalizedPath) {
+            return null;
+        }
         const fileUri = vscode.Uri.joinPath(this.workdir, normalizedPath);
         const content = await this.readWorkspaceFileContent(fileUri).catch(() => null);
         if (content === null) {
@@ -221,7 +227,11 @@ export class ProjectIndex {
     }
 
     private getLocalVarsFromTree(relativePath: string): Array<{ name: string; desc: string }> {
-        const tree = this.treeCache.get(normalizeWorkdirRelativePath(relativePath))?.tree;
+        const normalizedPath = parseWorkdirRelativeJsonPath(relativePath);
+        if (!normalizedPath) {
+            return [];
+        }
+        const tree = this.treeCache.get(normalizedPath)?.tree;
         if (!tree) {
             return [];
         }
@@ -236,7 +246,11 @@ export class ProjectIndex {
         globalVars: Record<string, { name: string; desc: string }>
     ): Promise<Array<{ name: string; desc: string }>> {
         const localVars: Array<{ name: string; desc: string }> = [];
-        const normalizedPath = normalizeWorkdirRelativePath(relativePath);
+        const parsedPath = parseWorkdirRelativeJsonPath(relativePath);
+        if (!parsedPath) {
+            return localVars;
+        }
+        const normalizedPath = parsedPath;
         if (visitedForGlobal.has(normalizedPath)) {
             return localVars;
         }
@@ -271,12 +285,10 @@ export class ProjectIndex {
 
     private async collectOrderedTransitiveImportPaths(seedImports: string[]): Promise<string[]> {
         return collectTransitivePaths(
-            seedImports.map((importPath) => normalizeWorkdirRelativePath(importPath)),
+            normalizePathList(seedImports),
             async (relativePath) => {
                 const tree = await this.readTreeFile(relativePath);
-                return (tree?.variables.imports ?? []).map((importPath) =>
-                    normalizeWorkdirRelativePath(importPath)
-                );
+                return normalizePathList(tree?.variables.imports ?? []);
             }
         );
     }
@@ -286,14 +298,10 @@ export class ProjectIndex {
     ): Promise<string[]> {
         /** Preserve traversal order so the UI shows subtree declarations deterministically. */
         return collectTransitivePaths(
-            collectSubtreePaths(root).map((subtreePath) => normalizeWorkdirRelativePath(subtreePath)),
+            normalizePathList(collectSubtreePaths(root)),
             async (relativePath) => {
                 const tree = await this.readTreeFile(relativePath);
-                return tree?.root
-                    ? collectSubtreePaths(tree.root).map((subtreePath) =>
-                          normalizeWorkdirRelativePath(subtreePath)
-                      )
-                    : [];
+                return tree?.root ? normalizePathList(collectSubtreePaths(tree.root)) : [];
             }
         );
     }

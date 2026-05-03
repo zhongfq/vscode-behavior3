@@ -1,5 +1,5 @@
 import { FormOutlined, MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { App, AutoComplete, Button, Flex, Form, Input, Select, Switch, Typography } from "antd";
+import { AutoComplete, Button, Flex, Form, Input, Select, Switch, Typography } from "antd";
 import type { FormInstance } from "antd/es/form";
 import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -258,7 +258,6 @@ const ImportRefsSection: React.FC<{
 
 export const TreeInspectorForm: React.FC = () => {
     const runtime = useRuntime();
-    const { message } = App.useApp();
     const { t } = useTranslation();
     const [form] = Form.useForm();
     const {
@@ -288,18 +287,7 @@ export const TreeInspectorForm: React.FC = () => {
     };
 
     const openSubtree = (path: string) => {
-        void (async () => {
-            const response = await runtime.hostAdapter.readFile(path, {
-                openIfSubtree: true,
-            });
-            if (response.content === null) {
-                message.error(
-                    t("node.subtreeOpenFailed", {
-                        path,
-                    })
-                );
-            }
-        })();
+        void runtime.controller.openSubtreePath(path);
     };
 
     return (

@@ -2,8 +2,12 @@ import type { NodeDef, VarDecl, ImportDecl } from "./misc/b3type";
 
 export type { NodeDef, VarDecl, ImportDecl };
 
+declare const workdirRelativeJsonPathBrand: unique symbol;
+
 export type AbsoluteFsPath = string;
-export type WorkdirRelativeJsonPath = string;
+export type WorkdirRelativeJsonPath = string & {
+    readonly [workdirRelativeJsonPathBrand]: true;
+};
 
 export interface PersistedNodeModel {
     uuid: string;
@@ -142,7 +146,7 @@ export interface UpdateTreeMetaInput {
     export?: boolean;
     group: string[];
     variables: {
-        imports: WorkdirRelativeJsonPath[];
+        imports: string[];
         locals: VarDecl[];
     };
 }
@@ -157,7 +161,7 @@ export interface UpdateNodeInput {
         output?: string[];
         debug?: boolean;
         disabled?: boolean;
-        path?: WorkdirRelativeJsonPath;
+        path?: string;
     };
 }
 
@@ -343,6 +347,7 @@ export interface EditorCommand {
     applyNodeDefs(defs: NodeDef[]): Promise<void>;
     applyHostVars(payload: HostVarsPayload): Promise<void>;
     markSubtreeChanged(): Promise<void>;
+    dismissReloadConflict(): Promise<void>;
     selectTree(): Promise<void>;
     selectNode(
         nodeKey: string,
@@ -367,6 +372,7 @@ export interface EditorCommand {
     saveDocument(): Promise<void>;
     revertDocument(): Promise<void>;
     buildDocument(): Promise<void>;
+    openSubtreePath(path: string): Promise<void>;
     openSelectedSubtree(): Promise<void>;
     saveSelectedAsSubtree(): Promise<void>;
 }

@@ -1,6 +1,4 @@
-import { ExpressionEvaluator } from "behavior3";
 import { getNodeType, isExprType, type NodeDef } from "../shared/misc/b3type";
-import { hasDeclaredVars, isValidVariableName, isVariadic, parseExpr } from "../shared/misc/b3util";
 import i18n from "../shared/misc/i18n";
 import type {
     GraphHighlightState,
@@ -13,6 +11,7 @@ import type {
     VarDecl,
 } from "../shared/contracts";
 import { stringifyCompactJson5, stringifySearchValueAsJson5 } from "../shared/json5-display";
+import { collectResolvedNodeDiagnostics, parseExpressionVariables } from "./tree-validation";
 
 const DEFAULT_NODE_COLORS: Record<GraphNodeVM["nodeStyleKind"], string> = {
     Composite: "#34d800",
@@ -78,108 +77,6 @@ const describeResolutionError = (node: ResolvedNodeModel): string | undefined =>
     }
 };
 
-const hasValidationIssue = (params: {
-    node: ResolvedNodeModel;
-    defsByName: Map<string, NodeDef>;
-    usingVars: Record<string, VarDecl> | null;
-    usingGroups: Record<string, boolean> | null;
-    checkExpr: boolean;
-}) => {
-    const { node, defsByName, usingVars, usingGroups, checkExpr } = params;
-    const declaredVars = hasDeclaredVars(usingVars) ? usingVars : null;
-    if (node.resolutionError) {
-        return false;
-    }
-
-    const def = defsByName.get(node.name);
-    if (!def) {
-        return false;
-    }
-
-    if (def.group) {
-        const groups = Array.isArray(def.group) ? def.group : [def.group];
-        if (!groups.some((group) => usingGroups?.[group])) {
-            return true;
-        }
-    }
-
-    if (node.input) {
-        for (let index = 0; index < node.input.length; index += 1) {
-            const value = node.input[index] ?? "";
-            if (value && !isValidVariableName(value)) {
-                return true;
-            }
-            if (value && declaredVars && !declaredVars[value]) {
-                return true;
-            }
-        }
-    }
-
-    if (node.output) {
-        for (let index = 0; index < node.output.length; index += 1) {
-            const value = node.output[index] ?? "";
-            if (value && !isValidVariableName(value)) {
-                return true;
-            }
-            if (value && declaredVars && !declaredVars[value]) {
-                return true;
-            }
-        }
-    }
-
-    for (const arg of def.args ?? []) {
-        const rawValue = node.args?.[arg.name];
-        if (!isExprType(arg.type) || !rawValue) {
-            continue;
-        }
-
-        const exprValues = Array.isArray(rawValue) ? rawValue : [rawValue];
-        for (const expr of exprValues) {
-            if (typeof expr !== "string" || !expr) {
-                continue;
-            }
-
-            for (const variable of parseExpr(expr)) {
-                if (declaredVars && variable && !declaredVars[variable]) {
-                    return true;
-                }
-            }
-
-            if (checkExpr) {
-                try {
-                    if (!new ExpressionEvaluator(expr).dryRun()) {
-                        return true;
-                    }
-                } catch {
-                    return true;
-                }
-            }
-        }
-    }
-
-    for (let index = 0; index < (def.input?.length ?? 0); index += 1) {
-        const label = def.input?.[index] ?? "";
-        if (isVariadic(def.input ?? [], index)) {
-            break;
-        }
-        if (!label.includes("?") && !(node.input?.[index] ?? "")) {
-            return true;
-        }
-    }
-
-    for (let index = 0; index < (def.output?.length ?? 0); index += 1) {
-        const label = def.output?.[index] ?? "";
-        if (isVariadic(def.output ?? [], index)) {
-            break;
-        }
-        if (!label.includes("?") && !(node.output?.[index] ?? "")) {
-            return true;
-        }
-    }
-
-    return false;
-};
-
 export const buildResolvedGraphModel = (
     graph: ResolvedDocumentGraph,
     nodeDefs: NodeDef[],
@@ -198,13 +95,13 @@ export const buildResolvedGraphModel = (
         const node = graph.nodesByInstanceKey[key];
         const def = defsByName.get(node.name);
         const warningText = describeResolutionError(node);
-        const invalid = hasValidationIssue({
+        const invalid = collectResolvedNodeDiagnostics({
             node,
-            defsByName,
+            def,
             usingVars: validation?.usingVars ?? null,
             usingGroups: validation?.usingGroups ?? null,
             checkExpr: validation?.checkExpr ?? false,
-        });
+        }).length > 0;
         const nodeStyleKind =
             node.resolutionError || invalid || warningText
                 ? "Error"
@@ -307,7 +204,9 @@ export const computeVariableHighlights = (
                 exprValues.some(
                     (expr) =>
                         typeof expr === "string" &&
-                        parseExpr(expr).some((name) => activeVariableNames.includes(name))
+                        parseExpressionVariables(expr).some((name) =>
+                            activeVariableNames.includes(name)
+                        )
                 )
             ) {
                 nodeHits.push("args");

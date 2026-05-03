@@ -16,7 +16,11 @@ import type {
     SaveSubtreeResponse,
     WorkdirRelativeJsonPath,
 } from "../../shared/contracts";
-import { normalizeHostInitMessage, normalizeHostVarsMessage } from "../../shared/protocol";
+import {
+    normalizeHostInitMessage,
+    normalizeHostVarsMessage,
+    parseWorkdirRelativeJsonPath,
+} from "../../shared/protocol";
 
 declare function acquireVsCodeApi(): {
     postMessage(message: EditorToHostMessage): void;
@@ -38,11 +42,13 @@ type PendingRequestType = keyof PendingRequestMap;
 type PendingRequest = {
     [K in PendingRequestType]: {
         type: K;
+        timeout: number;
         resolve(value: PendingRequestMap[K]): void;
     };
 }[PendingRequestType];
 
 const pendingRequests = new Map<string, PendingRequest>();
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 let requestSequence = 0;
 
@@ -84,15 +90,42 @@ const postMessage = (message: EditorToHostMessage) => {
     vscode.postMessage(message);
 };
 
+const createTimeoutResponse = <K extends PendingRequestType>(type: K): PendingRequestMap[K] => {
+    const error = `Host request '${type}' timed out`;
+    switch (type) {
+        case "readFile":
+            return { content: null } as PendingRequestMap[K];
+        case "saveSubtree":
+        case "saveDocument":
+        case "revertDocument":
+            return { success: false, error } as PendingRequestMap[K];
+        case "saveSubtreeAs":
+            return { savedPath: null, error } as PendingRequestMap[K];
+    }
+};
+
 const registerPendingRequest = <K extends PendingRequestType>(
     type: K,
     resolve: (value: PendingRequestMap[K]) => void,
-    requestId = createRequestId()
+    requestId = createRequestId(),
+    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
 ): string => {
+    const timeout = window.setTimeout(() => {
+        const pending = pendingRequests.get(requestId);
+        if (pending?.type !== type) {
+            return;
+        }
+        pendingRequests.delete(requestId);
+        (pending.resolve as (resolved: PendingRequestMap[K]) => void)(
+            createTimeoutResponse(type)
+        );
+    }, timeoutMs);
+
     pendingRequests.set(requestId, {
         type,
+        timeout,
         resolve,
-    } as PendingRequest);
+    } as unknown as PendingRequest);
     return requestId;
 };
 
@@ -107,8 +140,19 @@ const resolvePendingRequest = <K extends PendingRequestType>(
     }
 
     pendingRequests.delete(requestId);
+    window.clearTimeout(pending.timeout);
     (pending.resolve as (resolved: PendingRequestMap[K]) => void)(value);
     return true;
+};
+
+const resolveAllPendingRequests = () => {
+    for (const [requestId, pending] of pendingRequests) {
+        pendingRequests.delete(requestId);
+        window.clearTimeout(pending.timeout);
+        (pending.resolve as (resolved: PendingRequestMap[typeof pending.type]) => void)(
+            createTimeoutResponse(pending.type)
+        );
+    }
 };
 
 const createForwardLogger = (): Logger => {
@@ -161,8 +205,15 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
 
                     case "saveSubtreeAsResult":
                         resolvePendingRequest(message.requestId, "saveSubtreeAs", {
-                            savedPath: message.savedPath,
-                            error: message.error,
+                            savedPath: message.savedPath
+                                ? parseWorkdirRelativeJsonPath(message.savedPath)
+                                : null,
+                            error:
+                                message.error ??
+                                (message.savedPath &&
+                                !parseWorkdirRelativeJsonPath(message.savedPath)
+                                    ? "Host returned an invalid saved subtree path"
+                                    : undefined),
                         });
                         return;
 
@@ -248,6 +299,7 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
                 window.removeEventListener("message", handler);
                 window.removeEventListener("error", errorHandler);
                 window.removeEventListener("unhandledrejection", rejectionHandler);
+                resolveAllPendingRequests();
             };
         },
 

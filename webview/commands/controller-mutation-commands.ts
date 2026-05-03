@@ -12,7 +12,7 @@ import type {
     UpdateNodeInput,
     UpdateTreeMetaInput,
 } from "../shared/contracts";
-import { normalizeWorkdirRelativePath } from "../shared/protocol";
+import { parseWorkdirRelativeJsonPath } from "../shared/protocol";
 import {
     clonePersistedNode,
     clonePersistedTree,
@@ -30,6 +30,7 @@ type MutationCommandKeys =
     | "insertNode"
     | "replaceNode"
     | "deleteNode"
+    | "openSubtreePath"
     | "openSelectedSubtree"
     | "saveSelectedAsSubtree";
 
@@ -37,6 +38,19 @@ export const createMutationCommands = (
     runtime: ControllerRuntime
 ): Pick<EditorCommand, MutationCommandKeys> => {
     const { deps } = runtime;
+
+    const openSubtreePath = async (path: string) => {
+        const subtreePath = parseWorkdirRelativeJsonPath(path);
+        if (!subtreePath) {
+            runtime.notifyError(i18n.t("validation.invalidJsonPath", { path }));
+            return;
+        }
+
+        const response = await deps.hostAdapter.readFile(subtreePath, { openIfSubtree: true });
+        if (response.content === null) {
+            runtime.notifyError(i18n.t("node.subtreeOpenFailed", { path: subtreePath }));
+        }
+    };
 
     return {
         async updateTreeMeta(payload: UpdateTreeMetaInput) {
@@ -51,9 +65,16 @@ export const createMutationCommands = (
             const nextVars = cloneVars(payload.variables.locals).sort((a, b) =>
                 a.name.localeCompare(b.name)
             );
-            const nextImportRefs = [...payload.variables.imports].sort((a, b) =>
-                a.localeCompare(b)
-            );
+            const nextImportRefs: NonNullable<typeof tree.variables>["imports"] = [];
+            for (const rawPath of payload.variables.imports) {
+                const parsedPath = parseWorkdirRelativeJsonPath(rawPath);
+                if (!parsedPath) {
+                    runtime.notifyError(i18n.t("validation.invalidJsonPath", { path: rawPath }));
+                    return;
+                }
+                nextImportRefs.push(parsedPath);
+            }
+            nextImportRefs.sort((a, b) => a.localeCompare(b));
 
             if (
                 tree.desc === nextDesc &&
@@ -95,7 +116,16 @@ export const createMutationCommands = (
             const nextName =
                 String(payload.data.name ?? resolvedNode.name).trim() || resolvedNode.name;
             const nextDesc = payload.data.desc?.trim() || undefined;
-            const nextPath = payload.data.path?.trim() || undefined;
+            const rawNextPath = payload.data.path?.trim() || undefined;
+            let nextPath: PersistedNodeModel["path"];
+            if (rawNextPath) {
+                const parsedPath = parseWorkdirRelativeJsonPath(rawNextPath);
+                if (!parsedPath) {
+                    runtime.notifyError(i18n.t("validation.invalidJsonPath", { path: rawNextPath }));
+                    return;
+                }
+                nextPath = parsedPath;
+            }
             const nextDebug = Boolean(payload.data.debug);
             const nextDisabled = Boolean(payload.data.disabled);
             const nextInput = payload.data.input;
@@ -475,6 +505,8 @@ export const createMutationCommands = (
             });
         },
 
+        openSubtreePath,
+
         async openSelectedSubtree() {
             const ref = deps.selectionStore.getState().selectedNodeRef;
             const resolvedGraph = runtime.getResolvedGraph();
@@ -490,10 +522,7 @@ export const createMutationCommands = (
             if (!path) {
                 return;
             }
-            const response = await deps.hostAdapter.readFile(path, { openIfSubtree: true });
-            if (response.content === null) {
-                runtime.notifyError(i18n.t("node.subtreeOpenFailed", { path }));
-            }
+            await openSubtreePath(path);
         },
 
         async saveSelectedAsSubtree() {
@@ -553,7 +582,13 @@ export const createMutationCommands = (
                 return;
             }
 
-            targetNode.path = normalizeWorkdirRelativePath(result.savedPath);
+            const savedPath = parseWorkdirRelativeJsonPath(result.savedPath);
+            if (!savedPath) {
+                runtime.notifyError(i18n.t("validation.invalidJsonPath", { path: result.savedPath }));
+                return;
+            }
+
+            targetNode.path = savedPath;
             targetNode.children = undefined;
 
             await runtime.commitTreeMutation(tree, {

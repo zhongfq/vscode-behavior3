@@ -6,7 +6,7 @@ import type {
     SubtreeSourceCacheEntry,
     WorkdirRelativeJsonPath,
 } from "./contracts";
-import { normalizeWorkdirRelativePath } from "./protocol";
+import { parseWorkdirRelativeJsonPath } from "./protocol";
 import { clonePersistedNode } from "./tree";
 
 const enum StatusFlag {
@@ -217,7 +217,7 @@ export const materializePersistedTree = (params: {
         context: MaterializeContext
     ): MaterializedTreeNode => {
         const normalizedPath = structuredNode.path
-            ? normalizeWorkdirRelativePath(structuredNode.path)
+            ? parseWorkdirRelativeJsonPath(structuredNode.path)
             : undefined;
         const isCyclic = normalizedPath ? context.subtreeStack.includes(normalizedPath) : false;
         const subtreeSource =
@@ -232,16 +232,22 @@ export const materializePersistedTree = (params: {
         let subtreeOriginal: PersistedNodeModel | undefined;
         let overrideChain = context.overrideSourceChain;
 
-        if (normalizedPath && isCyclic) {
+        if (structuredNode.path && !normalizedPath) {
+            resolutionError = "invalid-subtree";
+        } else if (normalizedPath && isCyclic) {
             resolutionError = "cyclic-subtree";
         } else if (isInvalidSubtreeSource(subtreeSource)) {
             resolutionError = "invalid-subtree";
         } else if (normalizedPath && !subtreeTree) {
             resolutionError = "missing-subtree";
         } else if (materialized && subtreeTree) {
+            const subtreePath = normalizedPath;
+            if (!subtreePath) {
+                throw new Error("unreachable subtree path state");
+            }
             sourceNode = clonePersistedNode(subtreeTree.root);
-            sourceNode.path = normalizedPath;
-            sourceTreePath = normalizedPath!;
+            sourceNode.path = subtreePath;
+            sourceTreePath = subtreePath;
             overrideChain = [...context.overrideSourceChain, subtreeTree];
             const external = buildResolvedExternalNode(
                 sourceNode,
@@ -290,7 +296,7 @@ export const materializePersistedTree = (params: {
         const nextChildren =
             materialized && subtreeTree
                 ? (subtreeTree.root.children ?? [])
-                : normalizedPath && !subtreeTree
+                : resolutionError || (normalizedPath && !subtreeTree)
                   ? []
                   : (sourceNode.children ?? []);
 

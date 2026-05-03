@@ -3,8 +3,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createAppHooksStore } from "../webview/shared/misc/hooks";
+import { createEditorController } from "../webview/commands/create-editor-controller";
+import { createDocumentStore, showDocumentReloadConflict } from "../webview/stores/document-store";
+import { createSelectionStore } from "../webview/stores/selection-store";
+import { createWorkspaceStore } from "../webview/stores/workspace-store";
 import { buildBehaviorProject, resolveBehaviorBuildPaths } from "../src/build/build-cli";
 import { buildResolvedGraphModel } from "../webview/domain/graph-selectors";
+import { collectResolvedNodeDiagnostics } from "../webview/domain/tree-validation";
 import {
     normalizeNodeDefCollection,
     parseNodeDefsContent,
@@ -17,6 +22,9 @@ import {
     parsePersistedTreeContent,
     serializePersistedTree,
 } from "../webview/shared/tree";
+import { parseWorkdirRelativeJsonPath } from "../webview/shared/protocol";
+import type { GraphAdapter } from "../webview/shared/graph-contracts";
+import type { HostAdapter } from "../webview/shared/contracts";
 
 const tests: Array<{ name: string; run(): Promise<void> | void }> = [
     {
@@ -50,6 +58,74 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
             ]);
 
             assert.equal(defs[0]?.args?.[0]?.type, "bool?");
+        },
+    },
+    {
+        name: "parses only strict workdir-relative json paths",
+        run() {
+            assert.equal(parseWorkdirRelativeJsonPath("vars\\test.json"), "vars/test.json");
+            assert.equal(parseWorkdirRelativeJsonPath("./sub/tree.json"), "sub/tree.json");
+            assert.equal(parseWorkdirRelativeJsonPath("../escape.json"), null);
+            assert.equal(parseWorkdirRelativeJsonPath("/absolute.json"), null);
+            assert.equal(parseWorkdirRelativeJsonPath("C:\\absolute.json"), null);
+            assert.equal(parseWorkdirRelativeJsonPath("tree.txt"), null);
+            assert.equal(parseWorkdirRelativeJsonPath("http://example.com/tree.json"), null);
+        },
+    },
+    {
+        name: "rejects unsafe tree import and subtree paths",
+        run() {
+            assert.throws(
+                () =>
+                    parsePersistedTreeContent(
+                        JSON.stringify({
+                            version: "2.0.0",
+                            name: "main",
+                            prefix: "",
+                            group: [],
+                            variables: {
+                                imports: ["../vars.json"],
+                                locals: [],
+                            },
+                            custom: {},
+                            overrides: {},
+                            root: {
+                                uuid: "root",
+                                id: "1",
+                                name: "Sequence",
+                                children: [],
+                            },
+                        }),
+                        "main.json"
+                    ),
+                /workdir-relative .*json path/i
+            );
+
+            assert.throws(
+                () =>
+                    parsePersistedTreeContent(
+                        JSON.stringify({
+                            version: "2.0.0",
+                            name: "main",
+                            prefix: "",
+                            group: [],
+                            variables: {
+                                imports: [],
+                                locals: [],
+                            },
+                            custom: {},
+                            overrides: {},
+                            root: {
+                                uuid: "root",
+                                id: "1",
+                                name: "Sequence",
+                                path: "/tmp/sub.json",
+                            },
+                        }),
+                        "main.json"
+                    ),
+                /workdir-relative .*json path/i
+            );
         },
     },
     {
@@ -166,6 +242,52 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
             );
 
             assert.equal(strictGraphModel.nodes[0]?.nodeStyleKind, "Error");
+        },
+    },
+    {
+        name: "collects shared validation diagnostics for graph nodes",
+        run() {
+            const diagnostics = collectResolvedNodeDiagnostics({
+                node: {
+                    ref: {
+                        instanceKey: "1",
+                        displayId: "1",
+                        structuralStableId: "root",
+                        sourceStableId: "root",
+                        sourceTreePath: null,
+                        subtreeStack: [],
+                    },
+                    parentKey: null,
+                    childKeys: [],
+                    depth: 0,
+                    renderedIdLabel: "1",
+                    name: "Check",
+                    input: ["missing"],
+                    args: { expr: "missing > 0" },
+                    subtreeNode: false,
+                    subtreeEditable: true,
+                },
+                def: {
+                    name: "Check",
+                    type: "Condition",
+                    desc: "",
+                    input: ["target"],
+                    args: [{ name: "expr", type: "expr", desc: "" }],
+                },
+                usingVars: {
+                    target: { name: "target", desc: "" },
+                },
+                usingGroups: null,
+                checkExpr: false,
+            });
+
+            assert.equal(
+                diagnostics.some(
+                    (entry) =>
+                        entry.code === "undefined-variable" && entry.variable === "missing"
+                ),
+                true
+            );
         },
     },
     {
@@ -487,6 +609,140 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
 
             hooks.reset();
             assert.throws(() => hooks.getMessage(), /not available/i);
+        },
+    },
+    {
+        name: "routes boundary-only actions through controller commands",
+        async run() {
+            const documentStore = createDocumentStore();
+            const workspaceStore = createWorkspaceStore();
+            const selectionStore = createSelectionStore();
+            const appHooks = createAppHooksStore();
+            const errors: string[] = [];
+            appHooks.bind({
+                message: {
+                    success() {},
+                    error(value: string) {
+                        errors.push(value);
+                    },
+                } as any,
+                notification: {} as any,
+                modal: {} as any,
+            });
+
+            let readPath: string | null = null;
+            const hostAdapter: HostAdapter = {
+                connect: () => () => {},
+                sendReady() {},
+                sendUpdate() {},
+                sendTreeSelected() {},
+                sendRequestSetting() {},
+                sendBuild() {},
+                async saveDocument() {
+                    return { success: true };
+                },
+                async revertDocument() {
+                    return { success: true };
+                },
+                async readFile(path) {
+                    readPath = path;
+                    return { content: "{}" };
+                },
+                async saveSubtree() {
+                    return { success: true };
+                },
+                async saveSubtreeAs() {
+                    return { savedPath: null };
+                },
+                log() {},
+            };
+            const graphAdapter: GraphAdapter = {
+                async mount() {},
+                unmount() {},
+                async render() {},
+                async applySelection() {},
+                async applyHighlights() {},
+                async applySearch() {},
+                async focusNode() {},
+                async restoreViewport() {},
+                getViewport: () => ({ zoom: 1, x: 0, y: 0 }),
+            };
+            const controller = createEditorController({
+                documentStore,
+                workspaceStore,
+                selectionStore,
+                hostAdapter,
+                graphAdapter,
+                appHooks,
+            });
+
+            showDocumentReloadConflict(documentStore, "{}");
+            await controller.dismissReloadConflict();
+            assert.equal(documentStore.getState().alertReload, false);
+
+            await controller.openSubtreePath("../escape.json");
+            assert.equal(readPath, null);
+            assert.equal(errors.length > 0, true);
+
+            await controller.openSubtreePath("sub\\tree.json");
+            assert.equal(readPath, "sub/tree.json");
+        },
+    },
+    {
+        name: "resolves pending host requests on disconnect",
+        async run() {
+            const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+            const previousAcquire = (
+                globalThis as typeof globalThis & { acquireVsCodeApi?: unknown }
+            ).acquireVsCodeApi;
+            const posts: unknown[] = [];
+            const listeners = new Map<string, Set<EventListener>>();
+
+            (globalThis as typeof globalThis & { window?: unknown }).window = {
+                setTimeout,
+                clearTimeout,
+                addEventListener(type: string, listener: EventListener) {
+                    const entries = listeners.get(type) ?? new Set<EventListener>();
+                    entries.add(listener);
+                    listeners.set(type, entries);
+                },
+                removeEventListener(type: string, listener: EventListener) {
+                    listeners.get(type)?.delete(listener);
+                },
+            };
+            (globalThis as typeof globalThis & { acquireVsCodeApi?: unknown }).acquireVsCodeApi =
+                () => ({
+                    postMessage(message: unknown) {
+                        posts.push(message);
+                    },
+                    getState() {
+                        return undefined;
+                    },
+                    setState() {},
+                });
+
+            const { getLogger, setLogger } = await import("../webview/shared/misc/logger");
+            const previousLogger = getLogger();
+            try {
+                const { createVsCodeHostAdapter } = await import(
+                    "../webview/adapters/host/vscode-host-adapter"
+                );
+                const adapter = createVsCodeHostAdapter();
+                const off = adapter.connect(() => {});
+                const resultPromise = adapter.readFile(parseWorkdirRelativeJsonPath("sub/a.json")!);
+
+                assert.equal((posts[0] as { type?: string } | undefined)?.type, "readFile");
+                off();
+
+                const result = await resultPromise;
+                assert.deepEqual(result, { content: null });
+            } finally {
+                setLogger(previousLogger);
+                (globalThis as typeof globalThis & { window?: unknown }).window = previousWindow;
+                (
+                    globalThis as typeof globalThis & { acquireVsCodeApi?: unknown }
+                ).acquireVsCodeApi = previousAcquire;
+            }
         },
     },
     {

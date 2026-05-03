@@ -20,7 +20,7 @@ import type {
     WorkspaceState,
 } from "../shared/contracts";
 import type { GraphAdapter } from "../shared/graph-contracts";
-import { normalizeWorkdirRelativePath } from "../shared/protocol";
+import { parseWorkdirRelativeJsonPath } from "../shared/protocol";
 import {
     cloneJsonValue,
     clonePersistedNode,
@@ -387,7 +387,7 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
             disabled: typeof candidate.disabled === "boolean" ? candidate.disabled : undefined,
             path:
                 typeof candidate.path === "string" && candidate.path.trim()
-                    ? normalizeWorkdirRelativePath(candidate.path)
+                    ? (parseWorkdirRelativeJsonPath(candidate.path) ?? undefined)
                     : undefined,
         };
 

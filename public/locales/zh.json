@@ -171,5 +171,6 @@
   "validation.number": "{{field}} 必须是数字",
   "validation.missingOneofInput": "缺少 oneof 输入项 “{{input}}”",
   "validation.oneof": "“{{left}}” 和 “{{right}}” 只能设置其中之一",
+  "validation.invalidJsonPath": "路径必须是工作目录内的相对 .json 文件：{{path}}",
   "validation.variableDescriptionRequired": "变量说明必填"
 }

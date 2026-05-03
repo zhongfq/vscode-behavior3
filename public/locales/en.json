@@ -172,5 +172,6 @@
   "validation.number": "{{field}} must be a number",
   "validation.missingOneofInput": "Missing input slot for oneof '{{input}}'",
   "validation.oneof": "Only one of '{{left}}' and '{{right}}' can be set",
+  "validation.invalidJsonPath": "Path must be a workdir-relative .json file: {{path}}",
   "validation.variableDescriptionRequired": "Variable description is required"
 }

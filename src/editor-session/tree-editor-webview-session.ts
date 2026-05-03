@@ -22,7 +22,7 @@ import type {
     NodeDef,
 } from "../../webview/shared/message-protocol";
 import { isDocumentVersionNewer } from "../../webview/shared/document-version";
-import { normalizeWorkdirRelativePath } from "../../webview/shared/protocol";
+import { parseWorkdirRelativeJsonPath } from "../../webview/shared/protocol";
 import { stringifyJson } from "../../webview/shared/misc/stringify";
 
 /**
@@ -175,7 +175,7 @@ function uriToWorkdirRelative(uri: vscode.Uri, workdir: vscode.Uri): string | un
     if (uri.scheme !== "file") return undefined;
     const rel = path.relative(workdir.fsPath, uri.fsPath).replace(/\\/g, "/");
     if (rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
-    return normalizeWorkdirRelativePath(rel);
+    return parseWorkdirRelativeJsonPath(rel) ?? undefined;
 }
 
 function resolvePathInWorkdir(
@@ -183,13 +183,11 @@ function resolvePathInWorkdir(
     workdir: vscode.Uri,
     options?: { mustBeJson?: boolean }
 ): vscode.Uri | undefined {
-    if (!inputPath || typeof inputPath !== "string") {
+    const parsedPath = parseWorkdirRelativeJsonPath(inputPath);
+    if (!parsedPath) {
         return undefined;
     }
-    const normalized = path.normalize(inputPath);
-    const candidate = path.isAbsolute(normalized)
-        ? normalized
-        : path.join(workdir.fsPath, normalized);
+    const candidate = path.join(workdir.fsPath, parsedPath);
     if (options?.mustBeJson && path.extname(candidate).toLowerCase() !== ".json") {
         return undefined;
     }

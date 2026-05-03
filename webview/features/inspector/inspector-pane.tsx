@@ -2,7 +2,6 @@ import { Alert, Button, Flex, Skeleton } from "antd";
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { useInspectorPaneState, useRuntime } from "../../app/runtime";
-import { clearDocumentReloadConflict } from "../../stores/document-store";
 import { NodeInspectorForm } from "./node-inspector-form";
 import { TreeInspectorForm } from "./tree-inspector-form";
 
@@ -88,9 +87,7 @@ export const InspectorPane: React.FC = () => {
                 <InspectorReloadBanner
                     pendingExternalContent={pendingExternalContent}
                     onReload={() => void runtime.controller.revertDocument()}
-                    onDismiss={() => {
-                        clearDocumentReloadConflict(runtime.documentStore);
-                    }}
+                    onDismiss={() => void runtime.controller.dismissReloadConflict()}
                 />
             ) : null}
 

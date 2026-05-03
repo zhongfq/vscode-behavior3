@@ -1,6 +1,7 @@
 import type { NodeDef } from "behavior3";
 import type { NodeData, TreeData, VarDecl, WorkspaceModel } from "./misc/b3type";
 import { generateUuid } from "./stable-id";
+import { parseWorkdirRelativeJsonPath } from "./protocol";
 
 const NODE_DEF_TYPES = new Set<NodeDef["type"]>(["Action", "Decorator", "Condition", "Composite"]);
 const NODE_STATUS_VALUES = new Set<NonNullable<NonNullable<NodeDef["status"]>[number]>>([
@@ -54,6 +55,17 @@ const asStringArray = (value: unknown, label: string): string[] => {
             throw new Error(`${label}[${index}] must be a string`);
         }
         return entry;
+    });
+};
+
+const asWorkdirRelativeJsonPathArray = (value: unknown, label: string): string[] => {
+    const entries = asStringArray(value, label);
+    return entries.map((entry, index) => {
+        const normalized = parseWorkdirRelativeJsonPath(entry);
+        if (!normalized) {
+            throw new Error(`${label}[${index}] must be a workdir-relative .json path`);
+        }
+        return normalized;
     });
 };
 
@@ -328,7 +340,16 @@ const normalizeNodeData = (value: unknown, label: string): NodeData => {
             ) ?? [],
         debug: typeof record.debug === "boolean" ? record.debug : undefined,
         disabled: typeof record.disabled === "boolean" ? record.disabled : undefined,
-        path: typeof record.path === "string" && record.path.trim() ? record.path : undefined,
+        path: (() => {
+            if (record.path === undefined || record.path === "") {
+                return undefined;
+            }
+            const normalized = parseWorkdirRelativeJsonPath(record.path);
+            if (!normalized) {
+                throw new Error(`${label}.path must be a workdir-relative .json path`);
+            }
+            return normalized;
+        })(),
         $status:
             typeof record.$status === "number" && Number.isFinite(record.$status)
                 ? record.$status
@@ -409,7 +430,7 @@ export const normalizeTreeData = (value: unknown): TreeData => {
         export: typeof record.export === "boolean" ? record.export : undefined,
         group: asStringArray(record.group, "tree file group"),
         variables: {
-            imports: asStringArray(
+            imports: asWorkdirRelativeJsonPathArray(
                 variablesRecord?.imports ?? record.import,
                 variablesRecord ? "tree file variables.imports" : "tree file import"
             ),

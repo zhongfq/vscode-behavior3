@@ -8,11 +8,56 @@ import type {
     WorkdirRelativeJsonPath,
 } from "./contracts";
 
+const URI_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+const WINDOWS_ABSOLUTE_PATTERN = /^[a-zA-Z]:[\\/]/;
+
+const normalizeSeparators = (value: string): string => value.replace(/\\/g, "/");
+
+export const parseWorkdirRelativeJsonPath = (
+    value: unknown
+): WorkdirRelativeJsonPath | null => {
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const raw = value.trim();
+    if (!raw || raw.includes("\0")) {
+        return null;
+    }
+    if (
+        raw.startsWith("/") ||
+        raw.startsWith("\\") ||
+        WINDOWS_ABSOLUTE_PATTERN.test(raw) ||
+        URI_SCHEME_PATTERN.test(raw)
+    ) {
+        return null;
+    }
+
+    let normalized = normalizeSeparators(raw);
+    while (normalized.startsWith("./")) {
+        normalized = normalized.slice(2);
+    }
+    if (!normalized || normalized.startsWith("/") || normalized.endsWith("/")) {
+        return null;
+    }
+
+    const segments = normalized.split("/");
+    if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+        return null;
+    }
+    if (!normalized.toLowerCase().endsWith(".json")) {
+        return null;
+    }
+
+    return normalized as WorkdirRelativeJsonPath;
+};
+
 export const normalizeWorkdirRelativePath = (path: string): WorkdirRelativeJsonPath => {
-    return path
-        .replace(/\\/g, "/")
-        .replace(/^[/\\]+/, "")
-        .replace(/^\.\//, "");
+    const normalized = parseWorkdirRelativeJsonPath(path);
+    if (!normalized) {
+        throw new Error(`Invalid workdir-relative JSON path: ${path}`);
+    }
+    return normalized;
 };
 
 export const deriveGroupDefs = (defs: NodeDef[]): string[] => {

@@ -3,7 +3,6 @@ import { Divider, Flex, Input, Popconfirm, Space } from "antd";
 import type { FormInstance } from "antd/es/form";
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ExpressionEvaluator } from "behavior3";
 import {
     hasArgOptions,
     isBoolType,
@@ -21,11 +20,15 @@ import {
     hasDeclaredVars,
     isNodeArgArray,
     isNodeArgOptional,
-    isValidVariableName,
     isVariadic,
     parseExpr,
 } from "../../shared/misc/b3util";
 import i18n from "../../shared/misc/i18n";
+import {
+    validateExpressionEntries,
+    validateVariableReference,
+    type TreeValidationDiagnostic,
+} from "../../domain/tree-validation";
 
 export type VariableOption = {
     label: string;
@@ -271,21 +274,34 @@ export const parseArgSubmitValue = (arg: NodeArg, raw: unknown): unknown => {
 export const compareJsonValue = (left: unknown, right: unknown) =>
     JSON.stringify(left) === JSON.stringify(right);
 
+const formatValidationDiagnostic = (diagnostic: TreeValidationDiagnostic): string => {
+    switch (diagnostic.code) {
+        case "invalid-variable-name":
+            return i18n.t("node.invalidVariableName");
+        case "undefined-variable":
+            return i18n.t("node.undefinedVariable", { variable: diagnostic.variable });
+        case "invalid-expression":
+            return i18n.t("node.invalidExpression");
+        case "group-not-enabled":
+            return i18n.t("node.groupNotEnabled", { group: diagnostic.groups.join(", ") });
+        case "required-input":
+        case "required-output":
+            return i18n.t("fieldRequired", { field: diagnostic.label });
+        case "invalid-children":
+            return i18n.t("node.invalidChildren");
+        case "missing-node-def":
+            return i18n.t("node.notFound", { name: diagnostic.nodeName });
+        default:
+            return i18n.t("node.invalidValue");
+    }
+};
+
 export const validateVariableValue = (
     value: string | undefined,
     usingVars: Record<string, VarDecl> | null
 ): string | null => {
-    if (!value) {
-        return null;
-    }
-    if (!isValidVariableName(value)) {
-        return i18n.t("node.invalidVariableName");
-    }
-    const declaredVars = hasDeclaredVars(usingVars) ? usingVars : null;
-    if (declaredVars && !declaredVars[value]) {
-        return i18n.t("node.undefinedVariable", { variable: value });
-    }
-    return null;
+    const diagnostic = validateVariableReference(value, usingVars, "input");
+    return diagnostic ? formatValidationDiagnostic(diagnostic) : null;
 };
 
 export const validateExpressionValues = (
@@ -293,32 +309,8 @@ export const validateExpressionValues = (
     usingVars: Record<string, VarDecl> | null,
     checkExpr: boolean
 ): string | null => {
-    const declaredVars = hasDeclaredVars(usingVars) ? usingVars : null;
-
-    for (const entry of entries) {
-        if (!entry) {
-            continue;
-        }
-
-        const variables = parseExpr(entry);
-        for (const variable of variables) {
-            if (declaredVars && !declaredVars[variable]) {
-                return i18n.t("node.undefinedVariable", { variable });
-            }
-        }
-
-        if (checkExpr) {
-            try {
-                if (!new ExpressionEvaluator(entry).dryRun()) {
-                    return i18n.t("node.invalidExpression");
-                }
-            } catch {
-                return i18n.t("node.invalidExpression");
-            }
-        }
-    }
-
-    return null;
+    const diagnostic = validateExpressionEntries(entries, usingVars, checkExpr);
+    return diagnostic ? formatValidationDiagnostic(diagnostic) : null;
 };
 
 export const filterOptionByLabel = (input: string, option?: { label?: React.ReactNode }) =>

@@ -18,12 +18,16 @@ import {
     VarDecl,
     VERSION,
 } from "./b3type";
-import { ExpressionEvaluator } from "behavior3";
 import { logger } from "./logger";
 import { readJson, readTreeFromFile } from "./util";
 import { createNode, dfs, isSubtreeRoot, subtreeNeedsMissingIds } from "./tree-model";
 import { normalizeNodeDefCollection } from "../schema";
 import { generateUuid } from "../stable-id";
+import {
+    validateExpressionEntries,
+    validateVariableReference,
+    type TreeValidationDiagnostic,
+} from "../../domain/tree-validation";
 
 /**
  * Shared editor/runtime utilities plus reusable validation helpers.
@@ -238,6 +242,29 @@ type ErrorPrinter = (msg: string) => void;
 
 const formatError = (data: NodeData, msg: string) => {
     return `check ${data.id}|${data.name}: ${msg}`;
+};
+
+const formatBuildDiagnostic = (diagnostic: TreeValidationDiagnostic): string => {
+    switch (diagnostic.code) {
+        case "invalid-variable-name":
+            return `${diagnostic.field} field '${diagnostic.variable}' is not a valid variable name,should start with a letter or underscore`;
+        case "undefined-variable":
+            return `${diagnostic.field} variable '${diagnostic.variable}' is not defined`;
+        case "invalid-expression":
+            return `expr '${diagnostic.expression}' is not valid`;
+        case "group-not-enabled":
+            return `node group '${diagnostic.groups.join(", ")}' is not enabled`;
+        case "required-input":
+            return `intput field '${diagnostic.label}' is required`;
+        case "required-output":
+            return `output field '${diagnostic.label}' is required`;
+        case "invalid-children":
+            return `expect ${diagnostic.expected} children, but got ${diagnostic.actual}`;
+        case "missing-node-def":
+            return `undefined node: ${diagnostic.nodeName}`;
+        default:
+            return "invalid node data";
+    }
 };
 
 export const getNodeArgRawType = (arg: NodeArg) => {
@@ -458,8 +485,6 @@ const checkNodeDataWithState = (
     }
 
     let hasError = false;
-    const declaredVars = hasDeclaredVars(state.usingVars) ? state.usingVars : null;
-
     if (conf.group) {
         const groups = Array.isArray(conf.group) ? conf.group : [conf.group];
         if (!groups.some((g) => state.usingGroups?.[g])) {
@@ -468,22 +493,18 @@ const checkNodeDataWithState = (
         }
     }
 
-    if (declaredVars) {
-        if (data.input) {
-            for (const v of data.input) {
-                if (v && !declaredVars[v]) {
-                    error(`input variable '${v}' is not defined`);
-                    hasError = true;
-                }
-            }
+    for (const value of data.input ?? []) {
+        const diagnostic = validateVariableReference(value, state.usingVars, "input");
+        if (diagnostic) {
+            error(formatBuildDiagnostic(diagnostic));
+            hasError = true;
         }
-        if (data.output) {
-            for (const v of data.output) {
-                if (v && !declaredVars[v]) {
-                    error(`output variable '${v}' is not defined`);
-                    hasError = true;
-                }
-            }
+    }
+    for (const value of data.output ?? []) {
+        const diagnostic = validateVariableReference(value, state.usingVars, "output");
+        if (diagnostic) {
+            error(formatBuildDiagnostic(diagnostic));
+            hasError = true;
         }
     }
 
@@ -491,42 +512,14 @@ const checkNodeDataWithState = (
         for (const arg of conf.args) {
             const value = data.args?.[arg.name] as string | string[] | undefined;
             if (isExprType(arg.type) && value) {
-                if (declaredVars) {
-                    const vars: string[] = [];
-                    if (typeof value === "string") {
-                        vars.push(...parseExprWithCache(value, state.parsedExprs));
-                    } else if (Array.isArray(value)) {
-                        for (const v of value) {
-                            vars.push(...parseExprWithCache(v, state.parsedExprs));
-                        }
-                    }
-                    for (const v of vars) {
-                        if (v && !declaredVars[v]) {
-                            error(`expr variable '${arg.name}' is not defined`);
-                            hasError = true;
-                        }
-                    }
-                }
-                if (state.checkExpr) {
-                    const exprs: string[] = [];
-                    if (typeof value === "string") {
-                        exprs.push(value);
-                    } else if (Array.isArray(value)) {
-                        for (const v of value) {
-                            exprs.push(v);
-                        }
-                    }
-                    for (const expr of exprs) {
-                        try {
-                            if (!new ExpressionEvaluator(expr).dryRun()) {
-                                error(`expr '${expr}' is not valid`);
-                                hasError = true;
-                            }
-                        } catch (e) {
-                            error(`expr '${expr}' is not valid`);
-                            hasError = true;
-                        }
-                    }
+                const exprs = Array.isArray(value) ? value : [value];
+                exprs.forEach((expr) => {
+                    parseExprWithCache(expr, state.parsedExprs);
+                });
+                const diagnostic = validateExpressionEntries(exprs, state.usingVars, state.checkExpr);
+                if (diagnostic) {
+                    error(formatBuildDiagnostic(diagnostic));
+                    hasError = true;
                 }
             }
         }
@@ -546,13 +539,6 @@ const checkNodeDataWithState = (
             }
             if (!data.input[i]) {
                 data.input[i] = "";
-            }
-            if (data.input[i] && !isValidVariableName(data.input[i])) {
-                error(
-                    `input field '${data.input[i]}' is not a valid variable name,` +
-                        `should start with a letter or underscore`
-                );
-                hasError = true;
             }
             if (!isValidInputOrOutput(conf.input, data.input, i)) {
                 error(`intput field '${conf.input[i]}' is required`);
@@ -576,13 +562,6 @@ const checkNodeDataWithState = (
             }
             if (!data.output[i]) {
                 data.output[i] = "";
-            }
-            if (data.output[i] && !isValidVariableName(data.output[i])) {
-                error(
-                    `output field '${data.output[i]}' is not a valid variable name,` +
-                        `should start with a letter or underscore`
-                );
-                hasError = true;
             }
             if (!isValidInputOrOutput(conf.output, data.output, i)) {
                 error(`output field '${conf.output[i]}' is required`);

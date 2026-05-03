@@ -16,6 +16,7 @@ type DocumentCommandKeys =
     | "applyNodeDefs"
     | "applyHostVars"
     | "markSubtreeChanged"
+    | "dismissReloadConflict"
     | "undo"
     | "redo"
     | "refreshGraph"
@@ -120,6 +121,10 @@ export const createDocumentCommands = (
             await runtime.syncReachableSubtreeSources();
             await runtime.rebuildGraph({ preserveSelection: true });
             runtime.scheduleTreeSelected(true);
+        },
+
+        async dismissReloadConflict() {
+            clearDocumentReloadConflict(deps.documentStore);
         },
 
         async undo() {

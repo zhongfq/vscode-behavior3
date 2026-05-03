@@ -9,7 +9,7 @@ import {
     hasMissingStableIds,
     parsePersistedTreeContent,
 } from "./tree";
-import { normalizeWorkdirRelativePath } from "./protocol";
+import { parseWorkdirRelativeJsonPath } from "./protocol";
 
 export const loadSubtreeSourceCache = async (params: {
     root: PersistedNodeModel;
@@ -24,8 +24,11 @@ export const loadSubtreeSourceCache = async (params: {
     const cache: Record<WorkdirRelativeJsonPath, SubtreeSourceCacheEntry> = {};
     const visited = new Set<WorkdirRelativeJsonPath>();
 
-    const loadPath = async (path: WorkdirRelativeJsonPath) => {
-        const normalizedPath = normalizeWorkdirRelativePath(path);
+    const loadPath = async (path: string) => {
+        const normalizedPath = parseWorkdirRelativeJsonPath(path);
+        if (!normalizedPath) {
+            return;
+        }
         if (visited.has(normalizedPath)) {
             return;
         }
