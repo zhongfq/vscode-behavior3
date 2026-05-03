@@ -1,8 +1,14 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import {
+    normalizeTreeContentForWrite,
+    readFileContentFromDisk,
+    TreeEditorDocument,
+} from "./editor-session/document-sync";
 import { getBehavior3OutputChannel } from "./output-channel";
 import { mapNodeDefsIconsForWebview } from "./node-def-icons";
+import { ProjectIndex, type VarDeclResult } from "./editor-session/project-index";
 import {
     getBehaviorProjectRootFsPath,
     getResolvedB3SettingDir,
@@ -12,9 +18,10 @@ import {
     watchWorkspaceFile,
 } from "./setting-resolver";
 import type { EditorToHostMessage, HostToEditorMessage, NodeDef } from "./types";
-import { VERSION } from "../webview/shared/misc/b3type";
+import { isDocumentVersionNewer } from "../webview/shared/document-version";
+import { normalizeWorkdirRelativePath } from "../webview/shared/protocol";
 import { stringifyJson } from "../webview/shared/misc/stringify";
-import { basenameWithoutExt, readTree, writeTree } from "../webview/shared/misc/util";
+import { writeTree } from "../webview/shared/misc/util";
 
 /**
  * Read the Vite-generated HTML for the active webview entry and rewrite all
@@ -49,15 +56,7 @@ function buildWebviewHtml(
 }
 
 function isFileVersionNewer(fileVersion: string): boolean {
-    const fParts = fileVersion.split(".").map(Number);
-    const eParts = VERSION.split(".").map(Number);
-    for (let i = 0; i < 3; i++) {
-        const f = fParts[i] ?? 0;
-        const e = eParts[i] ?? 0;
-        if (f > e) return true;
-        if (f < e) return false;
-    }
-    return false;
+    return isDocumentVersionNewer(fileVersion);
 }
 
 function getWorkdir(documentUri: vscode.Uri): vscode.Uri {
@@ -73,12 +72,6 @@ interface EditorLiveSettings {
     subtreeEditable: boolean;
     language: "zh" | "en";
     nodeColors?: Record<string, string>;
-}
-
-interface SuppressedDocumentChange {
-    raw: string;
-    normalizedLineEndings: string;
-    canonicalJson: string | null;
 }
 
 interface TreeEditorSessionState {
@@ -148,12 +141,11 @@ function getNewerVersionMessage(
 }
 
 async function parseUsingVarsFromContent(
-    workdir: vscode.Uri,
+    projectIndex: ProjectIndex,
     content: string
 ): Promise<VarDeclResult | undefined> {
     try {
-        const treeJson = JSON.parse(content) as TreeLike;
-        return (await buildUsingVars(workdir, treeJson)) ?? undefined;
+        return (await projectIndex.buildUsingVars(content)) ?? undefined;
     } catch {
         return undefined;
     }
@@ -186,141 +178,11 @@ async function readWorkspaceFileContent(fileUri: vscode.Uri): Promise<string> {
     return Buffer.from(raw).toString("utf-8");
 }
 
-async function readFileContentFromDisk(fileUri: vscode.Uri): Promise<string> {
-    const raw = await vscode.workspace.fs.readFile(fileUri);
-    return Buffer.from(raw).toString("utf-8");
-}
-
 function clearRefreshTimer(timer: ReturnType<typeof setTimeout> | undefined): undefined {
     if (timer) {
         clearTimeout(timer);
     }
     return undefined;
-}
-
-function normalizeLineEndings(content: string): string {
-    return content.replace(/\r\n/g, "\n");
-}
-
-function normalizeJsonContent(content: string): string | null {
-    try {
-        return stringifyJson(JSON.parse(content), { indent: 2 });
-    } catch {
-        return null;
-    }
-}
-
-function normalizeJsonContentForWrite(content: string): string {
-    return normalizeJsonContent(content) ?? content;
-}
-
-function normalizeTreeContentForWrite(content: string, filePath: string): string {
-    try {
-        const tree = readTree(content);
-        const name = basenameWithoutExt(filePath);
-        tree.name = name;
-        return writeTree(tree, name);
-    } catch {
-        return normalizeJsonContentForWrite(content);
-    }
-}
-
-function buildSuppressedDocumentChange(content: string): SuppressedDocumentChange {
-    return {
-        raw: content,
-        normalizedLineEndings: normalizeLineEndings(content),
-        canonicalJson: normalizeJsonContent(content),
-    };
-}
-
-function suppressedDocumentChangesMatch(
-    left: SuppressedDocumentChange,
-    right: SuppressedDocumentChange
-): boolean {
-    if (left.raw === right.raw) {
-        return true;
-    }
-
-    if (left.normalizedLineEndings === right.normalizedLineEndings) {
-        return true;
-    }
-
-    return (
-        left.canonicalJson !== null &&
-        right.canonicalJson !== null &&
-        left.canonicalJson === right.canonicalJson
-    );
-}
-
-class TreeEditorDocument implements vscode.CustomDocument {
-    private _content: string;
-    private _isDirty: boolean;
-    private _ownFileWrites: SuppressedDocumentChange[] = [];
-
-    constructor(
-        public readonly uri: vscode.Uri,
-        content: string,
-        opts?: { dirty?: boolean }
-    ) {
-        this._content = content;
-        this._isDirty = opts?.dirty ?? false;
-    }
-
-    get content(): string {
-        return this._content;
-    }
-
-    get isDirty(): boolean {
-        return this._isDirty;
-    }
-
-    updateContent(
-        content: string,
-        opts?: {
-            markDirty?: boolean;
-            markSaved?: boolean;
-        }
-    ): boolean {
-        const changed = this._content !== content;
-        this._content = content;
-
-        if (opts?.markSaved) {
-            this._isDirty = false;
-        } else if (opts?.markDirty !== false && changed) {
-            this._isDirty = true;
-        }
-
-        return changed;
-    }
-
-    markSaved(content = this._content): void {
-        this._content = content;
-        this._isDirty = false;
-    }
-
-    rememberOwnWrite(content: string): void {
-        this._ownFileWrites.push(buildSuppressedDocumentChange(content));
-    }
-
-    consumeOwnWrite(content: string): boolean {
-        const actualChange = buildSuppressedDocumentChange(content);
-        const index = this._ownFileWrites.findIndex((change) =>
-            suppressedDocumentChangesMatch(change, actualChange)
-        );
-        if (index < 0) {
-            return false;
-        }
-        this._ownFileWrites.splice(index, 1);
-        return true;
-    }
-
-    clearOwnWrites(): void {
-        this._ownFileWrites = [];
-    }
-
-    dispose(): void {
-        this.clearOwnWrites();
-    }
 }
 
 function disposeAll(disposables: vscode.Disposable[]): void {
@@ -480,6 +342,7 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
         const projectRootUri = vscode.Uri.file(
             getBehaviorProjectRootFsPath(document.uri, workspaceFolderUri)
         );
+        const projectIndex = new ProjectIndex(projectRootUri);
         const resolveLiveSettings = createLiveSettingsResolver(workspaceFolderUri, document.uri);
         const [nodeDefs, settingDir, currentSettings] = await Promise.all([
             resolveNodeDefs(workspaceFolderUri, document.uri),
@@ -551,6 +414,12 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
             state.cachedSubtreeRefs = null;
         };
 
+        const refreshTrackedSubtreeRefs = async () => {
+            state.cachedSubtreeRefs = await projectIndex.getTransitiveSubtreeRelativePaths(
+                document.content
+            );
+        };
+
         const updateFileVersionState = (
             content: string,
             opts?: { showWarning?: boolean }
@@ -572,19 +441,9 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
             }
         };
 
-        const getTrackedSubtreeRefs = (): Set<string> => {
-            if (!state.cachedSubtreeRefs) {
-                state.cachedSubtreeRefs = getTransitiveSubtreeRelativePaths(
-                    projectRootUri.fsPath,
-                    document.content
-                );
-            }
-            return state.cachedSubtreeRefs;
-        };
-
         const isTrackedSubtreeDocument = (uri: vscode.Uri): boolean => {
             const rel = uriToWorkdirRelative(uri, projectRootUri);
-            return !!rel && getTrackedSubtreeRefs().has(rel);
+            return !!rel && Boolean(state.cachedSubtreeRefs?.has(rel));
         };
 
         const flushParentSubtreeRefresh = () => {
@@ -629,6 +488,7 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
             }
 
             invalidateSubtreeRefs();
+            void refreshTrackedSubtreeRefs();
             updateFileVersionState(normalizedContent);
             this._onDidChangeCustomDocument.fire({ document });
             return true;
@@ -656,8 +516,9 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
             updateFileVersionState(content, { showWarning: true });
 
             const [allFiles, initUsingVars] = await Promise.all([
-                collectAllFiles(projectRootUri),
-                parseUsingVarsFromContent(projectRootUri, content),
+                projectIndex.getAllFiles(),
+                parseUsingVarsFromContent(projectIndex, content),
+                refreshTrackedSubtreeRefs(),
             ]);
 
             await postMessage({
@@ -781,6 +642,7 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
 
                 if (!document.isDirty) {
                     document.updateContent(content, { markSaved: true, markDirty: false });
+                    void refreshTrackedSubtreeRefs();
                     updateFileVersionState(content, { showWarning: true });
                     await postMessage({
                         type: "documentReloaded",
@@ -799,9 +661,10 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
         const handleTreeSelectedMessage = async (
             msg: Extract<EditorToHostMessage, { type: "treeSelected" }>
         ): Promise<void> => {
+            const content = stringifyJson(msg.tree, { indent: 2 });
             const [allFiles, result] = await Promise.all([
-                collectAllFiles(projectRootUri),
-                buildUsingVars(projectRootUri, msg.tree as TreeLike | null),
+                projectIndex.getAllFiles(),
+                parseUsingVarsFromContent(projectIndex, content),
             ]);
 
             if (result) {
@@ -828,7 +691,7 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
 
             try {
                 const content = await readWorkspaceFileContent(fileUri);
-                if (msg.requestId === "open-subtree") {
+                if (msg.openIfSubtree) {
                     try {
                         await vscode.commands.executeCommand(
                             "vscode.openWith",
@@ -993,11 +856,13 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
             mainDocumentWatcher,
             subtreeFileWatcher,
             vscode.workspace.onDidChangeTextDocument((event) => {
+                projectIndex.invalidateFile(event.document.uri);
                 if (event.contentChanges.length > 0) {
                     scheduleTrackedSubtreeRefresh(event.document.uri);
                 }
             }),
             vscode.workspace.onDidSaveTextDocument((savedDocument) => {
+                projectIndex.invalidateFile(savedDocument.uri);
                 flushTrackedSubtreeRefresh(savedDocument.uri);
             }),
             vscode.window.onDidChangeActiveColorTheme(() => {
@@ -1065,240 +930,41 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
 
         sessionDisposables.push(
             mainDocumentWatcher.onDidChange(() => {
+                projectIndex.invalidateFile(document.uri);
                 void handleMainDocumentFileChange();
             }),
             mainDocumentWatcher.onDidCreate(() => {
+                projectIndex.invalidateFile(document.uri);
                 void handleMainDocumentFileChange();
             }),
             subtreeFileWatcher.onDidChange((uri) => {
+                projectIndex.invalidateFile(uri);
                 scheduleTrackedSubtreeRefresh(uri);
             }),
             subtreeFileWatcher.onDidCreate((uri) => {
+                projectIndex.invalidateFile(uri);
                 scheduleTrackedSubtreeRefresh(uri);
             }),
             subtreeFileWatcher.onDidDelete((uri) => {
+                projectIndex.invalidateFile(uri);
                 scheduleTrackedSubtreeRefresh(uri);
             })
         );
 
         webviewPanel.onDidDispose(() => {
             state.subtreeRefreshTimer = clearRefreshTimer(state.subtreeRefreshTimer);
+            projectIndex.clear();
             TreeEditorProvider.activeWebviews.delete(activeWebviewEntry);
             disposeAll(sessionDisposables);
         });
     }
 }
 
-interface TreeLike {
-    vars?: Array<{ name: string; desc?: string }>;
-    import?: string[] | Array<{ path: string; vars?: Array<{ name: string; desc?: string }> }>;
-    root?: TreeNodeLike;
-}
-
-interface TreeNodeLike {
-    path?: string;
-    children?: TreeNodeLike[];
-}
-
-interface TreeFileLike {
-    vars?: Array<{ name: string; desc?: string }>;
-    import?: string[];
-    root?: TreeNodeLike;
-}
-
-/**
- * Collect all behavior tree .json files under the workspace directory.
- */
-async function collectAllFiles(workdir: vscode.Uri): Promise<string[]> {
-    const allFiles: string[] = [];
-    try {
-        const uris = await vscode.workspace.findFiles(
-            new vscode.RelativePattern(workdir, "**/*.json"),
-            "**/node_modules/**"
-        );
-        for (const uri of uris) {
-            allFiles.push(path.relative(workdir.fsPath, uri.fsPath).replace(/\\/g, "/"));
-        }
-        allFiles.sort();
-    } catch {
-        // workspace may not be open
-    }
-    return allFiles;
-}
-
-function collectSubtreePaths(node: TreeNodeLike | undefined): string[] {
-    if (!node) return [];
-    const paths: string[] = [];
-    const stack: TreeNodeLike[] = [node];
-    while (stack.length) {
-        const cur = stack.pop()!;
-        if (cur.path) paths.push(cur.path);
-        cur.children?.forEach((c) => stack.push(c));
-    }
-    return paths;
-}
-
-function normalizePathKey(p: string): string {
-    return p.replace(/\\/g, "/").replace(/^[/\\]+/, "");
-}
-
-function readTreeFileCached(
-    workdirFs: string,
-    relativePath: string,
-    cache: Map<string, TreeFileLike | null>
-): TreeFileLike | null {
-    const rel = normalizePathKey(relativePath);
-    if (cache.has(rel)) {
-        return cache.get(rel) ?? null;
-    }
-    try {
-        const raw = fs.readFileSync(path.join(workdirFs, rel), "utf-8");
-        const fileTree = JSON.parse(raw) as TreeFileLike;
-        cache.set(rel, fileTree);
-        return fileTree;
-    } catch {
-        cache.set(rel, null);
-        return null;
-    }
-}
-
-/** Top-level `vars` in one tree JSON file (for Inspector rows; no recursion). */
-function getLocalVarsFromTreeFile(
-    workdirFs: string,
-    relativePath: string,
-    cache: Map<string, TreeFileLike | null>
-): Array<{ name: string; desc: string }> {
-    const fileTree = readTreeFileCached(workdirFs, relativePath, cache);
-    if (!fileTree) {
-        return [];
-    }
-    return (fileTree.vars ?? [])
-        .filter((v) => v.name)
-        .map((v) => ({ name: v.name, desc: v.desc ?? "" }));
-}
-
-/**
- * All `import` JSON paths reachable from the main tree's import list (BFS), for Inspector "导入变量".
- */
-function collectOrderedTransitiveImportPaths(
-    workdirFs: string,
-    seedImports: string[],
-    cache: Map<string, TreeFileLike | null>
-): string[] {
-    const ordered: string[] = [];
-    const seen = new Set<string>();
-    const queue: string[] = [];
-    for (const s of seedImports) {
-        const n = normalizePathKey(s);
-        if (!seen.has(n)) {
-            seen.add(n);
-            queue.push(n);
-        }
-    }
-    while (queue.length) {
-        const rel = queue.shift()!;
-        ordered.push(rel);
-        const fileTree = readTreeFileCached(workdirFs, rel, cache);
-        if (!fileTree) {
-            continue;
-        }
-        for (const imp of fileTree.import ?? []) {
-            if (typeof imp === "string") {
-                const n = normalizePathKey(imp);
-                if (!seen.has(n)) {
-                    seen.add(n);
-                    queue.push(n);
-                }
-            }
-        }
-    }
-    return ordered;
-}
-
-/**
- * All subtree JSON paths reachable from `root` (BFS), for Inspector "子树变量" (matches desktop transitive view).
- */
-function collectOrderedTransitiveSubtreePaths(
-    workdirFs: string,
-    root: TreeNodeLike | undefined,
-    cache: Map<string, TreeFileLike | null>
-): string[] {
-    const ordered: string[] = [];
-    const seen = new Set<string>();
-    const queue: string[] = [];
-    for (const p of collectSubtreePaths(root)) {
-        const n = normalizePathKey(p);
-        if (!seen.has(n)) {
-            seen.add(n);
-            queue.push(n);
-        }
-    }
-    while (queue.length) {
-        const rel = queue.shift()!;
-        ordered.push(rel);
-        const sub = readTreeFileCached(workdirFs, rel, cache);
-        if (!sub) {
-            continue;
-        }
-        for (const p of collectSubtreePaths(sub.root)) {
-            const n = normalizePathKey(p);
-            if (!seen.has(n)) {
-                seen.add(n);
-                queue.push(n);
-            }
-        }
-    }
-    return ordered;
-}
-
-/**
- * Subtree paths referenced by the main tree JSON, transitively (nested subtree files).
- */
-function getTransitiveSubtreeRelativePaths(workdirFs: string, mainContent: string): Set<string> {
-    const pending = new Set<string>();
-    const loaded = new Set<string>();
-    let tree: TreeLike;
-    try {
-        tree = JSON.parse(mainContent) as TreeLike;
-    } catch {
-        return loaded;
-    }
-    const collectFromMemory = (node: TreeNodeLike | undefined) => {
-        if (!node) return;
-        if (node.path) pending.add(normalizePathKey(node.path));
-        node.children?.forEach(collectFromMemory);
-    };
-    collectFromMemory(tree.root);
-    while (pending.size > 0) {
-        const relPath = pending.values().next().value as string;
-        pending.delete(relPath);
-        if (loaded.has(relPath)) continue;
-        loaded.add(relPath);
-        try {
-            const fullPath = path.join(workdirFs, relPath);
-            const raw = fs.readFileSync(fullPath, "utf-8");
-            const sub = JSON.parse(raw) as TreeLike;
-            const discover = (n: TreeNodeLike | undefined) => {
-                if (!n) return;
-                if (n.path) {
-                    const q = normalizePathKey(n.path);
-                    if (!loaded.has(q)) pending.add(q);
-                }
-                n.children?.forEach(discover);
-            };
-            discover(sub.root);
-        } catch {
-            /* missing or invalid subtree file */
-        }
-    }
-    return loaded;
-}
-
 function uriToWorkdirRelative(uri: vscode.Uri, workdir: vscode.Uri): string | undefined {
     if (uri.scheme !== "file") return undefined;
     const rel = path.relative(workdir.fsPath, uri.fsPath).replace(/\\/g, "/");
     if (rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
-    return normalizePathKey(rel);
+    return normalizeWorkdirRelativePath(rel);
 }
 
 function resolvePathInWorkdir(
@@ -1321,98 +987,6 @@ function resolvePathInWorkdir(
         return undefined;
     }
     return vscode.Uri.file(candidate);
-}
-
-interface VarDeclResult {
-    usingVars: Record<string, { name: string; desc: string }>;
-    importDecls: Array<{ path: string; vars: Array<{ name: string; desc: string }> }>;
-    subtreeDecls: Array<{ path: string; vars: Array<{ name: string; desc: string }> }>;
-}
-
-/**
- * Read vars from a single file, returning them as a list (without merging into global map).
- */
-function readVarsFromFile(
-    relativePath: string,
-    workdirFs: string,
-    visitedForGlobal: Set<string>,
-    globalVars: Record<string, { name: string; desc: string }>,
-    cache: Map<string, TreeFileLike | null>
-): Array<{ name: string; desc: string }> {
-    const localVars: Array<{ name: string; desc: string }> = [];
-    const relKey = normalizePathKey(relativePath);
-    if (visitedForGlobal.has(relKey)) return localVars;
-    visitedForGlobal.add(relKey);
-
-    const fileTree = readTreeFileCached(workdirFs, relKey, cache);
-    if (!fileTree) {
-        return localVars;
-    }
-    for (const v of fileTree.vars ?? []) {
-        if (v.name) {
-            localVars.push({ name: v.name, desc: v.desc ?? "" });
-            if (!globalVars[v.name]) globalVars[v.name] = { name: v.name, desc: v.desc ?? "" };
-        }
-    }
-    // Also recurse into transitive imports for global vars
-    for (const imp of fileTree.import ?? []) {
-        if (typeof imp === "string") {
-            readVarsFromFile(imp, workdirFs, visitedForGlobal, globalVars, cache);
-        }
-    }
-    // Nested subtree files referenced inside this tree (same as collectSubtreePaths on main doc)
-    for (const subPath of collectSubtreePaths(fileTree.root)) {
-        readVarsFromFile(subPath, workdirFs, visitedForGlobal, globalVars, cache);
-    }
-    return localVars;
-}
-
-/**
- * Build the usingVars dictionary + full ImportDecl data for display in Inspector.
- */
-async function buildUsingVars(
-    workdir: vscode.Uri,
-    tree: TreeLike | null
-): Promise<VarDeclResult | null> {
-    if (!tree) return null;
-
-    const usingVars: Record<string, { name: string; desc: string }> = {};
-    const readCache = new Map<string, TreeFileLike | null>();
-
-    for (const v of tree.vars ?? []) {
-        if (v.name) usingVars[v.name] = { name: v.name, desc: v.desc ?? "" };
-    }
-
-    const visited = new Set<string>();
-
-    const importSeeds = (tree.import ?? []).filter((x): x is string => typeof x === "string");
-    for (const imp of importSeeds) {
-        readVarsFromFile(imp, workdir.fsPath, visited, usingVars, readCache);
-    }
-
-    for (const subtreePath of collectSubtreePaths(tree.root)) {
-        readVarsFromFile(subtreePath, workdir.fsPath, visited, usingVars, readCache);
-    }
-
-    const importDecls = collectOrderedTransitiveImportPaths(
-        workdir.fsPath,
-        importSeeds,
-        readCache
-    ).map((p) => ({
-        path: p,
-        vars: getLocalVarsFromTreeFile(workdir.fsPath, p, readCache),
-    }));
-
-    const subtreeDecls = collectOrderedTransitiveSubtreePaths(
-        workdir.fsPath,
-        tree.root,
-        readCache
-    ).map((p) => ({
-        path: p,
-        vars: getLocalVarsFromTreeFile(workdir.fsPath, p, readCache),
-    }));
-
-    return { usingVars, importDecls, subtreeDecls };
 }
 
 function getVSCodeTheme(): "dark" | "light" {

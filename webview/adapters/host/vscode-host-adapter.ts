@@ -246,12 +246,13 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
 
         readFile(path: WorkdirRelativeJsonPath, opts) {
             return new Promise<ReadFileResponse>((resolve) => {
-                const requestId = registerPendingRequest(
-                    "readFile",
-                    resolve,
-                    opts?.openIfSubtree ? "open-subtree" : createRequestId()
-                );
-                postMessage({ type: "readFile", requestId, path });
+                const requestId = registerPendingRequest("readFile", resolve);
+                postMessage({
+                    type: "readFile",
+                    requestId,
+                    path,
+                    openIfSubtree: opts?.openIfSubtree,
+                });
             });
         },
 

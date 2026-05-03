@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { logger } from "../webview/shared/misc/logger";
+import { parseNodeDefsContent, parseWorkspaceModelContent } from "../webview/shared/schema";
 import type { NodeDef } from "./types";
 
 /** True if `dir` is the workspace root or a subdirectory of it. */
@@ -157,7 +158,7 @@ export async function resolveNodeDefs(
     try {
         const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
         const text = Buffer.from(raw).toString("utf-8");
-        return JSON.parse(text) as NodeDef[];
+        return parseNodeDefsContent(text) as NodeDef[];
     } catch (e) {
         logger.error("[behavior3] failed to load setting file:", filePath, e);
         return [];
@@ -189,10 +190,8 @@ export async function resolveWorkspaceNodeColors(
 
     try {
         const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(wfPath));
-        const data = JSON.parse(Buffer.from(raw).toString("utf-8")) as {
-            settings?: { nodeColors?: Record<string, string> };
-        };
-        const nc = data.settings?.nodeColors;
+        const data = parseWorkspaceModelContent(Buffer.from(raw).toString("utf-8"));
+        const nc = data.settings.nodeColors;
         return nc && Object.keys(nc).length > 0 ? nc : undefined;
     } catch {
         return undefined;

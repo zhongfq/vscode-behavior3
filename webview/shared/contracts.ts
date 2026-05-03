@@ -316,7 +316,7 @@ export interface GraphEventHandlers {
 }
 
 export interface GraphAdapter {
-    mount(container: HTMLElement, handlers: GraphEventHandlers): Promise<void>;
+    mount(container: object, handlers: GraphEventHandlers): Promise<void>;
     unmount(): void;
     render(model: ResolvedGraphModel): Promise<void>;
     applySelection(selection: GraphSelectionState): Promise<void>;

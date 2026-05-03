@@ -146,7 +146,8 @@
     "dev": "npm run watch:webview",
     "package": "vsce package",
     "postinstall": "git submodule update --init --recursive",
-    "check": "tsc --noEmit && tsc --project tsconfig.webview.json --noEmit"
+    "check": "tsc --noEmit && tsc --project tsconfig.webview.json --noEmit",
+    "test:shared": "node test/run-tests.js"
   },
   "devDependencies": {
     "@types/node": "^20.19.37",

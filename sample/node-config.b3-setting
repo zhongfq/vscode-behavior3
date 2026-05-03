@@ -18,7 +18,7 @@
     "args": [
       {
         "name": "value",
-        "type": "code",
+        "type": "expr",
         "desc": "值"
       }
     ],
@@ -251,7 +251,7 @@
       {
         "name": "value",
         "desc": "值",
-        "type": "code?"
+        "type": "expr?"
       },
       {
         "name": "gt",
@@ -388,7 +388,7 @@
       {
         "name": "check",
         "desc": "检查",
-        "type": "code"
+        "type": "expr"
       },
       {
         "name": "name",

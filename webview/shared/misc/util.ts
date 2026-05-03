@@ -4,6 +4,7 @@ import { VERSION, type TreeData, type WorkspaceModel } from "./b3type";
 import { getFs } from "./b3fs";
 import { createNode, dfs } from "./b3util";
 import b3path from "./b3path";
+import { parseTreeContent, parseWorkspaceModelContent } from "../schema";
 import { stringifyJson } from "./stringify";
 
 export const nanoid = customAlphabet(
@@ -40,28 +41,12 @@ export const writeTree = (data: TreeData, name: string): string => {
 };
 
 const applyTreeDefaults = (data: TreeData): TreeData => {
-    data.version = data.version ?? VERSION;
-    data.prefix = data.prefix ?? "";
-    data.group = data.group || [];
-    data.import = data.import || [];
-    data.vars = data.vars || [];
-    data.root = data.root || {};
-    data.$override = data.$override || {};
-    data.custom = data.custom || {};
-
-    dfs(data.root, (node) => {
-        node.id = node.id.toString();
-        if (!node.$id) {
-            node.$id = nanoid();
-        }
-    });
-
     return data;
 };
 
 /** Parse tree JSON from editor / postMessage string content. */
 export const readTree = (text: string): TreeData => {
-    return applyTreeDefaults(JSON.parse(text) as TreeData);
+    return applyTreeDefaults(parseTreeContent(text));
 };
 
 // ─── Node-only (after setFs) — used by buildProject / createBuildData ───
@@ -77,9 +62,8 @@ export const writeJson = <T>(path: string, data: T) => {
 };
 
 export const readWorkspace = (path: string) => {
-    const data = readJson(path) as WorkspaceModel;
-    data.settings = data.settings ?? {};
-    return data;
+    const str = getFs().readFileSync(path, "utf-8");
+    return parseWorkspaceModelContent(str) as WorkspaceModel;
 };
 
 /** Load tree from disk path (extension build). */

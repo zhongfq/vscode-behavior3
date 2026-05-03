@@ -16,7 +16,7 @@ export type EditorToHostMessage =
     | { type: "treeSelected"; tree: unknown }
     | { type: "requestSetting" }
     | { type: "build" }
-    | { type: "readFile"; requestId: string; path: string }
+    | { type: "readFile"; requestId: string; path: string; openIfSubtree?: boolean }
     | { type: "saveSubtree"; requestId: string; path: string; content: string }
     /** Right-click → Save as subtree: pick path under workdir and write JSON from webview. */
     | { type: "saveSubtreeAs"; requestId: string; content: string; suggestedBaseName: string }

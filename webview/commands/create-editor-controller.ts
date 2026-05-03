@@ -1,5 +1,6 @@
 import type { StoreApi } from "zustand/vanilla";
 import { VERSION } from "../shared/misc/b3type";
+import { compareDocumentVersion } from "../shared/document-version";
 import { computeNodeOverride } from "../shared/misc/b3util";
 import { message } from "../shared/misc/hooks";
 import i18n from "../shared/misc/i18n";
@@ -30,13 +31,12 @@ import type {
 import { normalizeWorkdirRelativePath, deriveGroupDefs } from "../shared/protocol";
 import {
     clonePersistedTree,
-    collectReachableSubtreePaths,
     findPersistedNodeByStableId,
-    hasMissingStableIds,
     parsePersistedTreeContent,
     serializePersistedTree,
     walkPersistedNodes,
 } from "../shared/tree";
+import { loadSubtreeSourceCache } from "../shared/subtree-source-cache";
 import {
     buildResolvedGraphModel,
     buildSearchState,
@@ -590,46 +590,18 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             return;
         }
 
-        const nextSources = {
-            ...deps.workspaceStore.getState().subtreeSources,
-        };
-        const visited = new Set<string>();
-
-        const loadPath = async (path: string) => {
-            const normalized = normalizeWorkdirRelativePath(path);
-            if (visited.has(normalized)) {
-                return;
-            }
-            visited.add(normalized);
-
-            const response = await deps.hostAdapter.readFile(normalized);
-            if (response.content === null) {
-                nextSources[normalized] = null;
-                return;
-            }
-
-            try {
-                const needsWriteback = hasMissingStableIds(response.content);
-                const subtree = parsePersistedTreeContent(response.content, normalized);
-                nextSources[normalized] = subtree;
-
+        const nextSources = await loadSubtreeSourceCache({
+            root: tree.root,
+            readContent: async (path) => {
+                const response = await deps.hostAdapter.readFile(path);
+                return response.content;
+            },
+            onTreeLoaded: ({ path, tree: subtree, needsWriteback }) => {
                 if (needsWriteback) {
-                    void deps.hostAdapter.saveSubtree(normalized, serializePersistedTree(subtree));
+                    void deps.hostAdapter.saveSubtree(path, serializePersistedTree(subtree));
                 }
-
-                for (const childPath of collectReachableSubtreePaths(subtree.root)) {
-                    await loadPath(childPath);
-                }
-            } catch {
-                nextSources[normalized] = {
-                    error: "invalid-subtree",
-                };
-            }
-        };
-
-        for (const path of collectReachableSubtreePaths(tree.root)) {
-            await loadPath(path);
-        }
+            },
+        });
 
         deps.workspaceStore.setState((state) => ({
             ...state,
@@ -1422,7 +1394,7 @@ export const createEditorController = (deps: ControllerDeps): EditorCommand => {
             if (!tree) {
                 return;
             }
-            if (tree.version > VERSION) {
+            if (compareDocumentVersion(tree.version, VERSION) > 0) {
                 deps.hostAdapter.log(
                     "warn",
                     `[v2] refusing to save newer file version: ${tree.version}`

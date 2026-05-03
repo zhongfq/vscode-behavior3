@@ -1,4 +1,3 @@
-import assert from "assert";
 import type * as Fs from "fs";
 import "./array";
 import { getFs, hasFs, setFs } from "./b3fs";
@@ -25,6 +24,10 @@ import b3path from "./b3path";
 import { stringifyJson } from "./stringify";
 import { nanoid, readJson, readTreeFromFile, readWorkspace } from "./util";
 import { ExpressionEvaluator } from "../../../behavior3/src/behavior3/evaluator";
+import { normalizeNodeDefCollection } from "../schema";
+import { loadSubtreeSourceCache } from "../subtree-source-cache";
+import { materializePersistedTree, type MaterializedTreeNode } from "../tree-materializer";
+import { parsePersistedTreeContent } from "../tree";
 
 export class NodeDefs extends Map<string, NodeDef> {
     override get(key: string): NodeDef {
@@ -161,7 +164,7 @@ export const initWorkdirFromSettingFile = (
 ) => {
     workdir = workdirPath.replace(/\\/g, "/");
     alertError = handler;
-    const nodeDefData = readJson(settingFilePath) as NodeDef[];
+    const nodeDefData = normalizeNodeDefCollection(readJson(settingFilePath) as unknown);
     const groups: Set<string> = new Set();
     nodeDefs = new NodeDefs();
     for (const node of nodeDefData) {
@@ -196,7 +199,7 @@ export const initWithNodeDefs = (defs: NodeDef[], handler: typeof alertError, ch
     checkExpr = check;
     const groups: Set<string> = new Set();
     nodeDefs = new NodeDefs();
-    for (const node of defs) {
+    for (const node of normalizeNodeDefCollection(defs as unknown)) {
         node.args?.forEach((arg) => {
             if (
                 arg.options &&
@@ -715,20 +718,6 @@ export const normalizeSubtreePathKey = (p: string) =>
         .replace(/^\.\//, "");
 
 /**
- * Webview: snapshot of subtree files read from the extension host for the current graph refresh only
- * (not a long-lived cache). Node / build uses `readTreeFromFile` after `setFs`.
- */
-let webviewSubtreeReads: Map<string, TreeData> | null = null;
-
-export const setWebviewSubtreeReads = (map: Map<string, TreeData>) => {
-    webviewSubtreeReads = map;
-};
-
-export const clearWebviewSubtreeReads = () => {
-    webviewSubtreeReads = null;
-};
-
-/**
  * Return true if any node in the subtree root (raw parsed JSON, before applyTreeDefaults)
  * is missing a `$id`. Used to decide whether to write-back $id to the subtree file.
  */
@@ -809,38 +798,6 @@ export const computeNodeOverride = (
     return hasDiff ? diff : null;
 };
 
-/**
- * Apply $override entries from the parent tree onto the loaded subtree nodes
- * (recursive DFS). Must be called after applySubtreeRootToNode loads children.
- */
-export const applyOverridesToSubtree = (node: NodeData, overrides: TreeData["$override"]): void => {
-    if (!overrides) return;
-    const patch = overrides[node.$id];
-    if (patch) {
-        if (patch.desc !== undefined) node.desc = patch.desc;
-        if (patch.debug !== undefined) node.debug = patch.debug;
-        if (patch.disabled !== undefined) node.disabled = patch.disabled;
-        if (patch.args !== undefined) {
-            node.args = { ...(node.args ?? {}), ...patch.args };
-        }
-        if (patch.input !== undefined) node.input = patch.input;
-        if (patch.output !== undefined) node.output = patch.output;
-    }
-    node.children?.forEach((child) => applyOverridesToSubtree(child, overrides));
-};
-
-const cloneTreeData = (t: TreeData): TreeData => JSON.parse(JSON.stringify(t)) as TreeData;
-
-/** Merge external subtree root into the referencing node (subtree link). */
-const applySubtreeRootToNode = (node: NodeData, subtree: TreeData) => {
-    node.name = subtree.root.name;
-    node.desc = subtree.root.desc;
-    node.args = subtree.root.args;
-    node.input = subtree.root.input;
-    node.output = subtree.root.output;
-    node.children = subtree.root.children;
-};
-
 const parsingStack: string[] = [];
 
 export const createNode = (data: NodeData, includeChildren: boolean = true) => {
@@ -883,94 +840,6 @@ export const createNode = (data: NodeData, includeChildren: boolean = true) => {
     return node;
 };
 
-const enum StatusFlag {
-    SUCCESS = 2,
-    FAILURE = 1,
-    RUNNING = 0,
-    SUCCESS_ZERO = 5,
-    FAILURE_ZERO = 4,
-}
-
-const toStatusFlag = (data: NodeData) => {
-    let status = 0;
-    const def = nodeDefs.get(data.name);
-    def.status?.forEach((s) => {
-        switch (s) {
-            case "success":
-                status |= 1 << StatusFlag.SUCCESS;
-                break;
-            case "failure":
-                status |= 1 << StatusFlag.FAILURE;
-                break;
-            case "running":
-                status |= 1 << StatusFlag.RUNNING;
-                break;
-        }
-    });
-    return status;
-};
-
-const appendStatusFlag = (status: number, childStatus: number) => {
-    const childSuccess = (childStatus >> StatusFlag.SUCCESS) & 1;
-    const childFailure = (childStatus >> StatusFlag.FAILURE) & 1;
-    if (childSuccess === 0) {
-        status |= 1 << StatusFlag.SUCCESS_ZERO;
-    }
-    if (childFailure === 0) {
-        status |= 1 << StatusFlag.FAILURE_ZERO;
-    }
-    status |= childStatus;
-    return status;
-};
-
-const buildStatusFlag = (data: NodeData, childStatus: number) => {
-    let status = data.$status!;
-    const def = nodeDefs.get(data.name);
-    if (def.status?.length) {
-        const childSuccess = (childStatus >> StatusFlag.SUCCESS) & 1;
-        const childFailure = (childStatus >> StatusFlag.FAILURE) & 1;
-        const childRunning = (childStatus >> StatusFlag.RUNNING) & 1;
-        const childHasZeroSuccess = (childStatus >> StatusFlag.SUCCESS_ZERO) & 1;
-        const childHasZeroFailure = (childStatus >> StatusFlag.FAILURE_ZERO) & 1;
-        def.status?.forEach((s) => {
-            switch (s) {
-                case "!success":
-                    status |= childFailure << StatusFlag.SUCCESS;
-                    break;
-                case "!failure":
-                    status |= childSuccess << StatusFlag.FAILURE;
-                    break;
-                case "|success":
-                    status |= childSuccess << StatusFlag.SUCCESS;
-                    break;
-                case "|failure":
-                    status |= childFailure << StatusFlag.FAILURE;
-                    break;
-                case "|running":
-                    status |= childRunning << StatusFlag.RUNNING;
-                    break;
-                case "&success":
-                    if (childHasZeroSuccess) {
-                        status &= ~(1 << StatusFlag.SUCCESS);
-                    } else {
-                        status |= childSuccess << StatusFlag.SUCCESS;
-                    }
-                    break;
-                case "&failure":
-                    if (childHasZeroFailure) {
-                        status &= ~(1 << StatusFlag.FAILURE);
-                    } else {
-                        status |= childFailure << StatusFlag.FAILURE;
-                    }
-                    break;
-            }
-        });
-        data.$status = status;
-    } else {
-        data.$status = status | childStatus;
-    }
-};
-
 export const isValidChildren = (data: NodeData) => {
     const def = nodeDefs.get(data.name);
     if (def.children !== undefined && def.children !== -1) {
@@ -990,96 +859,33 @@ const isValidInputOrOutput = (def: string[], data: string[] | undefined, index: 
     return def[index].includes("?") || data?.[index] || isVariadic(def, index);
 };
 
-export const refreshNodeData = (
-    tree: TreeData,
-    node: NodeData,
-    id: number,
-    rootOverrides?: TreeData["$override"]
-) => {
-    node.id = (id++).toString();
-    node.$size = calcSize(node);
-
-    const def = nodeDefs.get(node.name);
-
-    if (def.args) {
-        node.args ||= {};
-        def.args.forEach((arg) => {
-            if (hasFs()) {
-                assert(node.args);
-            }
-            if (node.args![arg.name] === undefined && arg.default !== undefined) {
-                node.args![arg.name] = arg.default;
-            }
-        });
-    }
-
-    if (node.path) {
-        const stackKey = normalizeSubtreePathKey(node.path);
-        if (parsingStack.indexOf(stackKey) >= 0) {
-            if (hasFs()) {
-                alertError(`循环引用节点：${node.path}`, 4);
-            } else {
-                alertError(`循环引用节点：${node.path}`);
-            }
-            return id;
-        }
-        delete node.$mtime;
-        parsingStack.push(stackKey);
-        try {
-            const subtreePath = workdir + "/" + stackKey;
-            let subtree: TreeData | null = null;
-            if (hasFs()) {
-                subtree = readTreeFromFile(subtreePath);
-            } else {
-                const raw =
-                    webviewSubtreeReads?.get(stackKey) ?? webviewSubtreeReads?.get(node.path);
-                if (raw) subtree = cloneTreeData(raw);
-            }
-            if (subtree) {
-                // Use root-level overrides (from the main tree) for all sub-subtree recursion
-                const overrides = rootOverrides ?? tree.$override;
-                id = refreshNodeData(subtree, subtree.root, --id, overrides);
-                applySubtreeRootToNode(node, subtree);
-                // Apply the intermediate subtree's own $override first (e.g. B overrides C's nodes).
-                // This ensures A can see B's layer of changes, not just C's raw values.
-                if (subtree.$override && Object.keys(subtree.$override).length > 0) {
-                    applyOverridesToSubtree(node, subtree.$override);
-                }
-                // Apply the root tree's $override last so it always takes highest precedence.
-                if (overrides && Object.keys(overrides).length > 0) {
-                    applyOverridesToSubtree(node, overrides);
-                }
-                if (hasFs()) {
-                    node.$mtime = getFs().statSync(subtreePath).mtimeMs;
-                }
-                node.$size = calcSize(node);
-            }
-        } catch (e) {
-            alertError(`解析子树失败：${node.path}`);
-            logger.log("parse subtree:", e);
-        }
-        parsingStack.pop();
-    } else if (node.children?.length) {
-        for (let i = 0; i < node.children.length; i++) {
-            id = refreshNodeData(tree, node.children[i], id, rootOverrides);
-        }
-    }
-
-    node.$status = toStatusFlag(node);
-    if (node.children) {
-        let childStatus = 0;
-        node.children.forEach((child) => {
-            if (child.$status && !child.disabled) {
-                childStatus = appendStatusFlag(childStatus, child.$status);
-            }
-        });
-        buildStatusFlag(node, childStatus);
-    }
-
-    return id;
+const materializedNodeToExpandedTreeData = (node: MaterializedTreeNode): NodeData => {
+    return {
+        $id: node.structuralStableId,
+        id: node.data.id,
+        name: node.data.name,
+        desc: node.data.desc,
+        args: node.data.args ? { ...node.data.args } : undefined,
+        input: node.data.input ? [...node.data.input] : undefined,
+        output: node.data.output ? [...node.data.output] : undefined,
+        children: node.children.map((child) => materializedNodeToExpandedTreeData(child)),
+        debug: node.data.debug,
+        disabled: node.data.disabled,
+        path: node.data.path,
+        $status: node.data.$status,
+    };
 };
 
-export const createBuildData = (path: string) => {
+const assignSequentialNodeIds = (node: NodeData, nextId = 1): number => {
+    node.id = String(nextId);
+    let currentId = nextId + 1;
+    for (const child of node.children ?? []) {
+        currentId = assignSequentialNodeIds(child, currentId);
+    }
+    return currentId;
+};
+
+export const createBuildData = async (path: string) => {
     const clearUnnecessaryKey = (data: NodeData | TreeData) => {
         for (const key in data) {
             if (key.startsWith("$")) {
@@ -1089,8 +895,41 @@ export const createBuildData = (path: string) => {
     };
 
     try {
-        const treeModel: TreeData = readTreeFromFile(path);
-        refreshNodeData(treeModel, treeModel.root, 1);
+        const content = getFs().readFileSync(path, "utf-8");
+        const persistedTree = parsePersistedTreeContent(content, path);
+        const subtreeSources = await loadSubtreeSourceCache({
+            root: persistedTree.root,
+            readContent: async (relativePath) => {
+                try {
+                    return getFs().readFileSync(`${workdir}/${relativePath}`, "utf-8");
+                } catch {
+                    return null;
+                }
+            },
+        });
+
+        const materializedRoot = materializePersistedTree({
+            persistedTree,
+            subtreeSources,
+            nodeDefs: Array.from(nodeDefs.values()),
+            subtreeEditable: true,
+        });
+
+        const treeModel: TreeData = {
+            version: persistedTree.version,
+            name: persistedTree.name,
+            desc: persistedTree.desc,
+            prefix: persistedTree.prefix,
+            export: persistedTree.export,
+            group: [...persistedTree.group],
+            import: [...persistedTree.import],
+            vars: persistedTree.vars.map((entry) => ({ ...entry })),
+            custom: { ...persistedTree.custom },
+            $override: { ...persistedTree.$override },
+            root: materializedNodeToExpandedTreeData(materializedRoot),
+        };
+
+        assignSequentialNodeIds(treeModel.root);
         dfs(treeModel.root, (node) => (node.id = treeModel.prefix + node.id));
         treeModel.name = b3path.basenameWithoutExt(path);
         treeModel.root = createFileData(treeModel.root, true);
@@ -1226,7 +1065,7 @@ export const buildProject = async (project: string, buildDir: string) => {
     for (const path of b3path.lsdir(b3path.dirname(project), true)) {
         if (path.endsWith(".json") && !shouldSkipJsonForBuild(path)) {
             const buildpath = buildDir + "/" + path.substring(workdir.length + 1);
-            let tree = createBuildData(path);
+            let tree = await createBuildData(path);
             const errors: string[] = [];
             if (buildScript) {
                 tree = processBatch(tree, path, buildScript, errors);

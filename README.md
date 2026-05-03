@@ -39,16 +39,20 @@ The editor provides an intuitive visual interface for designing and managing beh
 Create a `.b3-setting` file in workspace:
 
 ```json
-{
-    "nodes": [
-        {
-            "name": "MyAction",
-            "type": "Action",
-            "desc": "Does something useful",
-            "args": [{ "name": "duration", "type": "float", "desc": "Duration in seconds" }]
-        }
-    ]
-}
+[
+    {
+        "name": "MyAction",
+        "type": "Action",
+        "desc": "Does something useful",
+        "args": [{ "name": "duration", "type": "float", "desc": "Duration in seconds" }]
+    },
+    {
+        "name": "CheckScore",
+        "type": "Condition",
+        "desc": "Checks whether the score matches the rule",
+        "args": [{ "name": "value", "type": "expr", "desc": "Expression" }]
+    }
+]
 ```
 
 ### Build
