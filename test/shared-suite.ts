@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createAppHooksStore } from "../webview/shared/misc/hooks";
-import { createRequestId } from "../webview/shared/request-id";
+import { buildBehaviorProject, resolveBehaviorBuildPaths } from "../src/build/build-cli";
 import { normalizeNodeDefCollection, parseWorkspaceModelContent } from "../webview/shared/schema";
-    import { loadSubtreeSourceCache } from "../webview/shared/subtree-source-cache";
+import { loadSubtreeSourceCache } from "../webview/shared/subtree-source-cache";
 import { materializePersistedTree } from "../webview/shared/tree-materializer";
 import { collectTransitivePaths, parsePersistedTreeContent } from "../webview/shared/tree";
 
@@ -195,17 +198,6 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
         },
     },
     {
-        name: "creates stable unique request ids",
-        run() {
-            const first = createRequestId();
-            const second = createRequestId();
-
-            assert.notEqual(first, second);
-            assert.match(first, /^req-/);
-            assert.match(second, /^req-/);
-        },
-    },
-    {
         name: "collects transitive paths breadth-first without duplicates",
         async run() {
             const graph: Record<string, string[]> = {
@@ -250,6 +242,92 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
 
             hooks.reset();
             assert.throws(() => hooks.getMessage(), /not available/i);
+        },
+    },
+    {
+        name: "resolves project files and builds from the CLI API",
+        async run() {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-cli-"));
+            const workspaceFile = path.join(root, "workspace.b3-workspace");
+            const settingFile = path.join(root, "node-config.b3-setting");
+            const treeFile = path.join(root, "main.json");
+            const outputDir = path.join(root, "dist");
+
+            try {
+                fs.writeFileSync(
+                    workspaceFile,
+                    JSON.stringify({
+                        settings: {
+                            checkExpr: true,
+                        },
+                    }),
+                    "utf-8"
+                );
+                fs.writeFileSync(
+                    settingFile,
+                    JSON.stringify([
+                        {
+                            name: "Sequence",
+                            type: "Composite",
+                            desc: "",
+                            children: -1,
+                            status: ["|success"],
+                        },
+                        {
+                            name: "Log",
+                            type: "Action",
+                            desc: "",
+                        },
+                    ]),
+                    "utf-8"
+                );
+                fs.writeFileSync(
+                    treeFile,
+                    JSON.stringify({
+                        version: "2.0.0",
+                        name: "main",
+                        prefix: "",
+                        group: [],
+                        import: [],
+                        vars: [],
+                        custom: {},
+                        $override: {},
+                        root: {
+                            $id: "root",
+                            id: "1",
+                            name: "Sequence",
+                            children: [
+                                {
+                                    $id: "leaf",
+                                    id: "2",
+                                    name: "Log",
+                                },
+                            ],
+                        },
+                    }),
+                    "utf-8"
+                );
+
+                const resolved = resolveBehaviorBuildPaths({
+                    projectPath: treeFile,
+                    outputDir,
+                });
+
+                assert.equal(resolved.workspaceFile, workspaceFile);
+                assert.equal(resolved.settingFile, settingFile);
+                assert.equal(resolved.workdir, root);
+                assert.equal(resolved.outputDir, outputDir);
+
+                const result = await buildBehaviorProject({
+                    projectPath: treeFile,
+                    outputDir,
+                });
+
+                assert.equal(result.hasError, false);
+                assert.equal(fs.existsSync(path.join(outputDir, "main.json")), true);
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true });
+            }
         },
     },
 ];

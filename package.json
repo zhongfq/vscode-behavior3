@@ -8,6 +8,9 @@
     "type": "git",
     "url": "https://github.com/codetypess/vscode-behavior3"
   },
+  "bin": {
+    "behavior3-build": "./dist/build-cli.js"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"

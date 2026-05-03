@@ -1,16 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import { buildBehaviorProject } from "./build-cli";
 import { getLogger, logger, setLogger, type Logger } from "../../webview/shared/misc/logger";
 import { getBehavior3OutputChannel } from "../output-channel";
 import { findB3SettingPath, findB3WorkspacePath } from "../setting-resolver";
 import { TreeEditorProvider } from "../tree-editor-provider";
-import { setFs } from "../../webview/shared/misc/b3fs";
-import {
-    buildProject,
-    initWorkdirFromSettingFile,
-    setCheckExpr,
-} from "../../webview/shared/misc/b3util";
 
 /**
  * During build: suppress debug. Delegate log/info/warn/error to `prev` only — `prev` is already the
@@ -28,9 +23,6 @@ function createBuildScopedLogger(prev: Logger): Logger {
         error: (...args: unknown[]) => prev.error(...args),
     };
 }
-
-/** Inject Node `fs` into shared `b3util` / `getFs()` (see `webview/shared/misc/b3fs.ts`). */
-setFs(fs);
 
 const WORKSPACE_STATE_KEY_PREFIX = "behavior3.lastBuildOutputDir:";
 let buildInFlight = false;
@@ -192,11 +184,12 @@ export async function runBuild(context: vscode.ExtensionContext): Promise<void> 
         const prevLogger = getLogger();
         setLogger(createBuildScopedLogger(prevLogger));
         try {
-            initWorkdirFromSettingFile(workdirPosix, settingPath.replace(/\\/g, "/"), () => {});
-            setCheckExpr(checkExpr);
-
-            const workspaceFilePosix = workspaceFile.replace(/\\/g, "/");
-            const hasError = await buildProject(workspaceFilePosix, outputDirPosix);
+            const { hasError } = await buildBehaviorProject({
+                workspaceFile,
+                settingFile: settingPath,
+                outputDir: outputDirPosix,
+                checkExpr,
+            });
 
             if (hasError) {
                 const resultMessage =
