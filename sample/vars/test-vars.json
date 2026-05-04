@@ -1,8 +1,7 @@
 {
   "custom": {
   },
-  "desc": "",
-  "export": true,
+  "export": false,
   "group": [
     "Client",
     "Server"
@@ -32,7 +31,7 @@
       ]
     }
   },
-  "prefix": "A",
+  "prefix": "",
   "root": {
     "children": [
       {
@@ -155,6 +154,22 @@
         ],
         "name": "TestOneof",
         "uuid": "WHf37oUmnE"
+      },
+      {
+        "args": {
+          "time": -1
+        },
+        "children": [
+        ],
+        "debug": false,
+        "desc": "等待",
+        "disabled": false,
+        "id": "",
+        "input": [
+          ""
+        ],
+        "name": "Wait",
+        "uuid": "ty3oHr8aJp"
       }
     ],
     "id": "1",

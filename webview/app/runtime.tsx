@@ -133,6 +133,7 @@ export const useNodeInspectorState = () => {
     const usingGroups = useWorkspaceStore((state) => state.usingGroups);
     const allFiles = useWorkspaceStore((state) => state.allFiles);
     const checkExpr = useWorkspaceStore((state) => state.settings.checkExpr);
+    const nodeCheckDiagnostics = useWorkspaceStore((state) => state.nodeCheckDiagnostics);
 
     return {
         document,
@@ -142,6 +143,7 @@ export const useNodeInspectorState = () => {
         usingGroups,
         allFiles,
         checkExpr,
+        nodeCheckDiagnostics,
     };
 };
 

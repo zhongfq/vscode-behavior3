@@ -4,6 +4,7 @@ import type {
     GraphHighlightState,
     GraphNodeVM,
     GraphSearchState,
+    NodeCheckDiagnostic,
     PersistedTreeModel,
     ResolvedDocumentGraph,
     ResolvedNodeModel,
@@ -60,23 +61,6 @@ const hasNodeOverride = (node: ResolvedNodeModel): boolean => {
     );
 };
 
-const describeResolutionError = (node: ResolvedNodeModel): string | undefined => {
-    if (!node.resolutionError) {
-        return undefined;
-    }
-
-    switch (node.resolutionError) {
-        case "missing-subtree":
-            return i18n.t("node.subtreeMissing", { path: node.path ?? "" });
-        case "invalid-subtree":
-            return i18n.t("node.subtreeInvalid", { path: node.path ?? "" });
-        case "cyclic-subtree":
-            return i18n.t("node.subtreeCyclic", { path: node.path ?? "" });
-        default:
-            return undefined;
-    }
-};
-
 export const buildResolvedGraphModel = (
     graph: ResolvedDocumentGraph,
     nodeDefs: NodeDef[],
@@ -85,6 +69,7 @@ export const buildResolvedGraphModel = (
         usingVars: Record<string, VarDecl> | null;
         usingGroups: Record<string, boolean> | null;
         checkExpr: boolean;
+        nodeCheckDiagnostics?: Record<string, NodeCheckDiagnostic[]>;
     }
 ): ResolvedGraphModel => {
     const defsByName = new Map(nodeDefs.map((def) => [def.name, def] as const));
@@ -94,20 +79,15 @@ export const buildResolvedGraphModel = (
     for (const key of graph.nodeOrder) {
         const node = graph.nodesByInstanceKey[key];
         const def = defsByName.get(node.name);
-        const warningText = describeResolutionError(node);
+        const customDiagnostics = validation?.nodeCheckDiagnostics?.[node.ref.instanceKey] ?? [];
         const invalid = collectResolvedNodeDiagnostics({
             node,
             def,
             usingVars: validation?.usingVars ?? null,
             usingGroups: validation?.usingGroups ?? null,
             checkExpr: validation?.checkExpr ?? false,
-        }).length > 0;
-        const nodeStyleKind =
-            node.resolutionError || invalid || warningText
-                ? "Error"
-                : def
-                  ? getNodeType(def)
-                  : "Error";
+        }).length > 0 || customDiagnostics.length > 0;
+        const nodeStyleKind = node.resolutionError || invalid ? "Error" : def ? getNodeType(def) : "Error";
         const accentColor =
             nodeStyleKind === "Error"
                 ? (nodeColors?.[nodeStyleKind] ?? DEFAULT_NODE_COLORS[nodeStyleKind])
@@ -149,7 +129,6 @@ export const buildResolvedGraphModel = (
                 node.args && Object.keys(node.args).length > 0
                     ? stringifyCompactJson5(node.args)
                     : undefined,
-            warningText,
         });
 
         for (const childKey of node.childKeys) {

@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
@@ -6,9 +7,11 @@ import {
     TreeEditorDocument,
 } from "./document-sync";
 import { getBehavior3OutputChannel } from "../output-channel";
+import { formatConsoleArgs } from "../output-channel";
 import { mapNodeDefsIconsForWebview } from "../node-def-icons";
 import { ProjectIndex, type VarDeclResult } from "./project-index";
 import {
+    findB3WorkspacePath,
     getBehaviorProjectRootFsPath,
     getResolvedB3SettingDir,
     resolveNodeDefs,
@@ -24,6 +27,18 @@ import type {
 import { isDocumentVersionNewer } from "../../webview/shared/document-version";
 import { parseWorkdirRelativeJsonPath } from "../../webview/shared/protocol";
 import { stringifyJson } from "../../webview/shared/misc/stringify";
+import { parseWorkspaceModelContent } from "../../webview/shared/schema";
+import b3path from "../../webview/shared/misc/b3path";
+import { setFs } from "../../webview/shared/misc/b3fs";
+import {
+    collectNodeArgCheckDiagnostics,
+    createBuildScriptRuntime,
+    loadRuntimeModule,
+} from "../../webview/shared/misc/b3build";
+import type { BuildEnv } from "../../webview/shared/misc/b3build-model";
+import type { NodeData, TreeData } from "../../webview/shared/misc/b3type";
+
+setFs(fs);
 
 /**
  * Per-webview extension-host session.
@@ -228,6 +243,24 @@ function logAsyncRuntimeError(scope: string): (error: unknown) => void {
     return (error) => logRuntimeError(scope, error);
 }
 
+function createBuildScriptLogger(): BuildEnv["logger"] {
+    const write =
+        (level: "debug" | "info" | "warn" | "error") =>
+        (...args: unknown[]) => {
+            getBehavior3OutputChannel()[level](formatConsoleArgs(args));
+        };
+
+    return {
+        log: write("info"),
+        debug: write("debug"),
+        info: write("info"),
+        warn: write("warn"),
+        error: write("error"),
+    };
+}
+
+const toNodeData = (node: unknown): NodeData => node as NodeData;
+
 export async function resolveTreeEditorSession({
     document,
     webviewPanel,
@@ -279,6 +312,110 @@ export async function resolveTreeEditorSession({
     };
     addActiveWebview(activeWebviewEntry);
     let mainDocumentOperationQueue: Promise<unknown> = Promise.resolve();
+    const createNodeCheckRuntime = async () => {
+        const workspaceFile = findB3WorkspacePath(document.uri, workspaceFolderUri);
+        if (!workspaceFile) {
+            return {
+                buildScriptRuntime: createBuildScriptRuntime(null, {
+                    fs,
+                    path: b3path,
+                    workdir: workspaceFolderUri.fsPath,
+                    nodeDefs: new Map(state.nodeDefs.map((def) => [def.name, def] as const)),
+                    logger: createBuildScriptLogger(),
+                }),
+                treePath: workspaceFolderUri.fsPath,
+            };
+        }
+
+        const workspaceText = await readWorkspaceFileContent(vscode.Uri.file(workspaceFile));
+        const workspaceModel = parseWorkspaceModelContent(workspaceText);
+        const buildScript = workspaceModel.settings.buildScript;
+        const workdir = path.dirname(workspaceFile).replace(/\\/g, "/");
+        const env: BuildEnv = {
+            fs,
+            path: b3path,
+            workdir,
+            nodeDefs: new Map(state.nodeDefs.map((def) => [def.name, def] as const)),
+            logger: createBuildScriptLogger(),
+        };
+
+        if (!buildScript) {
+            return {
+                buildScriptRuntime: createBuildScriptRuntime(null, env),
+                treePath: workdir,
+            };
+        }
+
+        const scriptPath = path.join(workdir, buildScript);
+        const moduleExports = await loadRuntimeModule(scriptPath, { debug: false });
+        if (!moduleExports) {
+            const buildScriptRuntime = createBuildScriptRuntime(null, env);
+            return {
+                buildScriptRuntime: {
+                    ...buildScriptRuntime,
+                    hasError: true,
+                },
+                treePath: workdir,
+            };
+        }
+        return {
+            buildScriptRuntime: createBuildScriptRuntime(moduleExports, env),
+            treePath: workdir,
+        };
+    };
+
+    const handleValidateNodeChecksMessage = async (
+        msg: Extract<EditorToHostMessage, { type: "validateNodeChecks" }>
+    ) => {
+        try {
+            const runtimeResult = await createNodeCheckRuntime();
+            const tree = JSON.parse(msg.content) as TreeData;
+            const diagnostics = collectNodeArgCheckDiagnostics({
+                tree,
+                treePath: msg.treePath || runtimeResult.treePath,
+                env: {
+                    fs,
+                    path: b3path,
+                    workdir: runtimeResult.treePath,
+                    nodeDefs: new Map(state.nodeDefs.map((def) => [def.name, def] as const)),
+                    logger: createBuildScriptLogger(),
+                },
+                checkers: runtimeResult.buildScriptRuntime.nodeArgCheckers,
+                targets: msg.nodes.map((entry) => ({
+                    instanceKey: entry.instanceKey,
+                    treePath: entry.treePath,
+                    node: toNodeData(entry.node),
+                })),
+            });
+            await postMessage({
+                type: "validateNodeChecksResult",
+                requestId: msg.requestId,
+                diagnostics: diagnostics
+                    .filter(
+                        (
+                            diagnostic
+                        ): diagnostic is typeof diagnostic & { instanceKey: string } =>
+                            typeof diagnostic.instanceKey === "string"
+                    )
+                    .map((diagnostic) => ({
+                        instanceKey: diagnostic.instanceKey,
+                        argName: diagnostic.argName,
+                        checker: diagnostic.checker,
+                        message: diagnostic.message,
+                    })),
+                error: runtimeResult.buildScriptRuntime.hasError
+                    ? "checker runtime has errors"
+                    : undefined,
+            });
+        } catch (error) {
+            await postMessage({
+                type: "validateNodeChecksResult",
+                requestId: msg.requestId,
+                diagnostics: [],
+                error: String(error),
+            });
+        }
+    };
 
     /**
      * Main-document writes, reloads, and revert/save flows all funnel through a
@@ -831,6 +968,10 @@ export async function resolveTreeEditorSession({
                                 buildScriptDebug: msg.buildScriptDebug,
                             })
                             .then(undefined, logAsyncRuntimeError("command:behavior3.build"));
+                        break;
+
+                    case "validateNodeChecks":
+                        await handleValidateNodeChecksMessage(msg);
                         break;
 
                     case "webviewLog":

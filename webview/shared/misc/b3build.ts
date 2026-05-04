@@ -1,6 +1,6 @@
 import { getFs, hasFs } from "./b3fs";
 import type { FileVarDecl, ImportDecl, NodeData, NodeDef, TreeData } from "./b3type";
-import type { BuildEnv, BuildScript } from "./b3build-model";
+import type { BuildEnv, BuildScript, NodeArgChecker, NodeArgCheckResult } from "./b3build-model";
 import { logger } from "./logger";
 import b3path from "./b3path";
 import { stringifyJson } from "./stringify";
@@ -48,10 +48,15 @@ export type {
     BuildLogger,
     BuildScript,
     FsLike,
+    NodeArgCheckContext,
+    NodeArgChecker,
+    NodeArgCheckerClass,
+    NodeArgCheckResult,
     PathLike,
 } from "./b3build-model";
 
 type HookCtor = new (env: BuildEnv) => BuildScript;
+type NodeArgCheckerCtor = new (env: BuildEnv) => NodeArgChecker;
 
 type OptionalRequire = {
     cache?: Record<string, unknown>;
@@ -104,9 +109,16 @@ const hasBatchHookMethod = (obj: unknown): obj is BuildScript => {
 };
 
 const BUILD_HOOK_MARKER = "__behavior3BuildHook";
+const CHECK_HOOK_MARKER = "__behavior3CheckHook";
+const CHECK_HOOK_NAME = "__behavior3CheckName";
 
 type MarkedHookCtor = HookCtor & {
     [BUILD_HOOK_MARKER]?: true;
+};
+
+type MarkedCheckCtor = NodeArgCheckerCtor & {
+    [CHECK_HOOK_MARKER]?: true;
+    [CHECK_HOOK_NAME]?: string;
 };
 
 const markBuildHook = <T extends new (...args: unknown[]) => unknown>(ctor: T) => {
@@ -117,8 +129,37 @@ const markBuildHook = <T extends new (...args: unknown[]) => unknown>(ctor: T) =
     return ctor;
 };
 
+const markCheckCtor = <T extends new (...args: unknown[]) => unknown>(
+    ctor: T,
+    explicitName?: string
+) => {
+    const name = explicitName?.trim() || ctor.name;
+    Object.defineProperty(ctor, CHECK_HOOK_MARKER, {
+        value: true,
+        configurable: false,
+    });
+    Object.defineProperty(ctor, CHECK_HOOK_NAME, {
+        value: name,
+        configurable: false,
+    });
+    return ctor;
+};
+
+const markCheckHook = <T extends new (...args: unknown[]) => unknown>(
+    nameOrCtor?: string | T,
+    _context?: ClassDecoratorContext<T>
+) => {
+    if (typeof nameOrCtor === "function") {
+        return markCheckCtor(nameOrCtor);
+    }
+    return (ctor: T) => markCheckCtor(ctor, nameOrCtor);
+};
+
 const isDecoratedHookCtor = (value: unknown): value is MarkedHookCtor =>
     typeof value === "function" && (value as MarkedHookCtor)[BUILD_HOOK_MARKER] === true;
+
+const isDecoratedCheckCtor = (value: unknown): value is MarkedCheckCtor =>
+    typeof value === "function" && (value as MarkedCheckCtor)[CHECK_HOOK_MARKER] === true;
 
 const findDecoratedHookCtor = (moduleRecord: Record<string, unknown>): HookCtor | undefined => {
     const decorated = Array.from(new Set(Object.values(moduleRecord))).filter(isDecoratedHookCtor);
@@ -129,18 +170,25 @@ const findDecoratedHookCtor = (moduleRecord: Record<string, unknown>): HookCtor 
     return decorated[0];
 };
 
+const findDecoratedCheckCtors = (moduleRecord: Record<string, unknown>): MarkedCheckCtor[] =>
+    Array.from(new Set(Object.values(moduleRecord))).filter(isDecoratedCheckCtor);
+
 const createBatchHooks = (
     moduleExports: unknown,
-    env: BuildEnv
+    env: BuildEnv,
+    reportMissing = true
 ): BuildScript | undefined => {
     /** Build scripts must expose one class entry so runtime behavior stays uniform. */
     if (!moduleExports || typeof moduleExports !== "object") {
         return undefined;
     }
     const moduleRecord = moduleExports as Record<string, unknown>;
+    const defaultExport = isDecoratedCheckCtor(moduleRecord.default)
+        ? undefined
+        : moduleRecord.default;
     const ctor = (moduleRecord.Hook ??
         findDecoratedHookCtor(moduleRecord) ??
-        moduleRecord.default) as HookCtor | undefined;
+        defaultExport) as HookCtor | undefined;
     if (typeof ctor === "function") {
         try {
             const instance = new ctor(env);
@@ -153,10 +201,92 @@ const createBatchHooks = (
         }
     }
 
-    logger.error(
-        "build script must export a Hook class, default class, or one @behavior3.build-decorated class"
-    );
+    if (reportMissing) {
+        logger.error(
+            "build script must export a Hook class, default class, or one @behavior3.build-decorated class"
+        );
+    }
     return undefined;
+};
+
+const createNodeArgCheckers = (
+    moduleExports: unknown,
+    env: BuildEnv
+): { checkers: Map<string, NodeArgChecker>; hasError: boolean; hasCheckers: boolean } => {
+    const checkers = new Map<string, NodeArgChecker>();
+    let hasError = false;
+    if (!moduleExports || typeof moduleExports !== "object") {
+        return { checkers, hasError, hasCheckers: false };
+    }
+
+    const moduleRecord = moduleExports as Record<string, unknown>;
+    const decorated = findDecoratedCheckCtors(moduleRecord);
+    for (const ctor of decorated) {
+        const name = ctor[CHECK_HOOK_NAME]?.trim() || ctor.name;
+        if (!name) {
+            logger.error("checker class must have a non-empty @behavior3.check name");
+            hasError = true;
+            continue;
+        }
+        if (checkers.has(name)) {
+            logger.error(`duplicate @behavior3.check registration: ${name}`);
+            hasError = true;
+            continue;
+        }
+        try {
+            const instance = new ctor(env);
+            if (typeof instance.validate !== "function") {
+                logger.error(`checker '${name}' must provide a validate(value, ctx) method`);
+                hasError = true;
+                continue;
+            }
+            checkers.set(name, instance);
+        } catch (error) {
+            logger.error(`failed to instantiate checker '${name}'`, error);
+            hasError = true;
+        }
+    }
+    return { checkers, hasError, hasCheckers: decorated.length > 0 };
+};
+
+export type BuildScriptRuntime = {
+    buildScript?: BuildScript;
+    nodeArgCheckers: Map<string, NodeArgChecker>;
+    hasError: boolean;
+    hasEntries: boolean;
+};
+
+export const createBuildScriptRuntime = (
+    moduleExports: unknown,
+    env: BuildEnv
+): BuildScriptRuntime => {
+    if (!moduleExports || typeof moduleExports !== "object") {
+        return {
+            nodeArgCheckers: new Map(),
+            hasError: false,
+            hasEntries: false,
+        };
+    }
+
+    const moduleRecord = moduleExports as Record<string, unknown>;
+    const hasBuildHookCandidate =
+        typeof moduleRecord.Hook === "function" ||
+        Object.values(moduleRecord).some(isDecoratedHookCtor) ||
+        (typeof moduleRecord.default === "function" && !isDecoratedCheckCtor(moduleRecord.default));
+    const buildScript = createBatchHooks(moduleExports, env, false);
+    const checkerResult = createNodeArgCheckers(moduleExports, env);
+    const hasEntries = Boolean(buildScript) || checkerResult.hasCheckers;
+    if (!hasEntries) {
+        logger.error(
+            "build script must export a Hook class, default build class, @behavior3.build class, or @behavior3.check class"
+        );
+    }
+    return {
+        buildScript,
+        nodeArgCheckers: checkerResult.checkers,
+        hasError: checkerResult.hasError || !hasEntries || (hasBuildHookCandidate && !buildScript),
+        hasEntries,
+    };
 };
 
 const materializedNodeToExpandedTreeData = (node: MaterializedTreeNode): NodeData => {
@@ -327,6 +457,110 @@ export const processBatchTree = (
     return tree;
 };
 
+export type NodeArgCheckTarget = {
+    node: NodeData;
+    instanceKey?: string;
+    treePath?: string | null;
+};
+
+export type NodeArgCheckDiagnostic = {
+    instanceKey?: string;
+    nodeId: string;
+    nodeName: string;
+    argName: string;
+    checker: string;
+    message: string;
+};
+
+const normalizeNodeArgCheckResult = (result: NodeArgCheckResult): string[] => {
+    if (Array.isArray(result)) {
+        return result.filter((entry) => typeof entry === "string" && entry.trim());
+    }
+    return typeof result === "string" && result.trim() ? [result] : [];
+};
+
+const formatRuntimeError = (error: unknown): string => {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return String(error);
+};
+
+const walkTreeNodes = (node: NodeData, visit: (node: NodeData) => void): void => {
+    visit(node);
+    for (const child of node.children ?? []) {
+        walkTreeNodes(child, visit);
+    }
+};
+
+export const collectNodeArgCheckDiagnostics = (params: {
+    tree: TreeData;
+    treePath: string;
+    env: BuildEnv;
+    checkers: ReadonlyMap<string, NodeArgChecker>;
+    targets?: NodeArgCheckTarget[];
+}): NodeArgCheckDiagnostic[] => {
+    const diagnostics: NodeArgCheckDiagnostic[] = [];
+    const targets = params.targets ?? [];
+    const entries = targets.length
+        ? targets
+        : (() => {
+              const collected: NodeArgCheckTarget[] = [];
+              walkTreeNodes(params.tree.root, (node) => collected.push({ node }));
+              return collected;
+          })();
+
+    for (const target of entries) {
+        const node = target.node;
+        const nodeDef = params.env.nodeDefs.get(node.name);
+        if (!nodeDef) {
+            continue;
+        }
+        for (const arg of nodeDef.args ?? []) {
+            const checkerName = arg.checker?.trim();
+            if (!checkerName) {
+                continue;
+            }
+            const pushDiagnostic = (message: string) => {
+                diagnostics.push({
+                    instanceKey: target.instanceKey,
+                    nodeId: node.id,
+                    nodeName: node.name,
+                    argName: arg.name,
+                    checker: checkerName,
+                    message,
+                });
+            };
+            const checker = params.checkers.get(checkerName);
+            if (!checker) {
+                pushDiagnostic(`checker '${checkerName}' is not registered`);
+                continue;
+            }
+            try {
+                const messages = normalizeNodeArgCheckResult(
+                    checker.validate(node.args?.[arg.name], {
+                        node,
+                        tree: params.tree,
+                        nodeDef,
+                        arg,
+                        argName: arg.name,
+                        treePath: target.treePath ?? params.treePath,
+                        env: params.env,
+                    })
+                );
+                messages.forEach(pushDiagnostic);
+            } catch (error) {
+                pushDiagnostic(`checker '${checkerName}' failed: ${formatRuntimeError(error)}`);
+            }
+        }
+    }
+
+    return diagnostics;
+};
+
+export const formatNodeArgCheckBuildDiagnostic = (diagnostic: NodeArgCheckDiagnostic): string =>
+    `check ${diagnostic.nodeId}|${diagnostic.nodeName}: ${diagnostic.argName}: ${diagnostic.message}`;
+
 export const syncFilesFromDiskWithContext = (
     files: Record<string, number>,
     parsedVarDecl: Record<string, unknown>,
@@ -489,6 +723,7 @@ const withBehavior3BuildDecoratorGlobal = async <T>(loader: () => Promise<T>): P
             ? (previousBehavior3 as Record<string, unknown>)
             : {}),
         build: markBuildHook,
+        check: markCheckHook,
     };
     try {
         return await loader();
@@ -759,8 +994,8 @@ export const buildProjectWithContext = async (
         nodeDefs: context.nodeDefs,
         logger,
     };
-    const buildScript = createBatchHooks(buildScriptModule, scriptEnv);
-    if (buildSetting && (!buildScriptModule || !buildScript)) {
+    const buildRuntime = createBuildScriptRuntime(buildScriptModule, scriptEnv);
+    if (buildSetting && (!buildScriptModule || buildRuntime.hasError)) {
         hasError = true;
     }
 
@@ -773,8 +1008,8 @@ export const buildProjectWithContext = async (
         const buildPath = buildDir + "/" + candidatePath.substring(context.workdir.length + 1);
         let tree = await createBuildDataWithContext(candidatePath, context);
         const errors: string[] = [];
-        if (buildScript) {
-            tree = processBatchTree(tree, candidatePath, buildScript, errors);
+        if (buildRuntime.buildScript) {
+            tree = processBatchTree(tree, candidatePath, buildRuntime.buildScript, errors);
         }
         if (!tree) {
             continue;
@@ -803,17 +1038,29 @@ export const buildProjectWithContext = async (
         if (!context.checkNodeData(tree.root, (message) => errors.push(message))) {
             hasError = true;
         }
+        const checkDiagnostics = collectNodeArgCheckDiagnostics({
+            tree,
+            treePath: candidatePath,
+            env: scriptEnv,
+            checkers: buildRuntime.nodeArgCheckers,
+        });
+        if (checkDiagnostics.length) {
+            hasError = true;
+            checkDiagnostics.forEach((diagnostic) =>
+                errors.push(formatNodeArgCheckBuildDiagnostic(diagnostic))
+            );
+        }
         if (errors.length) {
             allErrors.push(`${candidatePath}:`);
             errors.forEach((message) => allErrors.push(`  ${message}`));
         }
-        buildScript?.onWriteFile?.(buildPath, tree);
+        buildRuntime.buildScript?.onWriteFile?.(buildPath, tree);
         getFs().mkdirSync(b3path.dirname(buildPath), { recursive: true });
         getFs().writeFileSync(buildPath, stringifyJson(tree, { indent: 2 }));
     }
 
     allErrors.forEach((message) => logger.error(message));
-    buildScript?.onComplete?.(hasError ? "failure" : "success");
+    buildRuntime.buildScript?.onComplete?.(hasError ? "failure" : "success");
     flushDeferredRuntimeModuleCleanup();
     return hasError;
 };

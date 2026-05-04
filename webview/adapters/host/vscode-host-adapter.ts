@@ -14,6 +14,7 @@ import type {
     SaveDocumentResponse,
     SaveSubtreeAsResponse,
     SaveSubtreeResponse,
+    ValidateNodeChecksResponse,
     WorkdirRelativeJsonPath,
 } from "../../shared/contracts";
 import {
@@ -36,6 +37,7 @@ interface PendingRequestMap {
     saveSubtreeAs: SaveSubtreeAsResponse;
     saveDocument: SaveDocumentResponse;
     revertDocument: RevertDocumentResponse;
+    validateNodeChecks: ValidateNodeChecksResponse;
 }
 
 type PendingRequestType = keyof PendingRequestMap;
@@ -101,6 +103,8 @@ const createTimeoutResponse = <K extends PendingRequestType>(type: K): PendingRe
             return { success: false, error } as PendingRequestMap[K];
         case "saveSubtreeAs":
             return { savedPath: null, error } as PendingRequestMap[K];
+        case "validateNodeChecks":
+            return { diagnostics: [], error } as unknown as PendingRequestMap[K];
     }
 };
 
@@ -231,6 +235,13 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
                         });
                         return;
 
+                    case "validateNodeChecksResult":
+                        resolvePendingRequest(message.requestId, "validateNodeChecks", {
+                            diagnostics: message.diagnostics,
+                            error: message.error,
+                        });
+                        return;
+
                     case "init":
                         onMessage({ type: "init", payload: normalizeHostInitMessage(message) });
                         return;
@@ -321,6 +332,19 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
 
         sendBuild(opts) {
             postMessage({ type: "build", buildScriptDebug: opts?.buildScriptDebug });
+        },
+
+        validateNodeChecks(content, treePath, nodes) {
+            return new Promise<ValidateNodeChecksResponse>((resolve) => {
+                const requestId = registerPendingRequest("validateNodeChecks", resolve);
+                postMessage({
+                    type: "validateNodeChecks",
+                    requestId,
+                    content,
+                    treePath,
+                    nodes,
+                });
+            });
         },
 
         saveDocument(content: string) {

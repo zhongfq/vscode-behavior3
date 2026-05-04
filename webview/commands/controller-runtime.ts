@@ -10,6 +10,8 @@ import type {
     GraphHighlightState,
     GraphSearchState,
     HostAdapter,
+    NodeCheckDiagnostic,
+    NodeCheckValidationNode,
     NodeDef,
     NodeInstanceRef,
     PersistedNodeModel,
@@ -145,6 +147,7 @@ export const buildUsingGroups = (groupNames: string[]): Record<string, boolean> 
 export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime => {
     let resolvedGraph: ResolvedDocumentGraph | null = null;
     let treeSelectedTimer: number | null = null;
+    let nodeCheckRequestSeq = 0;
 
     const notifyError = (text: string) => {
         deps.appHooks.getMessage().error(text);
@@ -243,6 +246,7 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
             subtreeNode: node.subtreeNode,
             subtreeEditable: node.subtreeEditable,
             subtreeOriginal: node.subtreeOriginal,
+            resolutionError: node.resolutionError,
         };
     };
 
@@ -528,6 +532,77 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
         return tree ? serializePersistedTree(tree) : null;
     };
 
+    const cloneNodeArgs = (args: Record<string, unknown> | undefined) =>
+        args ? (cloneJsonValue(args) as Record<string, unknown>) : undefined;
+
+    const collectNodeCheckValidationNodes = (
+        graph: ResolvedDocumentGraph,
+        nodeDefs: NodeDef[]
+    ): NodeCheckValidationNode[] => {
+        const defsByName = new Map(nodeDefs.map((def) => [def.name, def] as const));
+        const nodes: NodeCheckValidationNode[] = [];
+        for (const key of graph.nodeOrder) {
+            const node = graph.nodesByInstanceKey[key];
+            const def = defsByName.get(node.name);
+            if (!def?.args?.some((arg) => arg.checker?.trim())) {
+                continue;
+            }
+            nodes.push({
+                instanceKey: node.ref.instanceKey,
+                treePath: node.ref.sourceTreePath,
+                node: {
+                    uuid: node.ref.sourceStableId,
+                    id: node.renderedIdLabel,
+                    name: node.name,
+                    desc: node.desc,
+                    args: cloneNodeArgs(node.args),
+                    input: node.input ? [...node.input] : undefined,
+                    output: node.output ? [...node.output] : undefined,
+                    debug: node.debug,
+                    disabled: node.disabled,
+                    path: node.path,
+                    children: [],
+                },
+            });
+        }
+        return nodes;
+    };
+
+    const requestNodeCheckDiagnostics = async (
+        graph: ResolvedDocumentGraph,
+        workspace: WorkspaceState
+    ): Promise<Record<string, NodeCheckDiagnostic[]>> => {
+        const content = getSerializedCurrentTree();
+        const treePath = workspace.filePath;
+        const nodes = collectNodeCheckValidationNodes(graph, workspace.nodeDefs);
+        const requestSeq = ++nodeCheckRequestSeq;
+        if (!content || !treePath || nodes.length === 0) {
+            deps.workspaceStore.setState((state) => ({
+                ...state,
+                nodeCheckDiagnostics: {},
+            }));
+            return {};
+        }
+
+        const response = await deps.hostAdapter.validateNodeChecks(content, treePath, nodes);
+        if (requestSeq !== nodeCheckRequestSeq) {
+            return deps.workspaceStore.getState().nodeCheckDiagnostics;
+        }
+        if (response.error) {
+            deps.hostAdapter.log("warn", `[v2] node check validation failed: ${response.error}`);
+        }
+
+        const nextDiagnostics: Record<string, NodeCheckDiagnostic[]> = {};
+        for (const diagnostic of response.diagnostics) {
+            (nextDiagnostics[diagnostic.instanceKey] ||= []).push(diagnostic);
+        }
+        deps.workspaceStore.setState((state) => ({
+            ...state,
+            nodeCheckDiagnostics: nextDiagnostics,
+        }));
+        return nextDiagnostics;
+    };
+
     const normalizeHostDocumentSnapshot = (content: string): string | null => {
         const filePath = deps.workspaceStore.getState().filePath || undefined;
         try {
@@ -646,6 +721,8 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
         });
 
         resolvedGraph = result.graph;
+        const nodeCheckDiagnostics = await requestNodeCheckDiagnostics(result.graph, workspace);
+
         await deps.graphAdapter.render(
             buildResolvedGraphModel(
                 result.graph,
@@ -655,6 +732,7 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
                     usingVars: workspace.usingVars,
                     usingGroups: workspace.usingGroups,
                     checkExpr: workspace.settings.checkExpr,
+                    nodeCheckDiagnostics,
                 }
             )
         );

@@ -85,6 +85,7 @@ export interface EditNode {
     subtreeNode: boolean;
     subtreeEditable: boolean;
     subtreeOriginal?: PersistedNodeModel;
+    resolutionError?: "missing-subtree" | "invalid-subtree" | "cyclic-subtree";
 }
 
 export interface EditNodeDef {
@@ -117,6 +118,7 @@ export interface WorkspaceState {
     subtreeSources: Record<WorkdirRelativeJsonPath, SubtreeSourceCacheEntry>;
     subtreeSourceRevision: number;
     hostSubtreeRefreshSeq: number;
+    nodeCheckDiagnostics: Record<string, NodeCheckDiagnostic[]>;
 }
 
 export interface SelectionState {
@@ -195,6 +197,24 @@ export interface RevertDocumentResponse {
     error?: string;
 }
 
+export interface NodeCheckValidationNode {
+    instanceKey: string;
+    treePath: WorkdirRelativeJsonPath | null;
+    node: PersistedNodeModel;
+}
+
+export interface NodeCheckDiagnostic {
+    instanceKey: string;
+    argName: string;
+    checker: string;
+    message: string;
+}
+
+export interface ValidateNodeChecksResponse {
+    diagnostics: NodeCheckDiagnostic[];
+    error?: string;
+}
+
 export type HostEvent =
     | { type: "init"; payload: HostInitPayload }
     | { type: "fileChanged"; content: string }
@@ -270,7 +290,6 @@ export interface GraphNodeVM {
     inputs: Array<{ label: string; variable?: string }>;
     outputs: Array<{ label: string; variable?: string }>;
     argsText?: string;
-    warningText?: string;
 }
 
 export interface ResolvedGraphModel {
@@ -330,6 +349,11 @@ export interface HostAdapter {
     sendTreeSelected(tree: PersistedTreeModel): void;
     sendRequestSetting(): void;
     sendBuild(opts?: { buildScriptDebug?: boolean }): void;
+    validateNodeChecks(
+        content: string,
+        treePath: string,
+        nodes: NodeCheckValidationNode[]
+    ): Promise<ValidateNodeChecksResponse>;
     saveDocument(content: string): Promise<SaveDocumentResponse>;
     revertDocument(): Promise<RevertDocumentResponse>;
     readFile(

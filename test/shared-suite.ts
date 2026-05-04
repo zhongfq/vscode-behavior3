@@ -62,6 +62,51 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
         },
     },
     {
+        name: "preserves node arg checker names in node definitions",
+        run() {
+            const defs = parseNodeDefsContent(
+                JSON.stringify([
+                    {
+                        name: "Wait",
+                        type: "Action",
+                        desc: "",
+                        args: [
+                            {
+                                name: "time",
+                                type: "float",
+                                desc: "",
+                                checker: "positive",
+                            },
+                        ],
+                    },
+                ])
+            );
+
+            assert.equal(defs[0]?.args?.[0]?.checker, "positive");
+            assert.throws(
+                () =>
+                    parseNodeDefsContent(
+                        JSON.stringify([
+                            {
+                                name: "Wait",
+                                type: "Action",
+                                desc: "",
+                                args: [
+                                    {
+                                        name: "time",
+                                        type: "float",
+                                        desc: "",
+                                        checker: "",
+                                    },
+                                ],
+                            },
+                        ])
+                    ),
+                /checker.*non-empty string/
+            );
+        },
+    },
+    {
         name: "parses only strict workdir-relative json paths",
         run() {
             assert.equal(parseWorkdirRelativeJsonPath("vars\\test.json"), "vars/test.json");
@@ -254,6 +299,63 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
             );
 
             assert.equal(strictGraphModel.nodes[0]?.nodeStyleKind, "Error");
+        },
+    },
+    {
+        name: "marks graph nodes with custom checker diagnostics as errors",
+        run() {
+            const graphModel = buildResolvedGraphModel(
+                {
+                    rootKey: "1",
+                    nodeOrder: ["1"],
+                    nodesByInstanceKey: {
+                        "1": {
+                            ref: {
+                                instanceKey: "1",
+                                displayId: "1",
+                                structuralStableId: "root",
+                                sourceStableId: "root",
+                                sourceTreePath: null,
+                                subtreeStack: [],
+                            },
+                            parentKey: null,
+                            childKeys: [],
+                            depth: 0,
+                            renderedIdLabel: "1",
+                            name: "Wait",
+                            args: { time: 0 },
+                            subtreeNode: false,
+                            subtreeEditable: true,
+                        },
+                    },
+                },
+                [
+                    {
+                        name: "Wait",
+                        type: "Action",
+                        desc: "",
+                        args: [{ name: "time", type: "float", desc: "", checker: "positive" }],
+                    },
+                ],
+                undefined,
+                {
+                    usingVars: null,
+                    usingGroups: null,
+                    checkExpr: true,
+                    nodeCheckDiagnostics: {
+                        "1": [
+                            {
+                                instanceKey: "1",
+                                argName: "time",
+                                checker: "positive",
+                                message: "must be greater than 0",
+                            },
+                        ],
+                    },
+                }
+            );
+
+            assert.equal(graphModel.nodes[0]?.nodeStyleKind, "Error");
         },
     },
     {
@@ -650,6 +752,9 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 sendTreeSelected() {},
                 sendRequestSetting() {},
                 sendBuild() {},
+                async validateNodeChecks() {
+                    return { diagnostics: [] };
+                },
                 async saveDocument() {
                     return { success: true };
                 },
@@ -950,6 +1055,95 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 assert.equal(result.hasError, false);
                 assert.equal(outputTree.custom.helperValue, "imported-helper");
                 assert.deepEqual(runtimeFiles, []);
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true });
+            }
+        },
+    },
+    {
+        name: "runs decorated node arg checkers during build",
+        async run() {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-build-checker-"));
+            const scriptsDir = path.join(root, "scripts");
+            const workspaceFile = path.join(root, "workspace.b3-workspace");
+            const settingFile = path.join(root, "node-config.b3-setting");
+            const treeFile = path.join(root, "main.json");
+            const buildScriptFile = path.join(scriptsDir, "build.ts");
+            const outputDir = path.join(root, "dist");
+
+            try {
+                fs.mkdirSync(scriptsDir, { recursive: true });
+                fs.writeFileSync(
+                    workspaceFile,
+                    JSON.stringify({
+                        settings: {
+                            buildScript: "scripts/build.ts",
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    settingFile,
+                    JSON.stringify([
+                        {
+                            name: "Wait",
+                            type: "Action",
+                            desc: "",
+                            args: [
+                                {
+                                    name: "time",
+                                    type: "float",
+                                    desc: "",
+                                    checker: "positive",
+                                },
+                            ],
+                        },
+                    ])
+                );
+                fs.writeFileSync(
+                    treeFile,
+                    JSON.stringify({
+                        version: "2.0.0",
+                        name: "main",
+                        prefix: "",
+                        group: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
+                        custom: {},
+                        overrides: {},
+                        root: {
+                            uuid: "root",
+                            id: "1",
+                            name: "Wait",
+                            args: {
+                                time: 0,
+                            },
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    buildScriptFile,
+                    [
+                        '@behavior3.check("positive")',
+                        "export class PositiveChecker {",
+                        "  validate(value) {",
+                        "    if (typeof value !== 'number' || value <= 0) {",
+                        "      return 'must be greater than 0';",
+                        "    }",
+                        "  }",
+                        "}",
+                        "",
+                    ].join("\n")
+                );
+
+                const result = await buildBehaviorProject({
+                    projectPath: treeFile,
+                    outputDir,
+                });
+
+                assert.equal(result.hasError, true);
+                assert.equal(fs.existsSync(path.join(outputDir, "main.json")), true);
             } finally {
                 fs.rmSync(root, { recursive: true, force: true });
             }

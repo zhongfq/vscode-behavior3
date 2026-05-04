@@ -49,6 +49,7 @@ export const createInitialWorkspaceState = (): WorkspaceState => ({
     subtreeSources: {},
     subtreeSourceRevision: 0,
     hostSubtreeRefreshSeq: 0,
+    nodeCheckDiagnostics: {},
 });
 
 export const createWorkspaceStore = (): StoreApi<WorkspaceState> => {

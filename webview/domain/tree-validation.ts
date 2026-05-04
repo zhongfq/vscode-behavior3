@@ -10,6 +10,7 @@ export type TreeValidationDiagnostic =
     | { code: "invalid-expression"; field: "args"; expression: string }
     | { code: "required-input"; index: number; label: string }
     | { code: "required-output"; index: number; label: string }
+    | { code: "custom-arg-check"; argName: string; checker: string; message: string }
     | { code: "invalid-children"; expected: number; actual: number };
 
 export const hasDeclaredVars = (

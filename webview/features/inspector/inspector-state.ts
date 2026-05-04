@@ -30,8 +30,16 @@ type TreeInspectorFormValues = {
 };
 
 export const useNodeInspectorViewState = (form: FormInstance) => {
-    const { document, selectedNode, nodeDefs, usingVars, usingGroups, allFiles, checkExpr } =
-        useNodeInspectorState();
+    const {
+        document,
+        selectedNode,
+        nodeDefs,
+        usingVars,
+        usingGroups,
+        allFiles,
+        checkExpr,
+        nodeCheckDiagnostics,
+    } = useNodeInspectorState();
 
     const nodeDefMap = useMemo(() => createNodeDefMap(nodeDefs), [nodeDefs]);
     const variableOptions = useMemo(
@@ -55,6 +63,9 @@ export const useNodeInspectorViewState = (form: FormInstance) => {
         usingGroups,
         allFiles,
         checkExpr,
+        nodeCheckDiagnostics: selectedNode
+            ? (nodeCheckDiagnostics[selectedNode.ref.instanceKey] ?? [])
+            : [],
         nodeDefMap,
         variableOptions,
         watchedName,

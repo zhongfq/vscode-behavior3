@@ -82,8 +82,7 @@ type ShapeName =
     | "path-text"
     | "selection-halo"
     | "status"
-    | "subtree"
-    | "warn-text";
+    | "subtree";
 
 type Constructor<T> = new (...args: any[]) => T;
 
@@ -145,7 +144,6 @@ const getVectorTreeNodePalette = () => ({
     nodeText: readThemeCssVariable("--b3-node-text", "#111827"),
     overrideBar: readThemeCssVariable("--b3-override-bar", "#d87a16"),
     subtreeOutline: readThemeCssVariable("--b3-subtree-outline", "#a5b1be"),
-    warningText: readThemeCssVariable("--b3-warning-text", "#b42318"),
 });
 
 type VectorTreeNodePalette = ReturnType<typeof getVectorTreeNodePalette>;
@@ -320,10 +318,6 @@ export const measureVectorTreeNode = (node: GraphNodeVM) => {
         height += outputText.line * ROW_HEIGHT;
     }
 
-    if (node.warningText) {
-        height += toBreakWord(node.warningText, 200).line * ROW_HEIGHT;
-    }
-
     return {
         width: G6_VECTOR_NODE_WIDTH,
         height: Math.max(G6_VECTOR_NODE_MIN_HEIGHT, height),
@@ -381,7 +375,6 @@ export const getVectorTreeNodeStateStyle = (): VectorTreeNodeStateStyleMap => {
             "output-text": { fill: palette.grayText },
             "path-text": { fill: palette.grayText },
             status: { opacity: 0.45 },
-            "warn-text": { fill: palette.grayText },
             "args-text": { fill: palette.grayText },
         },
         selected: {
@@ -775,8 +768,8 @@ class VectorTreeNode extends Rect {
                 width: this.width + 20,
                 height: this.height + 20,
                 stroke: this.palette.subtreeOutline,
-                lineWidth: 2.5,
-                lineDash: [6, 6],
+                lineWidth: 3,
+                lineDash: [10, 5],
                 radius: this.radius,
                 visibility: isSubtree ? "visible" : "hidden",
             },
@@ -800,31 +793,6 @@ class VectorTreeNode extends Rect {
         );
 
         this.contentY += text ? ROW_HEIGHT : 0;
-    }
-
-    private drawWarningText(container: Group) {
-        const { str, line } = this.node.warningText
-            ? toBreakWord(this.node.warningText, 200)
-            : { str: "", line: 0 };
-
-        this.upsert(
-            "warn-text",
-            GText,
-            {
-                fill: this.palette.warningText,
-                fontSize: 12,
-                fontWeight: "normal",
-                lineHeight: ROW_HEIGHT,
-                text: str,
-                textBaseline: "top",
-                x: CONTENT_X,
-                y: this.contentY + ROW_HEIGHT,
-                visibility: str ? "visible" : "hidden",
-            },
-            container
-        );
-
-        this.contentY += ROW_HEIGHT * line;
     }
 
     private drawCollapseBadge(attributes: Required<RectStyleProps>, container: Group) {
@@ -973,7 +941,6 @@ class VectorTreeNode extends Rect {
         this.drawInputText(container);
         this.drawOutputText(container);
         this.drawSubtreeText(container);
-        this.drawWarningText(container);
         this.drawDragShapes(container);
         this.drawCollapseBadge(attributes, container);
         this.drawIdText(container);

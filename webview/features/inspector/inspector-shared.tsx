@@ -287,6 +287,8 @@ const formatValidationDiagnostic = (diagnostic: TreeValidationDiagnostic): strin
         case "required-input":
         case "required-output":
             return i18n.t("fieldRequired", { field: diagnostic.label });
+        case "custom-arg-check":
+            return `${diagnostic.argName}: ${diagnostic.message}`;
         case "invalid-children":
             return i18n.t("node.invalidChildren");
         case "missing-node-def":

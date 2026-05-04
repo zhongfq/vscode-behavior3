@@ -2,7 +2,8 @@
  * Shared message protocol types between Extension Host and Webview.
  */
 
-import type { NodeDef } from "behavior3";
+import type { NodeDef } from "./misc/b3type";
+import type { NodeCheckValidationNode } from "./contracts";
 
 export type { NodeDef };
 
@@ -14,6 +15,13 @@ export type EditorToHostMessage =
     | { type: "treeSelected"; tree: unknown }
     | { type: "requestSetting" }
     | { type: "build"; buildScriptDebug?: boolean }
+    | {
+          type: "validateNodeChecks";
+          requestId: string;
+          content: string;
+          treePath: string;
+          nodes: NodeCheckValidationNode[];
+      }
     | { type: "readFile"; requestId: string; path: string; openIfSubtree?: boolean }
     | { type: "saveSubtree"; requestId: string; path: string; content: string }
     /** Right-click -> Save as subtree: pick path under workdir and write JSON from webview. */
@@ -50,6 +58,17 @@ export type HostToEditorMessage =
           };
       }
     | { type: "buildResult"; success: boolean; message: string }
+    | {
+          type: "validateNodeChecksResult";
+          requestId: string;
+          diagnostics: Array<{
+              instanceKey: string;
+              argName: string;
+              checker: string;
+              message: string;
+          }>;
+          error?: string;
+      }
     | { type: "readFileResult"; requestId: string; content: string | null }
     | {
           type: "saveSubtreeResult";

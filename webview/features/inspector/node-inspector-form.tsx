@@ -35,6 +35,7 @@ import {
     isVariadic,
 } from "../../shared/misc/b3util";
 import { useRuntime } from "../../app/runtime";
+import type { NodeCheckDiagnostic } from "../../shared/contracts";
 import {
     OverrideBar,
     SectionDivider,
@@ -66,9 +67,10 @@ const NodeArgField: React.FC<{
     nodeDef: NodeDef;
     usingVars: Record<string, VarDecl> | null;
     checkExpr: boolean;
+    nodeCheckDiagnostics: NodeCheckDiagnostic[];
     disabled: boolean;
     onCommit: () => void;
-}> = ({ form, arg, nodeDef, usingVars, checkExpr, disabled, onCommit }) => {
+}> = ({ form, arg, nodeDef, usingVars, checkExpr, nodeCheckDiagnostics, disabled, onCommit }) => {
     const { t } = useTranslation();
     const argsValue = (Form.useWatch("args", form) as Record<string, unknown> | undefined) ?? {};
     const type = getNodeArgRawType(arg);
@@ -138,6 +140,11 @@ const NodeArgField: React.FC<{
             if (!checkOneof(arg, parsedValue, relatedInputValue)) {
                 throw new Error(t("validation.oneof", { left: arg.name, right: arg.oneof }));
             }
+        }
+
+        const customDiagnostic = nodeCheckDiagnostics.find((entry) => entry.argName === arg.name);
+        if (customDiagnostic) {
+            throw new Error(customDiagnostic.message);
         }
     };
 
@@ -287,6 +294,18 @@ const NodeMetaFields: React.FC<{
         form.setFieldValue(name, value);
         queueSubmit(form);
     };
+    const formatResolutionError = () => {
+        switch (selectedNode.resolutionError) {
+            case "missing-subtree":
+                return t("node.subtreeMissing", { path: selectedNode.data.path ?? "" });
+            case "invalid-subtree":
+                return t("node.subtreeInvalid", { path: selectedNode.data.path ?? "" });
+            case "cyclic-subtree":
+                return t("node.subtreeCyclic", { path: selectedNode.data.path ?? "" });
+            default:
+                return null;
+        }
+    };
 
     return (
         <>
@@ -435,7 +454,20 @@ const NodeMetaFields: React.FC<{
                 </Form.Item>
             </OverrideBar>
 
-            <Form.Item {...createInspectorLabelProps(t("node.subtree"))} name="path">
+            <Form.Item
+                {...createInspectorLabelProps(t("node.subtree"))}
+                name="path"
+                rules={[
+                    {
+                        validator: async () => {
+                            const error = formatResolutionError();
+                            if (error) {
+                                throw new Error(error);
+                            }
+                        },
+                    },
+                ]}
+            >
                 <AutoComplete
                     disabled={fieldEditDisabled || selectedNode.subtreeNode}
                     options={allFiles.map((path) => ({ label: path, value: path }))}
@@ -639,6 +671,7 @@ const NodeStructuredArgsSection: React.FC<{
     args: NodeArg[];
     usingVars: Record<string, VarDecl> | null;
     checkExpr: boolean;
+    nodeCheckDiagnostics: NodeCheckDiagnostic[];
     fieldEditDisabled: boolean;
     isOverridden: (argName: string) => boolean;
     onReset: (arg: NodeArg) => void;
@@ -649,6 +682,7 @@ const NodeStructuredArgsSection: React.FC<{
     args,
     usingVars,
     checkExpr,
+    nodeCheckDiagnostics,
     fieldEditDisabled,
     isOverridden,
     onReset,
@@ -675,6 +709,7 @@ const NodeStructuredArgsSection: React.FC<{
                         nodeDef={nodeDef}
                         usingVars={usingVars}
                         checkExpr={checkExpr}
+                        nodeCheckDiagnostics={nodeCheckDiagnostics}
                         disabled={fieldEditDisabled}
                         onCommit={onCommit}
                     />
@@ -712,6 +747,7 @@ export const NodeInspectorForm: React.FC = () => {
         usingGroups,
         allFiles,
         checkExpr,
+        nodeCheckDiagnostics,
         nodeDefMap,
         variableOptions,
         nodeDef,
@@ -746,7 +782,7 @@ export const NodeInspectorForm: React.FC = () => {
         }, 100);
 
         return () => window.clearTimeout(timer);
-    }, [form, selectedNode, usingVars, usingGroups, checkExpr, nodeDef]);
+    }, [form, selectedNode, usingVars, usingGroups, checkExpr, nodeDef, nodeCheckDiagnostics]);
 
     if (!selectedNode) {
         return null;
@@ -918,6 +954,7 @@ export const NodeInspectorForm: React.FC = () => {
                             args={structuredArgs}
                             usingVars={usingVars}
                             checkExpr={checkExpr}
+                            nodeCheckDiagnostics={nodeCheckDiagnostics}
                             fieldEditDisabled={fieldEditDisabled}
                             isOverridden={isArgOverridden}
                             onReset={resetArgField}

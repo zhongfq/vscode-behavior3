@@ -222,7 +222,8 @@
       {
         "name": "time",
         "type": "float",
-        "desc": "等待时间"
+        "desc": "等待时间",
+        "checker": "positive"
       },
       {
         "name": "random",

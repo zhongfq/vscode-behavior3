@@ -203,6 +203,9 @@
     "check": "tsc --noEmit && tsc --project tsconfig.webview.json --noEmit",
     "test:shared": "node test/run-tests.js"
   },
+  "dependencies": {
+    "behavior3": "^1.1.0"
+  },
   "devDependencies": {
     "@ant-design/icons": "^6.1.1",
     "@antv/g6": "^5.0.51",
@@ -215,7 +218,6 @@
     "ahooks": "^3.8.0",
     "antd": "^6.3.4",
     "autoprefixer": "^10.4.20",
-    "behavior3": "^1.0.1",
     "esbuild": "^0.24.0",
     "i18next": "^23.12.2",
     "nanoid": "^5.1.6",

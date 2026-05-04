@@ -52,7 +52,7 @@ body[data-theme="dark"] {
     --b3-node-focus-opacity: 0.45;
     --b3-node-variable-hover-bg: var(--vscode-list-hoverBackground, rgba(23, 105, 221, 0.08));
     --b3-node-variable-active-hover-bg: rgba(255, 255, 255, 0.14);
-    --b3-subtree-outline: var(--vscode-panel-border, #a5b1be);
+    --b3-subtree-outline: var(--vscode-descriptionForeground, var(--vscode-panel-border, #a5b1be));
     --b3-warning-text: var(--vscode-errorForeground, #b42318);
     --b3-drop-before: var(--vscode-editorWarning-foreground, #faad14);
     --b3-drop-child: var(--vscode-errorForeground, #ff4d4f);
@@ -101,7 +101,7 @@ body[data-theme="light"] {
     --b3-node-focus-opacity: 0.5;
     --b3-node-variable-hover-bg: var(--vscode-list-hoverBackground, rgba(9, 105, 218, 0.1));
     --b3-node-variable-active-hover-bg: rgba(255, 255, 255, 0.18);
-    --b3-subtree-outline: var(--vscode-panel-border, #6e7781);
+    --b3-subtree-outline: var(--vscode-descriptionForeground, var(--vscode-panel-border, #6e7781));
     --b3-warning-text: var(--vscode-errorForeground, #cf222e);
     --b3-drop-before: var(--vscode-editorWarning-foreground, #9a6700);
     --b3-drop-child: var(--vscode-errorForeground, #cf222e);

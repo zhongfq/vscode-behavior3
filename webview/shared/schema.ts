@@ -1,5 +1,5 @@
-import type { NodeDef } from "behavior3";
 import type { NodeData, TreeData, VarDecl, WorkspaceModel } from "./misc/b3type";
+import type { NodeDef } from "./misc/b3type";
 import { generateUuid } from "./stable-id";
 import { parseWorkdirRelativeJsonPath } from "./protocol";
 
@@ -34,6 +34,13 @@ const expectPlainRecord = (value: unknown, label: string): PlainRecord => {
 
 const asOptionalString = (value: unknown): string | undefined => {
     return typeof value === "string" ? value : undefined;
+};
+
+const asOptionalNonEmptyString = (value: unknown, label: string): string | undefined => {
+    if (value === undefined) {
+        return undefined;
+    }
+    return asRequiredString(value, label);
 };
 
 const asRequiredString = (value: unknown, label: string): string => {
@@ -184,6 +191,7 @@ const normalizeNodeArgs = (value: unknown, label: string): NodeDef["args"] | und
             oneof: asOptionalString(record.oneof),
             default: record.default,
             options: normalizeNodeArgOptions(record.options, `${label}[${index}].options`),
+            checker: asOptionalNonEmptyString(record.checker, `${label}[${index}].checker`),
         };
     });
 };
