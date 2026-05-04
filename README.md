@@ -108,7 +108,9 @@ All build hooks receive `env`:
 - `env.nodeDefs`: loaded node definitions map
 - `env.logger`: `log/debug/info/warn/error`
 
-Use a `Hook` class. The extension constructs it once with `env`, then calls methods:
+Use an exported `@behavior3.build` class. The decorator is provided by the build
+runtime, so no value import is required. The extension constructs the class once
+with `env`, then calls methods:
 
 - `constructor(env)`
 - `onProcessTree(tree, path, errors)`
@@ -116,7 +118,22 @@ Use a `Hook` class. The extension constructs it once with `env`, then calls meth
 - `onWriteFile(path, tree)`
 - `onComplete(status)`
 
-All supported script files must export a class via named `Hook` or `default`.
+```ts
+import type { BuildScriptEnv, BuildTree } from "./build-script";
+
+@behavior3.build
+export class ProjectBuild {
+    constructor(private readonly env: BuildScriptEnv) {}
+
+    onProcessTree(tree: BuildTree) {
+        this.env.logger.info("building", tree.name);
+        return tree;
+    }
+}
+```
+
+For compatibility, supported script files may still export a class via named
+`Hook` or `default`.
 
 For TypeScript authoring hints, see:
 

@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import type { PersistedNodeModel, PersistedTreeModel } from "../../webview/shared/contracts";
-import { isBehaviorTreeJsonPath } from "../../webview/shared/misc/behavior-tree-files";
+import { isBehaviorTreeJsonPath } from "../../webview/shared/misc/b3-build";
 import { parseWorkdirRelativeJsonPath } from "../../webview/shared/protocol";
 import {
     collectReachableSubtreePaths,

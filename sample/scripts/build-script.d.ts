@@ -57,10 +57,25 @@ export type BatchScript = {
   onComplete?: (status: "success" | "failure") => void;
 };
 
+export type BuildHookClass<T extends BatchScript = BatchScript> = new (...args: any[]) => T;
+
+export type BuildDecorator = {
+  <T extends BuildHookClass>(target: T): T | void;
+  <T extends BuildHookClass>(target: T, context: ClassDecoratorContext<T>): T | void;
+};
+
+export type Behavior3BuildRuntime = {
+  build: BuildDecorator;
+};
+
 export declare class Hook implements BatchScript {
   constructor(env: BuildScriptEnv);
   onProcessTree?(tree: BuildTree, path: string, errors: string[]): BuildTree | null;
   onProcessNode?(node: BuildNode, errors: string[]): BuildNode | null;
   onWriteFile?(path: string, tree: BuildTree): void;
   onComplete?(status: "success" | "failure"): void;
+}
+
+declare global {
+  const behavior3: Behavior3BuildRuntime;
 }

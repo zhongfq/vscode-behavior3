@@ -845,7 +845,7 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
         },
     },
     {
-        name: "loads TypeScript build scripts with local TypeScript imports",
+        name: "loads decorated TypeScript build scripts with local TypeScript imports",
         async run() {
             const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-build-ts-import-"));
             const scriptsDir = path.join(root, "scripts");
@@ -923,7 +923,8 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                     [
                         'import { markTree } from "./helper.ts";',
                         "",
-                        "export class Hook {",
+                        "@behavior3.build",
+                        "export class CustomBuildScript {",
                         "  onProcessTree(tree) {",
                         "    markTree(tree);",
                         "    return tree;",

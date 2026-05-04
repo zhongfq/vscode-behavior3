@@ -1,8 +1,9 @@
-/* TypeScript batch script example (ESM-only, class-based hooks). */
+/* TypeScript batch script example (ESM-only, decorator-based hooks). */
 import type { BuildScriptEnv, BuildNode, BuildTree } from "./build-script";
 import { formatProcessedNode, shouldReportWaitNode } from "./build-helper.ts";
 
-export class Hook {
+@behavior3.build
+export class SampleBuild {
   constructor(private readonly env: BuildScriptEnv) {}
 
   onProcessTree(tree: BuildTree, _path: string, _errors: string[]) {

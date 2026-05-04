@@ -28,7 +28,7 @@ const SKIP_JSON_BASENAMES = new Set([
     "components.json",
 ]);
 
-const isBehaviorTreeJsonPath = (filePath: string): boolean => {
+export const isBehaviorTreeJsonPath = (filePath: string): boolean => {
     const normalized = b3path.posixPath(filePath);
     if (!normalized.toLowerCase().endsWith(".json")) {
         return false;
@@ -74,6 +74,9 @@ type RuntimeProcess = {
     once?(event: string, listener: () => void): unknown;
     exit?(code?: number): unknown;
 };
+type RuntimeGlobals = typeof globalThis & {
+    behavior3?: unknown;
+};
 
 interface BuildContext {
     workdir: string;
@@ -106,13 +109,41 @@ const hasBatchHookMethod = (obj: unknown): obj is BatchScript => {
     );
 };
 
+const BUILD_HOOK_MARKER = "__behavior3BuildHook";
+
+type MarkedHookCtor = HookCtor & {
+    [BUILD_HOOK_MARKER]?: true;
+};
+
+const markBuildHook = <T extends new (...args: unknown[]) => unknown>(ctor: T) => {
+    Object.defineProperty(ctor, BUILD_HOOK_MARKER, {
+        value: true,
+        configurable: false,
+    });
+    return ctor;
+};
+
+const isDecoratedHookCtor = (value: unknown): value is MarkedHookCtor =>
+    typeof value === "function" && (value as MarkedHookCtor)[BUILD_HOOK_MARKER] === true;
+
+const findDecoratedHookCtor = (moduleRecord: Record<string, unknown>): HookCtor | undefined => {
+    const decorated = Array.from(new Set(Object.values(moduleRecord))).filter(isDecoratedHookCtor);
+    if (decorated.length > 1) {
+        logger.error("build script must decorate exactly one exported class with @behavior3.build");
+        return undefined;
+    }
+    return decorated[0];
+};
+
 const createBatchHooks = (moduleExports: unknown, env: Env): BatchScript | undefined => {
-    /** Build scripts must expose one Hook-class entry so runtime behavior stays uniform. */
+    /** Build scripts must expose one class entry so runtime behavior stays uniform. */
     if (!moduleExports || typeof moduleExports !== "object") {
         return undefined;
     }
     const moduleRecord = moduleExports as Record<string, unknown>;
-    const ctor = (moduleRecord.Hook ?? moduleRecord.default) as HookCtor | undefined;
+    const ctor = (moduleRecord.Hook ??
+        findDecoratedHookCtor(moduleRecord) ??
+        moduleRecord.default) as HookCtor | undefined;
     if (typeof ctor === "function") {
         try {
             const instance = new ctor(env);
@@ -125,7 +156,9 @@ const createBatchHooks = (moduleExports: unknown, env: Env): BatchScript | undef
         }
     }
 
-    logger.error("build script must export a Hook class (named export `Hook` or default export)");
+    logger.error(
+        "build script must export a Hook class, default class, or one @behavior3.build-decorated class"
+    );
     return undefined;
 };
 
@@ -450,6 +483,27 @@ const getRuntimeProcess = (): RuntimeProcess | undefined => {
     return candidate && typeof candidate === "object" ? (candidate as RuntimeProcess) : undefined;
 };
 
+const withBehavior3BuildDecoratorGlobal = async <T>(loader: () => Promise<T>): Promise<T> => {
+    const runtimeGlobal = globalThis as RuntimeGlobals;
+    const hadBehavior3 = Object.prototype.hasOwnProperty.call(runtimeGlobal, "behavior3");
+    const previousBehavior3 = runtimeGlobal.behavior3;
+    runtimeGlobal.behavior3 = {
+        ...(previousBehavior3 && typeof previousBehavior3 === "object"
+            ? (previousBehavior3 as Record<string, unknown>)
+            : {}),
+        build: markBuildHook,
+    };
+    try {
+        return await loader();
+    } finally {
+        if (hadBehavior3) {
+            runtimeGlobal.behavior3 = previousBehavior3;
+        } else {
+            delete runtimeGlobal.behavior3;
+        }
+    }
+};
+
 const deferRuntimeModuleCleanup = (paths: string[]) => {
     paths.forEach((filePath) => deferredRuntimeModuleCleanup.add(filePath));
     const runtimeProcess = getRuntimeProcess();
@@ -576,6 +630,7 @@ const createRuntimeTypeScriptModuleGraph = (
                 inlineSourceMap: debug,
                 inlineSources: debug,
                 removeComments: false,
+                experimentalDecorators: true,
             },
             transformers: {
                 before: [rewriteImports],
@@ -614,7 +669,9 @@ export const loadRuntimeModule = async (modulePath: string, options?: { debug?: 
             }
         }
         if (getRuntimeProcess()?.type === "renderer") {
-            return await import(/* @vite-ignore */ `${modulePath}?t=${Date.now()}`);
+            return await withBehavior3BuildDecoratorGlobal(() =>
+                import(/* @vite-ignore */ `${modulePath}?t=${Date.now()}`)
+            );
         }
 
         const ext = b3path.extname(modulePath).toLowerCase();
@@ -639,8 +696,8 @@ export const loadRuntimeModule = async (modulePath: string, options?: { debug?: 
         }
 
         const normalizedModulePath = b3path.posixPath(tempModulePath);
-        const result = await import(
-            /* @vite-ignore */ `file:///${normalizedModulePath}?t=${Date.now()}`
+        const result = await withBehavior3BuildDecoratorGlobal(() =>
+            import(/* @vite-ignore */ `file:///${normalizedModulePath}?t=${Date.now()}`)
         );
         if (debugBuildScript && cleanupPaths.length) {
             logger.info(
