@@ -1,8 +1,8 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import enTranslation from "../../../public/locales/en.json";
-import zhTranslation from "../../../public/locales/zh.json";
+import enTranslation from "../../../media/locales/en.json";
+import zhTranslation from "../../../media/locales/zh.json";
 
 declare module "i18next" {
     interface CustomTypeOptions {

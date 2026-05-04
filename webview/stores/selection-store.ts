@@ -42,7 +42,7 @@ export const createInitialSelectionState = (): SelectionState => ({
     activeVariableNames: [],
     search: createInitialSearchState(),
     inspector: {
-        panelWidth: 368,
+        panelWidth: 360,
     },
 });
 

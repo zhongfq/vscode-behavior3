@@ -9,7 +9,7 @@ VS Code behavior tree visual editor for game AI workflows.
 
 ## Editor Preview
 
-![Behavior3 Editor Preview](public/images/pic.png)
+![Behavior3 Editor Preview](media/images/pic.png)
 
 The editor provides an intuitive visual interface for designing and managing behavior trees. See the screenshot above for the full editing experience with node canvas, inspector panel, and tree organization.
 

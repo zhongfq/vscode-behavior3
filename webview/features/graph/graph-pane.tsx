@@ -62,44 +62,71 @@ export const GraphPane: React.FC = () => {
                 <span>{shortcut ?? ""}</span>
             </Flex>
         );
+        const renderCodicon = (name: string) => (
+            <span
+                className={`codicon codicon-${name} b3-v2-context-menu-icon`}
+                aria-hidden="true"
+            />
+        );
+        const createItem = (
+            key: string,
+            label: string,
+            icon: React.ReactNode,
+            shortcut?: string,
+            disabled?: boolean
+        ) => ({
+            key,
+            icon,
+            label: renderItem(label, shortcut),
+            disabled,
+        });
 
         return [
-            {
-                key: "copy",
-                label: renderItem(t("copy"), isMacos ? "Cmd+C" : "Ctrl+C"),
-                disabled: !selectedNode,
-            },
-            {
-                key: "paste",
-                label: renderItem(t("paste"), isMacos ? "Cmd+V" : "Ctrl+V"),
-                disabled: !selectedNode || structureLocked,
-            },
-            {
-                key: "replace",
-                label: renderItem(t("replace"), isMacos ? "Shift+Cmd+V" : "Ctrl+Shift+V"),
-                disabled: !selectedNode || structureLocked,
-            },
-            {
-                key: "insert",
-                label: renderItem(t("insertNode"), "Enter"),
-                disabled: !selectedNode || structureLocked,
-            },
-            {
-                key: "delete",
-                label: renderItem(t("deleteNode"), isMacos ? "Backspace" : "Delete"),
-                disabled: !selectedNode || selectedNode.subtreeNode || isRootSelected,
-            },
+            createItem(
+                "copy",
+                t("copy"),
+                renderCodicon("copy"),
+                isMacos ? "⌘+C" : "Ctrl+C",
+                !selectedNode
+            ),
+            createItem(
+                "paste",
+                t("paste"),
+                renderCodicon("files"),
+                isMacos ? "⌘+V" : "Ctrl+V",
+                !selectedNode || structureLocked
+            ),
+            createItem(
+                "replace",
+                t("replace"),
+                renderCodicon("replace-all"),
+                isMacos ? "⇧+⌘+V" : "Ctrl+Shift+V",
+                !selectedNode || structureLocked
+            ),
+            createItem(
+                "insert",
+                t("insertNode"),
+                renderCodicon("insert"),
+                isMacos ? "⏎" : "Enter",
+                !selectedNode || structureLocked
+            ),
+            createItem(
+                "delete",
+                t("deleteNode"),
+                renderCodicon("trash"),
+                isMacos ? "⌫" : "Delete",
+                !selectedNode || selectedNode.subtreeNode || isRootSelected
+            ),
             canOpenSubtree
-                ? {
-                      key: "openSubtree",
-                      label: renderItem(t("editSubtree")),
-                  }
+                ? createItem("openSubtree", t("editSubtree"), renderCodicon("folder-opened"))
                 : null,
-            {
-                key: "saveAsSubtree",
-                label: renderItem(t("saveAsSubtree")),
-                disabled: !selectedNode || structureLocked || isRootSelected,
-            },
+            createItem(
+                "saveAsSubtree",
+                t("saveAsSubtree"),
+                renderCodicon("save-as"),
+                undefined,
+                !selectedNode || structureLocked || isRootSelected
+            ),
         ].filter(Boolean);
     }, [canOpenSubtree, isRootSelected, selectedNode, structureLocked, t]);
 

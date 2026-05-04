@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
   root: "webview",
   base: "./",
-  publicDir: path.resolve(__dirname, "public"),
+  publicDir: path.resolve(__dirname, "media"),
   build: {
     outDir: path.resolve(__dirname, "dist/webview"),
     emptyOutDir: true,

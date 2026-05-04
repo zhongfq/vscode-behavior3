@@ -50,7 +50,7 @@ function configureEditorWebview(
         enableScripts: true,
         localResourceRoots: [
             vscode.Uri.joinPath(extensionUri, "dist", "webview"),
-            vscode.Uri.joinPath(extensionUri, "public"),
+            vscode.Uri.joinPath(extensionUri, "media"),
             workspaceFolderUri,
         ],
     };

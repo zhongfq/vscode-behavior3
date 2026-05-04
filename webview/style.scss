@@ -448,6 +448,15 @@ body[data-theme="light"] {
     min-height: 0;
 }
 
+.b3-v2-context-menu-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    font-size: 17px;
+    line-height: 1;
+}
+
 .b3-v2-graph {
     position: relative;
     width: 100%;
