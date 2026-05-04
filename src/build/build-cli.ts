@@ -139,7 +139,7 @@ Options:
       --workspace-root <dir>  Limit upward workspace discovery to this directory
       --check-expr            Enable expression validation (default)
       --no-check-expr         Disable expression validation
-      --build-script-debug    Keep sourcemapped build script runtime modules for debugging
+      --build-script-debug    Enable sourcemapped build script debugging
   -h, --help                  Show this help text
 `;
 

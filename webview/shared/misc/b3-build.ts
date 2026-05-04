@@ -1,7 +1,5 @@
-import type * as Fs from "fs";
-import { getFs, hasFs } from "./b3fs";
+import { FsLike, getFs, hasFs } from "./b3fs";
 import type { FileVarDecl, ImportDecl, NodeData, NodeDef, TreeData } from "./b3type";
-import { isBehaviorTreeJsonPath } from "./behavior-tree-files";
 import { logger } from "./logger";
 import b3path from "./b3path";
 import { stringifyJson } from "./stringify";
@@ -16,11 +14,40 @@ import { parsePersistedTreeContent } from "../tree";
  * loading, and output serialization for offline/project builds.
  */
 type Env = {
-    fs: typeof Fs;
+    fs: FsLike;
     path: typeof b3path;
     workdir: string;
     nodeDefs: ReadonlyMap<string, NodeDef>;
     logger: Pick<typeof logger, "debug" | "info" | "warn" | "error" | "log">;
+};
+
+const SKIP_JSON_BASENAMES = new Set([
+    "package.json",
+    "package-lock.json",
+    "jsconfig.json",
+    "components.json",
+]);
+
+const isBehaviorTreeJsonPath = (filePath: string): boolean => {
+    const normalized = b3path.posixPath(filePath);
+    if (!normalized.toLowerCase().endsWith(".json")) {
+        return false;
+    }
+
+    const base = b3path.basename(normalized);
+    const lowerBase = base.toLowerCase();
+    if (SKIP_JSON_BASENAMES.has(lowerBase)) {
+        return false;
+    }
+
+    if (lowerBase === "tsconfig.json" || /^tsconfig\..*\.json$/i.test(base)) {
+        return false;
+    }
+
+    const lowerPath = `/${normalized.toLowerCase().replace(/^[/\\]+/, "")}`;
+    return !["/.vscode/", "/.git/", "/node_modules/", "/dist/", "/build/"].some((marker) =>
+        lowerPath.includes(marker)
+    );
 };
 
 export interface BatchScript {
@@ -41,6 +68,12 @@ type TypeScriptApi = typeof import("typescript");
 type TypeScriptNode = import("typescript").Node;
 type TypeScriptSourceFile = import("typescript").SourceFile;
 type TypeScriptTransformerFactory = import("typescript").TransformerFactory<TypeScriptSourceFile>;
+type RuntimeProcess = {
+    env?: Record<string, string | undefined>;
+    type?: string;
+    once?(event: string, listener: () => void): unknown;
+    exit?(code?: number): unknown;
+};
 
 interface BuildContext {
     workdir: string;
@@ -388,11 +421,64 @@ const cleanupRuntimeModules = (paths: string[]) => {
     }
 };
 
-const isBuildScriptDebugEnabled = () => {
-    if (typeof process === "undefined") {
-        return false;
+const runtimeModuleBaseName = (sourcePath: string) =>
+    b3path.basenameWithoutExt(sourcePath).replace(/[^a-zA-Z0-9._-]/g, "_") || "module";
+
+const cleanupStaleRuntimeModulesForSource = (sourcePath: string) => {
+    const fsApi = getFs();
+    const dir = b3path.dirname(sourcePath);
+    const base = runtimeModuleBaseName(sourcePath);
+    let entries: string[];
+    try {
+        entries = fsApi.readdirSync(dir);
+    } catch {
+        return;
     }
-    const value = process.env.BEHAVIOR3_BUILD_DEBUG?.toLowerCase();
+
+    cleanupRuntimeModules(
+        entries
+            .filter((entry) => entry.startsWith(`${base}.runtime.`) && entry.endsWith(".mjs"))
+            .map((entry) => b3path.join(dir, entry))
+    );
+};
+
+const deferredRuntimeModuleCleanup = new Set<string>();
+let runtimeModuleExitCleanupRegistered = false;
+
+const getRuntimeProcess = (): RuntimeProcess | undefined => {
+    const candidate = (globalThis as typeof globalThis & { process?: unknown }).process;
+    return candidate && typeof candidate === "object" ? (candidate as RuntimeProcess) : undefined;
+};
+
+const deferRuntimeModuleCleanup = (paths: string[]) => {
+    paths.forEach((filePath) => deferredRuntimeModuleCleanup.add(filePath));
+    const runtimeProcess = getRuntimeProcess();
+    if (!runtimeModuleExitCleanupRegistered && typeof runtimeProcess?.once === "function") {
+        runtimeModuleExitCleanupRegistered = true;
+        runtimeProcess.once("exit", flushDeferredRuntimeModuleCleanup);
+        runtimeProcess.once("beforeExit", flushDeferredRuntimeModuleCleanup);
+        const signalExitCodes: Record<string, number> = {
+            SIGHUP: 129,
+            SIGINT: 130,
+            SIGTERM: 143,
+        };
+        Object.entries(signalExitCodes).forEach(([signal, exitCode]) => {
+            runtimeProcess.once?.(signal, () => {
+                flushDeferredRuntimeModuleCleanup();
+                runtimeProcess.exit?.(exitCode);
+            });
+        });
+    }
+};
+
+const flushDeferredRuntimeModuleCleanup = () => {
+    const paths = Array.from(deferredRuntimeModuleCleanup);
+    deferredRuntimeModuleCleanup.clear();
+    cleanupRuntimeModules(paths);
+};
+
+const isBuildScriptDebugEnabled = () => {
+    const value = getRuntimeProcess()?.env?.BEHAVIOR3_BUILD_DEBUG?.toLowerCase();
     return value === "1" || value === "true" || value === "yes";
 };
 
@@ -407,7 +493,8 @@ const createRuntimeTypeScriptModuleGraph = (
     let moduleIndex = 0;
 
     const createTempModulePath = (sourcePath: string) => {
-        const base = b3path.basenameWithoutExt(sourcePath).replace(/[^a-zA-Z0-9._-]/g, "_");
+        cleanupStaleRuntimeModulesForSource(sourcePath);
+        const base = runtimeModuleBaseName(sourcePath);
         const tempPath = b3path.join(
             b3path.dirname(sourcePath),
             `${base || "module"}.runtime.${runId}.${moduleIndex++}.mjs`
@@ -428,7 +515,10 @@ const createRuntimeTypeScriptModuleGraph = (
 
         const rewriteImports: TypeScriptTransformerFactory = (context) => {
             const rewriteSpecifier = (specifier: string) => {
-                const importedPath = resolveRuntimeTypeScriptImport(specifier, normalizedSourcePath);
+                const importedPath = resolveRuntimeTypeScriptImport(
+                    specifier,
+                    normalizedSourcePath
+                );
                 return importedPath
                     ? toRuntimeImportSpecifier(tempModulePath, emitModule(importedPath))
                     : null;
@@ -523,7 +613,7 @@ export const loadRuntimeModule = async (modulePath: string, options?: { debug?: 
                 /* path may not be in require cache */
             }
         }
-        if (typeof process !== "undefined" && (process as { type?: string }).type === "renderer") {
+        if (getRuntimeProcess()?.type === "renderer") {
             return await import(/* @vite-ignore */ `${modulePath}?t=${Date.now()}`);
         }
 
@@ -554,8 +644,11 @@ export const loadRuntimeModule = async (modulePath: string, options?: { debug?: 
         );
         if (debugBuildScript && cleanupPaths.length) {
             logger.info(
-                `build script debug: keeping runtime modules:\n${cleanupPaths.join("\n")}`
+                `build script debug: keeping runtime modules until build completes:\n${cleanupPaths.join(
+                    "\n"
+                )}`
             );
+            deferRuntimeModuleCleanup(cleanupPaths);
         } else {
             cleanupRuntimeModules(cleanupPaths);
         }
@@ -667,5 +760,6 @@ export const buildProjectWithContext = async (
 
     allErrors.forEach((message) => logger.error(message));
     buildScript?.onComplete?.(hasError ? "failure" : "success");
+    flushDeferredRuntimeModuleCleanup();
     return hasError;
 };

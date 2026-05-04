@@ -34,6 +34,34 @@ export interface RunBuildOptions {
     buildScriptDebug?: boolean;
 }
 
+const isRuntimeModuleFile = (fileName: string) =>
+    fileName.includes(".runtime.") && fileName.endsWith(".mjs");
+
+function cleanupRuntimeModulesUnder(dir: string): void {
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return;
+    }
+
+    for (const entry of entries) {
+        const filePath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            cleanupRuntimeModulesUnder(filePath);
+            continue;
+        }
+        if (!entry.isFile() || !isRuntimeModuleFile(entry.name)) {
+            continue;
+        }
+        try {
+            fs.unlinkSync(filePath);
+        } catch {
+            /* ignore cleanup failure */
+        }
+    }
+}
+
 async function startBuildScriptDebugSession(params: {
     context: vscode.ExtensionContext;
     folder: vscode.WorkspaceFolder;
@@ -73,7 +101,23 @@ async function startBuildScriptDebugSession(params: {
         ],
     };
 
-    return vscode.debug.startDebugging(params.folder, debugConfig);
+    const cleanupSession = vscode.debug.onDidTerminateDebugSession((session) => {
+        if (
+            session.configuration.program !== program ||
+            !Array.isArray(session.configuration.args) ||
+            !session.configuration.args.includes(params.workspaceFile)
+        ) {
+            return;
+        }
+        cleanupRuntimeModulesUnder(path.dirname(params.workspaceFile));
+        cleanupSession.dispose();
+    });
+
+    const started = await vscode.debug.startDebugging(params.folder, debugConfig);
+    if (!started) {
+        cleanupSession.dispose();
+    }
+    return started;
 }
 
 function getWorkspaceStateKey(folderUri: vscode.Uri): string {

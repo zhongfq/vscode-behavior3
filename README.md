@@ -80,8 +80,12 @@ build-script debug mode:
 BEHAVIOR3_BUILD_DEBUG=1 node --inspect-brk dist/build-cli.js --output /tmp/b3-build --project sample/workdir/hero.json
 ```
 
-This emits inline source maps and keeps generated `.runtime.*.mjs` files next to
-the build script so breakpoints in `build.ts` and imported helper files can bind.
+This emits inline source maps and creates temporary `.runtime.*.mjs` files next
+to the build script while the build runs so breakpoints in `build.ts` and
+imported helper files can bind. The runtime files are removed after the build
+completes; if the build script fails to load, they are left in place for
+inspection. Editor debug builds also clean runtime files when the debug session
+terminates.
 Inside the editor, `Ctrl+B`/`Cmd+B` builds normally, while
 `Ctrl+Shift+B`/`Cmd+Shift+B` starts a VS Code Node debug session for the build.
 

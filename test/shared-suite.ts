@@ -23,6 +23,7 @@ import {
     serializePersistedTree,
 } from "../webview/shared/tree";
 import { parseWorkdirRelativeJsonPath } from "../webview/shared/protocol";
+import b3path from "../webview/shared/misc/b3path";
 import type { GraphAdapter } from "../webview/shared/graph-contracts";
 import type { HostAdapter } from "../webview/shared/contracts";
 
@@ -70,6 +71,17 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
             assert.equal(parseWorkdirRelativeJsonPath("C:\\absolute.json"), null);
             assert.equal(parseWorkdirRelativeJsonPath("tree.txt"), null);
             assert.equal(parseWorkdirRelativeJsonPath("http://example.com/tree.json"), null);
+        },
+    },
+    {
+        name: "normalizes shared b3 paths without Node path augmentation",
+        run() {
+            assert.equal(b3path.posixPath("vars\\sub\\../tree.json"), "vars/tree.json");
+            assert.equal(b3path.basenameWithoutExt("/work/trees/main.json"), "main");
+            assert.equal(b3path.dirname("/work/trees/main.json"), "/work/trees");
+            assert.equal(b3path.resolve("/work/trees", "./main.json"), "/work/trees/main.json");
+            assert.equal(b3path.relative("/work/trees", "/work/scripts/build.ts"), "../scripts/build.ts");
+            assert.equal(b3path.isAbsolute("C:\\work\\main.json"), true);
         },
     },
     {
@@ -920,6 +932,8 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                         "",
                     ].join("\n")
                 );
+                fs.writeFileSync(path.join(scriptsDir, "build.runtime.stale.0.mjs"), "");
+                fs.writeFileSync(path.join(scriptsDir, "helper.runtime.stale.1.mjs"), "");
 
                 const result = await buildBehaviorProject({
                     projectPath: treeFile,
@@ -928,16 +942,20 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 const outputTree = JSON.parse(
                     fs.readFileSync(path.join(outputDir, "main.json"), "utf-8")
                 );
+                const runtimeFiles = fs
+                    .readdirSync(scriptsDir)
+                    .filter((file) => file.includes(".runtime.") && file.endsWith(".mjs"));
 
                 assert.equal(result.hasError, false);
                 assert.equal(outputTree.custom.helperValue, "imported-helper");
+                assert.deepEqual(runtimeFiles, []);
             } finally {
                 fs.rmSync(root, { recursive: true, force: true });
             }
         },
     },
     {
-        name: "keeps sourcemapped TypeScript build script runtime modules in debug mode",
+        name: "cleans TypeScript build script runtime modules after debug builds",
         async run() {
             const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-build-debug-"));
             const scriptsDir = path.join(root, "scripts");
@@ -1027,19 +1045,10 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 const runtimeFiles = fs
                     .readdirSync(scriptsDir)
                     .filter((file) => file.includes(".runtime.") && file.endsWith(".mjs"));
-                const runtimeContents = runtimeFiles.map((file) =>
-                    fs.readFileSync(path.join(scriptsDir, file), "utf-8")
-                );
 
                 assert.equal(result.hasError, false);
                 assert.equal(outputTree.custom.debugValue, "debug-helper");
-                assert.equal(runtimeFiles.length >= 2, true);
-                assert.equal(
-                    runtimeContents.every((content) =>
-                        content.includes("sourceMappingURL=data:application/json")
-                    ),
-                    true
-                );
+                assert.deepEqual(runtimeFiles, []);
             } finally {
                 if (previousDebug === undefined) {
                     delete process.env.BEHAVIOR3_BUILD_DEBUG;
