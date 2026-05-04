@@ -1,23 +1,10 @@
 import { getFs } from "./b3fs";
+import type { PathLike } from "./b3build-model";
 
 type ParsedPath = {
     root: string;
     parts: string[];
     absolute: boolean;
-};
-
-type B3Path = {
-    basename(path: string, suffix?: string): string;
-    basenameWithoutExt(path: string): string;
-    dirname(path: string): string;
-    extname(path: string): string;
-    isAbsolute(path: string): boolean;
-    join(...paths: string[]): string;
-    lsdir(path: string, recursive?: boolean): string[];
-    normalize(path: string): string;
-    posixPath(path: string): string;
-    relative(from: string, to: string): string;
-    resolve(...paths: string[]): string;
 };
 
 const toSlashes = (value: string) => value.replace(/\\/g, "/");
@@ -140,7 +127,7 @@ const lsdir = (dir: string, recursive?: boolean) => {
         .sort();
 };
 
-const b3path: B3Path = {
+const b3path: PathLike = {
     basename,
     basenameWithoutExt,
     dirname,

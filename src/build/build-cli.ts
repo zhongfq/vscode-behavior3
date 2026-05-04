@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { buildProjectWithContext } from "../../webview/shared/misc/b3-build";
+import { buildProjectWithContext } from "../../webview/shared/misc/b3build";
 import { getLogger, setLogger, type Logger } from "../../webview/shared/misc/logger";
 import { createBuildProjectContext } from "../../webview/shared/misc/b3util";
 import { setFs } from "../../webview/shared/misc/b3fs";
@@ -51,15 +51,12 @@ export const resolveBehaviorBuildPaths = (
     options: BehaviorBuildProjectOptions
 ): BehaviorBuildPaths => {
     const projectPath = path.resolve(options.projectPath ?? process.cwd());
-    const workspaceRoot = options.workspaceRoot
-        ? path.resolve(options.workspaceRoot)
-        : undefined;
+    const workspaceRoot = options.workspaceRoot ? path.resolve(options.workspaceRoot) : undefined;
     const outputDir = path.resolve(options.outputDir);
 
-    const workspaceFile =
-        options.workspaceFile
-            ? ensureExistingFile(options.workspaceFile, ".b3-workspace", "workspaceFile")
-            : findBehaviorWorkspaceFileSync(projectPath, { rootDir: workspaceRoot });
+    const workspaceFile = options.workspaceFile
+        ? ensureExistingFile(options.workspaceFile, ".b3-workspace", "workspaceFile")
+        : findBehaviorWorkspaceFileSync(projectPath, { rootDir: workspaceRoot });
 
     if (!workspaceFile) {
         throw new Error(
@@ -68,12 +65,11 @@ export const resolveBehaviorBuildPaths = (
         );
     }
 
-    const settingFile =
-        options.settingFile
-            ? ensureExistingFile(options.settingFile, ".b3-setting", "settingFile")
-            : findBehaviorSettingFileSync(path.dirname(workspaceFile), {
-                  rootDir: workspaceRoot,
-              });
+    const settingFile = options.settingFile
+        ? ensureExistingFile(options.settingFile, ".b3-setting", "settingFile")
+        : findBehaviorSettingFileSync(path.dirname(workspaceFile), {
+              rootDir: workspaceRoot,
+          });
 
     if (!settingFile) {
         throw new Error(

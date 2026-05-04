@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import type { PersistedNodeModel, PersistedTreeModel } from "../../webview/shared/contracts";
-import { isBehaviorTreeJsonPath } from "../../webview/shared/misc/b3-build";
+import { isBehaviorTreeJsonPath } from "../../webview/shared/misc/b3build";
 import { parseWorkdirRelativeJsonPath } from "../../webview/shared/protocol";
 import {
     collectReachableSubtreePaths,
@@ -144,19 +144,19 @@ export class ProjectIndex {
             await this.readVarsFromFile(subtreePath, visited, usingVars);
         }
 
-        const importDecls = (
-            await this.collectOrderedTransitiveImportPaths(importSeeds)
-        ).map((relativePath) => ({
-            path: relativePath,
-            vars: this.getLocalVarsFromTree(relativePath),
-        }));
+        const importDecls = (await this.collectOrderedTransitiveImportPaths(importSeeds)).map(
+            (relativePath) => ({
+                path: relativePath,
+                vars: this.getLocalVarsFromTree(relativePath),
+            })
+        );
 
-        const subtreeDecls = (
-            await this.collectOrderedTransitiveSubtreePaths(tree.root)
-        ).map((relativePath) => ({
-            path: relativePath,
-            vars: this.getLocalVarsFromTree(relativePath),
-        }));
+        const subtreeDecls = (await this.collectOrderedTransitiveSubtreePaths(tree.root)).map(
+            (relativePath) => ({
+                path: relativePath,
+                vars: this.getLocalVarsFromTree(relativePath),
+            })
+        );
 
         return {
             usingVars,
@@ -284,13 +284,10 @@ export class ProjectIndex {
     }
 
     private async collectOrderedTransitiveImportPaths(seedImports: string[]): Promise<string[]> {
-        return collectTransitivePaths(
-            normalizePathList(seedImports),
-            async (relativePath) => {
-                const tree = await this.readTreeFile(relativePath);
-                return normalizePathList(tree?.variables.imports ?? []);
-            }
-        );
+        return collectTransitivePaths(normalizePathList(seedImports), async (relativePath) => {
+            const tree = await this.readTreeFile(relativePath);
+            return normalizePathList(tree?.variables.imports ?? []);
+        });
     }
 
     private async collectOrderedTransitiveSubtreePaths(

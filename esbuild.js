@@ -1,6 +1,7 @@
 const esbuild = require("esbuild");
 const isWatch = process.argv.includes("--watch");
 const isDev = isWatch || process.argv.includes("--dev");
+const isCliOnly = process.argv.includes("--cli");
 
 const sharedOptions = {
   bundle: true,
@@ -25,15 +26,24 @@ const targets = [
     },
   },
 ];
+const selectedTargets = isCliOnly
+  ? targets.filter((target) => target.outfile === "dist/build-cli.js")
+  : targets;
 
 if (isWatch) {
-  Promise.all(targets.map((target) => esbuild.context({ ...sharedOptions, ...target }))).then((contexts) => {
+  Promise.all(
+    selectedTargets.map((target) => esbuild.context({ ...sharedOptions, ...target }))
+  ).then((contexts) => {
     return Promise.all(contexts.map((ctx) => ctx.watch())).then(() => {
       console.log("[esbuild] watching...");
     });
   });
 } else {
-  Promise.all(targets.map((target) => esbuild.build({ ...sharedOptions, ...target }))).then(() => {
-    console.log("[esbuild] built extension.js and build-cli.js");
+  Promise.all(
+    selectedTargets.map((target) => esbuild.build({ ...sharedOptions, ...target }))
+  ).then(() => {
+    console.log(
+      `[esbuild] built ${selectedTargets.map((target) => target.outfile).join(", ")}`
+    );
   });
 }

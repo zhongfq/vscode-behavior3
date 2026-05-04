@@ -1,5 +1,6 @@
-import { FsLike, getFs, hasFs } from "./b3fs";
+import { getFs, hasFs } from "./b3fs";
 import type { FileVarDecl, ImportDecl, NodeData, NodeDef, TreeData } from "./b3type";
+import type { BuildEnv, BuildScript } from "./b3build-model";
 import { logger } from "./logger";
 import b3path from "./b3path";
 import { stringifyJson } from "./stringify";
@@ -13,14 +14,6 @@ import { parsePersistedTreeContent } from "../tree";
  * This module owns file discovery, subtree materialization, runtime hook
  * loading, and output serialization for offline/project builds.
  */
-type Env = {
-    fs: FsLike;
-    path: typeof b3path;
-    workdir: string;
-    nodeDefs: ReadonlyMap<string, NodeDef>;
-    logger: Pick<typeof logger, "debug" | "info" | "warn" | "error" | "log">;
-};
-
 const SKIP_JSON_BASENAMES = new Set([
     "package.json",
     "package-lock.json",
@@ -50,14 +43,15 @@ export const isBehaviorTreeJsonPath = (filePath: string): boolean => {
     );
 };
 
-export interface BatchScript {
-    onProcessTree?(tree: TreeData, path: string, errors: string[]): TreeData | null;
-    onProcessNode?(node: NodeData, errors: string[]): NodeData | null;
-    onWriteFile?(path: string, tree: TreeData): void;
-    onComplete?(status: "success" | "failure"): void;
-}
+export type {
+    BuildEnv,
+    BuildLogger,
+    BuildScript,
+    FsLike,
+    PathLike,
+} from "./b3build-model";
 
-type HookCtor = new (env: Env) => BatchScript;
+type HookCtor = new (env: BuildEnv) => BuildScript;
 
 type OptionalRequire = {
     cache?: Record<string, unknown>;
@@ -96,11 +90,11 @@ interface BuildContext {
     setCheckExpr(check: boolean): void;
 }
 
-const hasBatchHookMethod = (obj: unknown): obj is BatchScript => {
+const hasBatchHookMethod = (obj: unknown): obj is BuildScript => {
     if (!obj || typeof obj !== "object") {
         return false;
     }
-    const candidate = obj as Partial<BatchScript>;
+    const candidate = obj as Partial<BuildScript>;
     return (
         typeof candidate.onProcessTree === "function" ||
         typeof candidate.onProcessNode === "function" ||
@@ -135,7 +129,10 @@ const findDecoratedHookCtor = (moduleRecord: Record<string, unknown>): HookCtor 
     return decorated[0];
 };
 
-const createBatchHooks = (moduleExports: unknown, env: Env): BatchScript | undefined => {
+const createBatchHooks = (
+    moduleExports: unknown,
+    env: BuildEnv
+): BuildScript | undefined => {
     /** Build scripts must expose one class entry so runtime behavior stays uniform. */
     if (!moduleExports || typeof moduleExports !== "object") {
         return undefined;
@@ -298,7 +295,7 @@ export const createBuildDataWithContext = async (
 export const processBatchTree = (
     tree: TreeData | null,
     treePath: string,
-    batch: BatchScript,
+    batch: BuildScript,
     errors: string[]
 ) => {
     /** Tree hook runs before node recursion so it can replace or skip the root. */
@@ -755,7 +752,7 @@ export const buildProjectWithContext = async (
         }
     }
 
-    const scriptEnv: Env = {
+    const scriptEnv: BuildEnv = {
         fs: getFs(),
         path: b3path,
         workdir: context.workdir,

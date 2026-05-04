@@ -1,16 +1,16 @@
 /* TypeScript batch script example (ESM-only, decorator-based hooks). */
-import type { BuildScriptEnv, BuildNode, BuildTree } from "./build-script";
+import type { BuildEnv, NodeData, TreeData } from "vscode-behavior3/build";
 import { formatProcessedNode, shouldReportWaitNode } from "./build-helper.ts";
 
 @behavior3.build
 export class SampleBuild {
-  constructor(private readonly env: BuildScriptEnv) {}
+  constructor(private readonly env: BuildEnv) {}
 
-  onProcessTree(tree: BuildTree, _path: string, _errors: string[]) {
+  onProcessTree(tree: TreeData, _path: string, _errors: string[]) {
     return tree;
   }
 
-  onProcessNode(node: BuildNode, errors: string[]) {
+  onProcessNode(node: NodeData, errors: string[]) {
     if (shouldReportWaitNode(node) && !errors.length) {
       errors.push(formatProcessedNode(node));
       this.env.logger.info("processed node:", node.id, node.name);

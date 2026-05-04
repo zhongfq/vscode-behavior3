@@ -59,6 +59,47 @@ Create a `.b3-setting` file in workspace:
 
 Click **Build** in the editor title bar.
 
+### Command Line Build
+
+The npm package exposes a `behavior3-build` command for CI and project scripts:
+
+```bash
+npm install -D vscode-behavior3
+```
+
+```json
+{
+    "scripts": {
+        "build:behavior": "behavior3-build --project ./workdir/hero.json --output ./dist/behavior3"
+    }
+}
+```
+
+You can also run it without adding a script:
+
+```bash
+npm exec -- behavior3-build --project ./workdir/hero.json --output ./dist/behavior3
+```
+
+Or run it without installing first:
+
+```bash
+npx --package vscode-behavior3 behavior3-build --project ./workdir/hero.json --output ./dist/behavior3
+```
+
+Publishing flow:
+
+```bash
+npm login
+npm whoami
+npm version patch
+npm run pack:npm
+npm run publish:npm
+```
+
+`npm run pack:npm` performs the same prepack checks as publishing and prints the
+tarball contents without publishing.
+
 ### Build Script (`.b3-workspace`)
 
 `settings.buildScript` supports ESM scripts:
@@ -77,7 +118,7 @@ To debug TypeScript build scripts, launch the CLI with Node inspector and enable
 build-script debug mode:
 
 ```bash
-BEHAVIOR3_BUILD_DEBUG=1 node --inspect-brk dist/build-cli.js --output /tmp/b3-build --project sample/workdir/hero.json
+BEHAVIOR3_BUILD_DEBUG=1 node --inspect-brk dist/build-cli.js --output /tmp/b3build --project sample/workdir/hero.json
 ```
 
 This emits inline source maps and creates temporary `.runtime.*.mjs` files next
@@ -119,13 +160,13 @@ with `env`, then calls methods:
 - `onComplete(status)`
 
 ```ts
-import type { BuildScriptEnv, BuildTree } from "./build-script";
+import type { BuildEnv, TreeData } from "vscode-behavior3/build";
 
 @behavior3.build
 export class ProjectBuild {
-    constructor(private readonly env: BuildScriptEnv) {}
+    constructor(private readonly env: BuildEnv) {}
 
-    onProcessTree(tree: BuildTree) {
+    onProcessTree(tree: TreeData) {
         this.env.logger.info("building", tree.name);
         return tree;
     }
@@ -135,10 +176,8 @@ export class ProjectBuild {
 For compatibility, supported script files may still export a class via named
 `Hook` or `default`.
 
-For TypeScript authoring hints, see:
-
-- `sample/scripts/build-script.d.ts`
-- `sample/scripts/build.ts`
+For TypeScript authoring hints, import build script types from
+`vscode-behavior3/build`. See `sample/scripts/build.ts` for a complete example.
 
 ## Extension Settings
 
