@@ -30,6 +30,52 @@ function createBuildScopedLogger(prev: Logger): Logger {
 const WORKSPACE_STATE_KEY_PREFIX = "behavior3.lastBuildOutputDir:";
 let buildInFlight = false;
 
+export interface RunBuildOptions {
+    buildScriptDebug?: boolean;
+}
+
+async function startBuildScriptDebugSession(params: {
+    context: vscode.ExtensionContext;
+    folder: vscode.WorkspaceFolder;
+    projectPath: string;
+    workspaceFile: string;
+    settingPath: string;
+    outputDir: string;
+    checkExpr: boolean;
+}): Promise<boolean> {
+    const program = params.context.asAbsolutePath(path.join("dist", "build-cli.js"));
+    if (!fs.existsSync(program)) {
+        void vscode.window.showErrorMessage(`Build CLI is missing: ${program}`);
+        return false;
+    }
+
+    const debugConfig: vscode.DebugConfiguration = {
+        type: "node",
+        request: "launch",
+        name: "Debug Behavior3 Build Script",
+        program,
+        cwd: params.folder.uri.fsPath,
+        console: "integratedTerminal",
+        sourceMaps: true,
+        smartStep: true,
+        skipFiles: ["<node_internals>/**"],
+        args: [
+            "--build-script-debug",
+            "--output",
+            params.outputDir,
+            "--project",
+            params.projectPath,
+            "--workspace-file",
+            params.workspaceFile,
+            "--setting-file",
+            params.settingPath,
+            params.checkExpr ? "--check-expr" : "--no-check-expr",
+        ],
+    };
+
+    return vscode.debug.startDebugging(params.folder, debugConfig);
+}
+
 function getWorkspaceStateKey(folderUri: vscode.Uri): string {
     return WORKSPACE_STATE_KEY_PREFIX + folderUri.toString();
 }
@@ -91,7 +137,10 @@ function getActiveBehaviorTreeFileUri(): vscode.Uri | undefined {
     return undefined;
 }
 
-export async function runBuild(context: vscode.ExtensionContext): Promise<void> {
+export async function runBuild(
+    context: vscode.ExtensionContext,
+    options: RunBuildOptions = {}
+): Promise<void> {
     if (buildInFlight) {
         void vscode.window.showWarningMessage(
             "A build is already running. Please wait for it to finish."
@@ -165,10 +214,27 @@ export async function runBuild(context: vscode.ExtensionContext): Promise<void> 
 
         const config = vscode.workspace.getConfiguration("behavior3");
         const checkExpr = config.get<boolean>("checkExpr", true);
+        const buildScriptDebug = options.buildScriptDebug;
 
         const out = getBehavior3OutputChannel();
         out.show(true);
         out.info(`Build output → ${outputDirFs}`);
+        if (buildScriptDebug) {
+            out.info("Starting build script debug session.");
+            const started = await startBuildScriptDebugSession({
+                context,
+                folder,
+                projectPath: treeUri?.fsPath ?? workspaceFile,
+                workspaceFile,
+                settingPath,
+                outputDir: outputDirPosix,
+                checkExpr,
+            });
+            if (!started) {
+                void vscode.window.showErrorMessage("Failed to start build script debug session.");
+            }
+            return;
+        }
 
         const prevLogger = getLogger();
         setLogger(createBuildScopedLogger(prevLogger));
@@ -178,6 +244,7 @@ export async function runBuild(context: vscode.ExtensionContext): Promise<void> 
                 settingFile: settingPath,
                 outputDir: outputDirPosix,
                 checkExpr,
+                buildScriptDebug,
             });
 
             if (hasError) {

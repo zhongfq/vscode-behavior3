@@ -66,6 +66,25 @@ Click **Build** in the editor title bar.
 - JavaScript: `.js`, `.mjs`
 - TypeScript: `.ts`, `.mts` (runtime transpile, no type-check)
 
+TypeScript build scripts can import other local TypeScript files with explicit
+extensions:
+
+```ts
+import { helper } from "./helper.ts";
+```
+
+To debug TypeScript build scripts, launch the CLI with Node inspector and enable
+build-script debug mode:
+
+```bash
+BEHAVIOR3_BUILD_DEBUG=1 node --inspect-brk dist/build-cli.js --output /tmp/b3-build --project sample/workdir/hero.json
+```
+
+This emits inline source maps and keeps generated `.runtime.*.mjs` files next to
+the build script so breakpoints in `build.ts` and imported helper files can bind.
+Inside the editor, `Ctrl+B`/`Cmd+B` builds normally, while
+`Ctrl+Shift+B`/`Cmd+Shift+B` starts a VS Code Node debug session for the build.
+
 Example:
 
 ```json

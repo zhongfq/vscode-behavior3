@@ -177,8 +177,8 @@ export const createDocumentCommands = (
             }
         },
 
-        async buildDocument() {
-            deps.hostAdapter.sendBuild();
+        async buildDocument(opts) {
+            deps.hostAdapter.sendBuild(opts);
         },
     };
 };

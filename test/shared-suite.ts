@@ -691,14 +691,16 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
     {
         name: "resolves pending host requests on disconnect",
         async run() {
-            const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
-            const previousAcquire = (
-                globalThis as typeof globalThis & { acquireVsCodeApi?: unknown }
-            ).acquireVsCodeApi;
+            const testGlobal = globalThis as unknown as {
+                window?: unknown;
+                acquireVsCodeApi?: unknown;
+            };
+            const previousWindow = testGlobal.window;
+            const previousAcquire = testGlobal.acquireVsCodeApi;
             const posts: unknown[] = [];
             const listeners = new Map<string, Set<EventListener>>();
 
-            (globalThis as typeof globalThis & { window?: unknown }).window = {
+            testGlobal.window = {
                 setTimeout,
                 clearTimeout,
                 addEventListener(type: string, listener: EventListener) {
@@ -710,16 +712,15 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                     listeners.get(type)?.delete(listener);
                 },
             };
-            (globalThis as typeof globalThis & { acquireVsCodeApi?: unknown }).acquireVsCodeApi =
-                () => ({
-                    postMessage(message: unknown) {
-                        posts.push(message);
-                    },
-                    getState() {
-                        return undefined;
-                    },
-                    setState() {},
-                });
+            testGlobal.acquireVsCodeApi = () => ({
+                postMessage(message: unknown) {
+                    posts.push(message);
+                },
+                getState() {
+                    return undefined;
+                },
+                setState() {},
+            });
 
             const { getLogger, setLogger } = await import("../webview/shared/misc/logger");
             const previousLogger = getLogger();
@@ -738,10 +739,8 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 assert.deepEqual(result, { content: null });
             } finally {
                 setLogger(previousLogger);
-                (globalThis as typeof globalThis & { window?: unknown }).window = previousWindow;
-                (
-                    globalThis as typeof globalThis & { acquireVsCodeApi?: unknown }
-                ).acquireVsCodeApi = previousAcquire;
+                testGlobal.window = previousWindow;
+                testGlobal.acquireVsCodeApi = previousAcquire;
             }
         },
     },
@@ -829,6 +828,224 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 assert.equal(result.hasError, false);
                 assert.equal(fs.existsSync(path.join(outputDir, "main.json")), true);
             } finally {
+                fs.rmSync(root, { recursive: true, force: true });
+            }
+        },
+    },
+    {
+        name: "loads TypeScript build scripts with local TypeScript imports",
+        async run() {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-build-ts-import-"));
+            const scriptsDir = path.join(root, "scripts");
+            const workspaceFile = path.join(root, "workspace.b3-workspace");
+            const settingFile = path.join(root, "node-config.b3-setting");
+            const treeFile = path.join(root, "main.json");
+            const buildScriptFile = path.join(scriptsDir, "build.ts");
+            const helperFile = path.join(scriptsDir, "helper.ts");
+            const constantsFile = path.join(scriptsDir, "constants.ts");
+            const outputDir = path.join(root, "dist");
+
+            try {
+                fs.mkdirSync(scriptsDir, { recursive: true });
+                fs.writeFileSync(
+                    workspaceFile,
+                    JSON.stringify({
+                        settings: {
+                            buildScript: "scripts/build.ts",
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    settingFile,
+                    JSON.stringify([
+                        {
+                            name: "Root",
+                            type: "Composite",
+                            desc: "",
+                            children: -1,
+                        },
+                    ])
+                );
+                fs.writeFileSync(
+                    treeFile,
+                    JSON.stringify({
+                        version: "2.0.0",
+                        name: "main",
+                        prefix: "",
+                        group: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
+                        custom: {},
+                        overrides: {},
+                        root: {
+                            uuid: "root",
+                            id: "1",
+                            name: "Root",
+                            children: [],
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    constantsFile,
+                    [
+                        'export const helperValue = "imported-helper";',
+                        "export type HelperTree = { custom?: Record<string, unknown> };",
+                        "",
+                    ].join("\n")
+                );
+                fs.writeFileSync(
+                    helperFile,
+                    [
+                        'import { helperValue, type HelperTree } from "./constants.ts";',
+                        "",
+                        "export function markTree(tree: HelperTree) {",
+                        "  tree.custom = { ...(tree.custom ?? {}), helperValue };",
+                        "}",
+                        "",
+                    ].join("\n")
+                );
+                fs.writeFileSync(
+                    buildScriptFile,
+                    [
+                        'import { markTree } from "./helper.ts";',
+                        "",
+                        "export class Hook {",
+                        "  onProcessTree(tree) {",
+                        "    markTree(tree);",
+                        "    return tree;",
+                        "  }",
+                        "}",
+                        "",
+                    ].join("\n")
+                );
+
+                const result = await buildBehaviorProject({
+                    projectPath: treeFile,
+                    outputDir,
+                });
+                const outputTree = JSON.parse(
+                    fs.readFileSync(path.join(outputDir, "main.json"), "utf-8")
+                );
+
+                assert.equal(result.hasError, false);
+                assert.equal(outputTree.custom.helperValue, "imported-helper");
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true });
+            }
+        },
+    },
+    {
+        name: "keeps sourcemapped TypeScript build script runtime modules in debug mode",
+        async run() {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-build-debug-"));
+            const scriptsDir = path.join(root, "scripts");
+            const workspaceFile = path.join(root, "workspace.b3-workspace");
+            const settingFile = path.join(root, "node-config.b3-setting");
+            const treeFile = path.join(root, "main.json");
+            const buildScriptFile = path.join(scriptsDir, "build.ts");
+            const helperFile = path.join(scriptsDir, "helper.ts");
+            const outputDir = path.join(root, "dist");
+            const previousDebug = process.env.BEHAVIOR3_BUILD_DEBUG;
+
+            try {
+                process.env.BEHAVIOR3_BUILD_DEBUG = "1";
+                fs.mkdirSync(scriptsDir, { recursive: true });
+                fs.writeFileSync(
+                    workspaceFile,
+                    JSON.stringify({
+                        settings: {
+                            buildScript: "scripts/build.ts",
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    settingFile,
+                    JSON.stringify([
+                        {
+                            name: "Root",
+                            type: "Composite",
+                            desc: "",
+                            children: -1,
+                        },
+                    ])
+                );
+                fs.writeFileSync(
+                    treeFile,
+                    JSON.stringify({
+                        version: "2.0.0",
+                        name: "main",
+                        prefix: "",
+                        group: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
+                        custom: {},
+                        overrides: {},
+                        root: {
+                            uuid: "root",
+                            id: "1",
+                            name: "Root",
+                            children: [],
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    helperFile,
+                    [
+                        'export const debugValue = "debug-helper";',
+                        "export function markTree(tree) {",
+                        "  tree.custom = { ...(tree.custom ?? {}), debugValue };",
+                        "}",
+                        "",
+                    ].join("\n")
+                );
+                fs.writeFileSync(
+                    buildScriptFile,
+                    [
+                        'import { markTree } from "./helper.ts";',
+                        "",
+                        "export class Hook {",
+                        "  onProcessTree(tree) {",
+                        "    markTree(tree);",
+                        "    return tree;",
+                        "  }",
+                        "}",
+                        "",
+                    ].join("\n")
+                );
+
+                const result = await buildBehaviorProject({
+                    projectPath: treeFile,
+                    outputDir,
+                });
+                const outputTree = JSON.parse(
+                    fs.readFileSync(path.join(outputDir, "main.json"), "utf-8")
+                );
+                const runtimeFiles = fs
+                    .readdirSync(scriptsDir)
+                    .filter((file) => file.includes(".runtime.") && file.endsWith(".mjs"));
+                const runtimeContents = runtimeFiles.map((file) =>
+                    fs.readFileSync(path.join(scriptsDir, file), "utf-8")
+                );
+
+                assert.equal(result.hasError, false);
+                assert.equal(outputTree.custom.debugValue, "debug-helper");
+                assert.equal(runtimeFiles.length >= 2, true);
+                assert.equal(
+                    runtimeContents.every((content) =>
+                        content.includes("sourceMappingURL=data:application/json")
+                    ),
+                    true
+                );
+            } finally {
+                if (previousDebug === undefined) {
+                    delete process.env.BEHAVIOR3_BUILD_DEBUG;
+                } else {
+                    process.env.BEHAVIOR3_BUILD_DEBUG = previousDebug;
+                }
                 fs.rmSync(root, { recursive: true, force: true });
             }
         },

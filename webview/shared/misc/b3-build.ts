@@ -37,10 +37,16 @@ type OptionalRequire = {
     resolve?(id: string): string;
 };
 
+type TypeScriptApi = typeof import("typescript");
+type TypeScriptNode = import("typescript").Node;
+type TypeScriptSourceFile = import("typescript").SourceFile;
+type TypeScriptTransformerFactory = import("typescript").TransformerFactory<TypeScriptSourceFile>;
+
 interface BuildContext {
     workdir: string;
     nodeDefs: ReadonlyMap<string, NodeDef>;
     checkExprOverride?: boolean;
+    buildScriptDebug?: boolean;
     files: Record<string, number>;
     parsedVarDecl: Record<string, ImportDecl>;
     dfs<T extends { children?: T[] }>(
@@ -306,13 +312,205 @@ const getOptionalRequire = (): OptionalRequire | undefined => {
         : undefined;
 };
 
-export const loadRuntimeModule = async (modulePath: string) => {
+const runtimeTypeScriptExts = new Set([".ts", ".mts"]);
+
+const isLocalRuntimeImport = (specifier: string) =>
+    specifier.startsWith(".") || specifier.startsWith("/") || b3path.isAbsolute(specifier);
+
+const hasFile = (filePath: string) => {
+    try {
+        return getFs().statSync(filePath).isFile();
+    } catch {
+        return false;
+    }
+};
+
+const replaceFileExt = (filePath: string, ext: string) => {
+    const currentExt = b3path.extname(filePath);
+    return currentExt ? filePath.slice(0, -currentExt.length) + ext : filePath + ext;
+};
+
+const resolveRuntimeTypeScriptImport = (specifier: string, containingPath: string) => {
+    if (!isLocalRuntimeImport(specifier)) {
+        return null;
+    }
+
+    const resolvedPath = b3path.posixPath(
+        b3path.resolve(b3path.dirname(containingPath), specifier)
+    );
+    const ext = b3path.extname(resolvedPath).toLowerCase();
+    if (runtimeTypeScriptExts.has(ext)) {
+        return hasFile(resolvedPath) ? resolvedPath : null;
+    }
+
+    if (ext === ".js") {
+        const tsPath = replaceFileExt(resolvedPath, ".ts");
+        return !hasFile(resolvedPath) && hasFile(tsPath) ? tsPath : null;
+    }
+
+    if (ext === ".mjs") {
+        const mtsPath = replaceFileExt(resolvedPath, ".mts");
+        return !hasFile(resolvedPath) && hasFile(mtsPath) ? mtsPath : null;
+    }
+
+    if (ext) {
+        return null;
+    }
+
+    for (const candidate of [
+        `${resolvedPath}.ts`,
+        `${resolvedPath}.mts`,
+        `${resolvedPath}/index.ts`,
+        `${resolvedPath}/index.mts`,
+    ]) {
+        if (hasFile(candidate)) {
+            return candidate;
+        }
+    }
+    return null;
+};
+
+const toRuntimeImportSpecifier = (fromPath: string, toPath: string) => {
+    let relativePath = b3path.posixPath(b3path.relative(b3path.dirname(fromPath), toPath));
+    if (!relativePath.startsWith(".")) {
+        relativePath = `./${relativePath}`;
+    }
+    return relativePath;
+};
+
+const cleanupRuntimeModules = (paths: string[]) => {
+    for (const filePath of [...paths].reverse()) {
+        try {
+            getFs().unlinkSync(filePath);
+        } catch {
+            /* ignore temp file cleanup failure */
+        }
+    }
+};
+
+const isBuildScriptDebugEnabled = () => {
+    if (typeof process === "undefined") {
+        return false;
+    }
+    const value = process.env.BEHAVIOR3_BUILD_DEBUG?.toLowerCase();
+    return value === "1" || value === "true" || value === "yes";
+};
+
+const createRuntimeTypeScriptModuleGraph = (
+    ts: TypeScriptApi,
+    entryPath: string,
+    debug: boolean
+): { modulePath: string; cleanupPaths: string[] } => {
+    const cleanupPaths: string[] = [];
+    const emitted = new Map<string, string>();
+    const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let moduleIndex = 0;
+
+    const createTempModulePath = (sourcePath: string) => {
+        const base = b3path.basenameWithoutExt(sourcePath).replace(/[^a-zA-Z0-9._-]/g, "_");
+        const tempPath = b3path.join(
+            b3path.dirname(sourcePath),
+            `${base || "module"}.runtime.${runId}.${moduleIndex++}.mjs`
+        );
+        cleanupPaths.push(tempPath);
+        return tempPath;
+    };
+
+    const emitModule = (sourcePath: string): string => {
+        const normalizedSourcePath = b3path.posixPath(sourcePath);
+        const existing = emitted.get(normalizedSourcePath);
+        if (existing) {
+            return existing;
+        }
+
+        const tempModulePath = createTempModulePath(normalizedSourcePath);
+        emitted.set(normalizedSourcePath, tempModulePath);
+
+        const rewriteImports: TypeScriptTransformerFactory = (context) => {
+            const rewriteSpecifier = (specifier: string) => {
+                const importedPath = resolveRuntimeTypeScriptImport(specifier, normalizedSourcePath);
+                return importedPath
+                    ? toRuntimeImportSpecifier(tempModulePath, emitModule(importedPath))
+                    : null;
+            };
+
+            const visit = (node: TypeScriptNode): TypeScriptNode => {
+                if (
+                    ts.isImportDeclaration(node) &&
+                    !node.importClause?.isTypeOnly &&
+                    ts.isStringLiteral(node.moduleSpecifier)
+                ) {
+                    const nextSpecifier = rewriteSpecifier(node.moduleSpecifier.text);
+                    if (nextSpecifier) {
+                        return ts.factory.updateImportDeclaration(
+                            node,
+                            node.modifiers,
+                            node.importClause,
+                            ts.factory.createStringLiteral(nextSpecifier),
+                            node.attributes
+                        );
+                    }
+                }
+
+                if (
+                    ts.isExportDeclaration(node) &&
+                    !node.isTypeOnly &&
+                    node.moduleSpecifier &&
+                    ts.isStringLiteral(node.moduleSpecifier)
+                ) {
+                    const nextSpecifier = rewriteSpecifier(node.moduleSpecifier.text);
+                    if (nextSpecifier) {
+                        return ts.factory.updateExportDeclaration(
+                            node,
+                            node.modifiers,
+                            node.isTypeOnly,
+                            node.exportClause,
+                            ts.factory.createStringLiteral(nextSpecifier),
+                            node.attributes
+                        );
+                    }
+                }
+
+                return ts.visitEachChild(node, visit, context);
+            };
+
+            return (sourceFile) => ts.visitNode(sourceFile, visit) as TypeScriptSourceFile;
+        };
+
+        const source = getFs().readFileSync(normalizedSourcePath, "utf8");
+        const transpiled = ts.transpileModule(source, {
+            compilerOptions: {
+                module: ts.ModuleKind.ESNext,
+                target: ts.ScriptTarget.ES2020,
+                sourceMap: false,
+                inlineSourceMap: debug,
+                inlineSources: debug,
+                removeComments: false,
+            },
+            transformers: {
+                before: [rewriteImports],
+            },
+            fileName: normalizedSourcePath,
+        });
+        getFs().writeFileSync(tempModulePath, transpiled.outputText, "utf8");
+        return tempModulePath;
+    };
+
+    return {
+        modulePath: emitModule(entryPath),
+        cleanupPaths,
+    };
+};
+
+export const loadRuntimeModule = async (modulePath: string, options?: { debug?: boolean }) => {
     let tempModulePath: string | null = null;
+    let cleanupPaths: string[] = [];
+    const debugBuildScript = options?.debug ?? isBuildScriptDebugEnabled();
     try {
         /**
          * Build scripts may be TS/JS/MJS and can be edited between runs.
-         * We evict require cache, transpile TS on the fly when needed, and load
-         * through a timestamped ESM path so every build sees the latest script.
+         * We evict require cache, transpile TS module graphs when needed, and
+         * load through a timestamped ESM path so every build sees the latest script.
          */
         const optionalRequire = getOptionalRequire();
         if (optionalRequire?.cache) {
@@ -332,29 +530,19 @@ export const loadRuntimeModule = async (modulePath: string) => {
         const ext = b3path.extname(modulePath).toLowerCase();
         if (ext === ".ts" || ext === ".mts") {
             const ts = await import("typescript");
-            const source = getFs().readFileSync(modulePath, "utf8");
-            const transpiled = ts.transpileModule(source, {
-                compilerOptions: {
-                    module: ts.ModuleKind.ESNext,
-                    target: ts.ScriptTarget.ES2020,
-                    sourceMap: false,
-                    inlineSourceMap: false,
-                    inlineSources: false,
-                    removeComments: false,
-                },
-                fileName: modulePath,
-            });
-            const base = b3path.basenameWithoutExt(modulePath);
-            tempModulePath = b3path.join(
-                b3path.dirname(modulePath),
-                `${base}.runtime.${Date.now()}.mjs`
+            const runtimeModule = createRuntimeTypeScriptModuleGraph(
+                ts,
+                modulePath,
+                debugBuildScript
             );
-            getFs().writeFileSync(tempModulePath, transpiled.outputText, "utf8");
+            tempModulePath = runtimeModule.modulePath;
+            cleanupPaths = runtimeModule.cleanupPaths;
         } else if (ext === ".mjs") {
             tempModulePath = modulePath;
         } else if (ext === ".js") {
             tempModulePath = modulePath.replace(".js", `.runtime.${Date.now()}.mjs`);
             getFs().copyFileSync(modulePath, tempModulePath);
+            cleanupPaths = [tempModulePath];
         } else {
             logger.error(`unsupported build script extension '${ext || "(none)"}': ${modulePath}`);
             return null;
@@ -364,18 +552,24 @@ export const loadRuntimeModule = async (modulePath: string) => {
         const result = await import(
             /* @vite-ignore */ `file:///${normalizedModulePath}?t=${Date.now()}`
         );
-        if (tempModulePath !== modulePath) {
-            getFs().unlinkSync(tempModulePath);
+        if (debugBuildScript && cleanupPaths.length) {
+            logger.info(
+                `build script debug: keeping runtime modules:\n${cleanupPaths.join("\n")}`
+            );
+        } else {
+            cleanupRuntimeModules(cleanupPaths);
         }
         return result;
     } catch (error) {
         logger.error(`failed to load module: ${modulePath}`, error);
-        if (tempModulePath && tempModulePath !== modulePath) {
-            try {
-                getFs().unlinkSync(tempModulePath);
-            } catch {
-                /* ignore temp file cleanup failure */
-            }
+        if (debugBuildScript && cleanupPaths.length) {
+            logger.info(
+                `build script debug: keeping runtime modules after load failure:\n${cleanupPaths.join(
+                    "\n"
+                )}`
+            );
+        } else {
+            cleanupRuntimeModules(cleanupPaths);
         }
         return null;
     }
@@ -403,7 +597,9 @@ export const buildProjectWithContext = async (
     if (buildSetting) {
         const scriptPath = context.workdir + "/" + buildSetting;
         try {
-            buildScriptModule = await loadRuntimeModule(scriptPath);
+            buildScriptModule = await loadRuntimeModule(scriptPath, {
+                debug: context.buildScriptDebug,
+            });
         } catch {
             logger.error(`'${scriptPath}' is not a valid build script`);
         }

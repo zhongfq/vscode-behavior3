@@ -13,7 +13,7 @@ export type EditorToHostMessage =
     | { type: "revertDocument"; requestId: string }
     | { type: "treeSelected"; tree: unknown }
     | { type: "requestSetting" }
-    | { type: "build" }
+    | { type: "build"; buildScriptDebug?: boolean }
     | { type: "readFile"; requestId: string; path: string; openIfSubtree?: boolean }
     | { type: "saveSubtree"; requestId: string; path: string; content: string }
     /** Right-click -> Save as subtree: pick path under workdir and write JSON from webview. */

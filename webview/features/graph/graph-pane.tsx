@@ -194,14 +194,16 @@ export const GraphPane: React.FC = () => {
         }
     );
 
-    useKeyPress([Hotkey.Build, Hotkey.Save], null, (event, key) => {
+    useKeyPress([Hotkey.Build, Hotkey.BuildDebug, Hotkey.Save], null, (event, key) => {
         if (isEditableTarget(event.target)) {
             return;
         }
         event.preventDefault();
         event.stopPropagation();
-        if (key === Hotkey.Build) {
-            void runtime.controller.buildDocument();
+        if (key === Hotkey.Build || key === Hotkey.BuildDebug) {
+            void runtime.controller.buildDocument({
+                buildScriptDebug: key === Hotkey.BuildDebug,
+            });
             return;
         }
         void runtime.controller.saveDocument();

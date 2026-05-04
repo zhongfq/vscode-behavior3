@@ -4,6 +4,7 @@
   "extension.editor.displayName": "Behavior3 编辑器",
   "command.category": "行为树",
   "command.build.title": "构建行为树",
+  "command.buildDebug.title": "调试构建行为树",
   "command.createProject.title": "创建项目",
   "command.openSettings.title": "打开节点配置 (.b3-setting)",
   "command.createTree.title": "创建 Behavior3 文件",

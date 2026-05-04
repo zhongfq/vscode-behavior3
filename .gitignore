@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.vsix
+*.runtime.*.mjs
 .DS_Store
 behavior3editor/
 tsconfig.webview.tsbuildinfo

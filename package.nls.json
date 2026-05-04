@@ -4,6 +4,7 @@
   "extension.editor.displayName": "Behavior3 Editor",
   "command.category": "Behavior Tree",
   "command.build.title": "Build Behavior Tree",
+  "command.buildDebug.title": "Debug Build Behavior Tree",
   "command.createProject.title": "Create Project",
   "command.openSettings.title": "Open Node Config (.b3-setting)",
   "command.createTree.title": "Create Behavior3 File",

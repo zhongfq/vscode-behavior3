@@ -878,6 +878,7 @@ export const createBuildProjectContext = (options: {
     workdir: string;
     settingFile: string;
     checkExpr: boolean;
+    buildScriptDebug?: boolean;
     alertError?: BuildAlertHandler;
 }) => {
     /**
@@ -914,6 +915,7 @@ export const createBuildProjectContext = (options: {
         workdir: state.workdir,
         nodeDefs: state.nodeDefs,
         checkExprOverride: state.checkExpr,
+        buildScriptDebug: options.buildScriptDebug,
         files: state.files,
         parsedVarDecl: state.parsedVarDecl,
         dfs,

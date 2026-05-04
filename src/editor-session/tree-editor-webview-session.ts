@@ -827,7 +827,9 @@ export async function resolveTreeEditorSession({
 
                     case "build":
                         void vscode.commands
-                            .executeCommand("behavior3.build")
+                            .executeCommand("behavior3.build", {
+                                buildScriptDebug: msg.buildScriptDebug,
+                            })
                             .then(undefined, logAsyncRuntimeError("command:behavior3.build"));
                         break;
 

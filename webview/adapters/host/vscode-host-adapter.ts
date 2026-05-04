@@ -319,8 +319,8 @@ export const createVsCodeHostAdapter = (): HostAdapter => {
             postMessage({ type: "requestSetting" });
         },
 
-        sendBuild() {
-            postMessage({ type: "build" });
+        sendBuild(opts) {
+            postMessage({ type: "build", buildScriptDebug: opts?.buildScriptDebug });
         },
 
         saveDocument(content: string) {

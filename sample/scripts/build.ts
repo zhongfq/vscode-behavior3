@@ -1,5 +1,6 @@
 /* TypeScript batch script example (ESM-only, class-based hooks). */
 import type { BuildScriptEnv, BuildNode, BuildTree } from "./build-script";
+import { formatProcessedNode, shouldReportWaitNode } from "./build-helper.ts";
 
 export class Hook {
   constructor(private readonly env: BuildScriptEnv) {}
@@ -9,8 +10,8 @@ export class Hook {
   }
 
   onProcessNode(node: BuildNode, errors: string[]) {
-    if (node.name === "Wait" && !errors.length) {
-      errors.push(`node ${node.id}(${node.name}) processed by build.ts`);
+    if (shouldReportWaitNode(node) && !errors.length) {
+      errors.push(formatProcessedNode(node));
       this.env.logger.info("processed node:", node.id, node.name);
     }
     return node;
@@ -20,4 +21,3 @@ export class Hook {
     this.env.logger.info("onComplete (ts)", status);
   }
 }
-

@@ -44,6 +44,12 @@
         "icon": "$(tools)"
       },
       {
+        "command": "behavior3.buildDebug",
+        "title": "%command.buildDebug.title%",
+        "category": "%command.category%",
+        "icon": "$(debug-alt)"
+      },
+      {
         "command": "behavior3.createProject",
         "title": "%command.createProject.title%",
         "category": "%command.category%"
@@ -78,6 +84,12 @@
         "when": "activeCustomEditorId == 'behavior3.treeEditor'"
       },
       {
+        "command": "behavior3.buildDebug",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "activeCustomEditorId == 'behavior3.treeEditor'"
+      },
+      {
         "command": "behavior3.toggleEditorMode",
         "key": "f4",
         "when": "activeCustomEditorId == 'behavior3.treeEditor' || resourceExtname == .json"
@@ -93,7 +105,8 @@
         {
           "command": "behavior3.build",
           "when": "activeCustomEditorId == 'behavior3.treeEditor'",
-          "group": "navigation@1"
+          "group": "navigation@1",
+          "alt": "behavior3.buildDebug"
         }
       ],
       "explorer/context": [

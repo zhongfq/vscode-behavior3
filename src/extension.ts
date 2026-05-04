@@ -57,8 +57,18 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Command: build (same pipeline as desktop behavior3editor `b3util.buildProject`)
     context.subscriptions.push(
-        vscode.commands.registerCommand("behavior3.build", async () => {
-            await runBuild(context);
+        vscode.commands.registerCommand(
+            "behavior3.build",
+            async (options?: { buildScriptDebug?: boolean }) => {
+                await runBuild(context, {
+                    buildScriptDebug: options?.buildScriptDebug,
+                });
+            }
+        )
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand("behavior3.buildDebug", async () => {
+            await runBuild(context, { buildScriptDebug: true });
         })
     );
 

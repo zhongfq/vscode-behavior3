@@ -329,7 +329,7 @@ export interface HostAdapter {
     sendUpdate(content: string): void;
     sendTreeSelected(tree: PersistedTreeModel): void;
     sendRequestSetting(): void;
-    sendBuild(): void;
+    sendBuild(opts?: { buildScriptDebug?: boolean }): void;
     saveDocument(content: string): Promise<SaveDocumentResponse>;
     revertDocument(): Promise<RevertDocumentResponse>;
     readFile(
@@ -371,7 +371,7 @@ export interface EditorCommand {
     refreshGraph(opts?: { preserveSelection?: boolean }): Promise<void>;
     saveDocument(): Promise<void>;
     revertDocument(): Promise<void>;
-    buildDocument(): Promise<void>;
+    buildDocument(opts?: { buildScriptDebug?: boolean }): Promise<void>;
     openSubtreePath(path: string): Promise<void>;
     openSelectedSubtree(): Promise<void>;
     saveSelectedAsSubtree(): Promise<void>;

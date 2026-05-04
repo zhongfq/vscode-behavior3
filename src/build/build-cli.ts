@@ -25,6 +25,7 @@ export interface BehaviorBuildProjectOptions {
     settingFile?: string;
     workspaceRoot?: string;
     checkExpr?: boolean;
+    buildScriptDebug?: boolean;
     logger?: Logger;
 }
 
@@ -105,6 +106,7 @@ export const buildBehaviorProject = async (
             workdir: normalizePosixPath(paths.workdir),
             settingFile: normalizePosixPath(paths.settingFile),
             checkExpr: options.checkExpr ?? true,
+            buildScriptDebug: options.buildScriptDebug,
             alertError: () => {},
         });
         const hasError = await buildProjectWithContext(
@@ -137,6 +139,7 @@ Options:
       --workspace-root <dir>  Limit upward workspace discovery to this directory
       --check-expr            Enable expression validation (default)
       --no-check-expr         Disable expression validation
+      --build-script-debug    Keep sourcemapped build script runtime modules for debugging
   -h, --help                  Show this help text
 `;
 
@@ -185,6 +188,9 @@ const parseCliArgs = (args: string[]): BehaviorBuildProjectOptions => {
                 break;
             case "--no-check-expr":
                 options.checkExpr = false;
+                break;
+            case "--build-script-debug":
+                options.buildScriptDebug = true;
                 break;
             case "-h":
             case "--help":
