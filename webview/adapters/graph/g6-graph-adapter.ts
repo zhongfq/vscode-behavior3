@@ -17,6 +17,7 @@ import type {
     GraphSearchState,
     GraphSelectionState,
     GraphViewport,
+    NodeInstanceRef,
     ResolvedGraphModel,
 } from "../../shared/contracts";
 import type { GraphAdapter } from "../../shared/graph-contracts";
@@ -68,6 +69,15 @@ type TreeDatum = {
     children: TreeDatum[];
 };
 
+type ViewportAnchorCandidate = {
+    ref: NodeInstanceRef;
+    viewportPosition: [number, number];
+};
+
+type ViewportAnchor = {
+    candidates: ViewportAnchorCandidate[];
+};
+
 const isDefaultViewport = (viewport: GraphViewport) =>
     viewport.zoom === DEFAULT_VIEWPORT.zoom &&
     viewport.x === DEFAULT_VIEWPORT.x &&
@@ -99,6 +109,15 @@ const compareLayoutOrder = (nodeA: G6NodeData, nodeB: G6NodeData): number => {
     }
     return String(nodeA.id).localeCompare(String(nodeB.id));
 };
+
+const isSameSubtreeStack = (left: readonly string[], right: readonly string[]) =>
+    left.length === right.length && left.every((value, index) => value === right[index]);
+
+const isSameNodeIdentity = (left: NodeInstanceRef, right: NodeInstanceRef) =>
+    left.structuralStableId === right.structuralStableId &&
+    left.sourceStableId === right.sourceStableId &&
+    left.sourceTreePath === right.sourceTreePath &&
+    isSameSubtreeStack(left.subtreeStack, right.subtreeStack);
 
 const getEventTargetId = (event: G6Event): string | null => {
     const target = (event as { target?: { id?: unknown } }).target;
@@ -195,6 +214,137 @@ export class G6GraphAdapter implements GraphAdapter {
             return { zoom, x, y };
         } catch {
             return null;
+        }
+    }
+
+    private readViewportAnchorCandidate(nodeKey: string): ViewportAnchorCandidate | null {
+        if (!this.graph?.hasNode(nodeKey)) {
+            return null;
+        }
+        const node = this.getNodeVM(nodeKey);
+        if (!node) {
+            return null;
+        }
+        try {
+            const canvasPosition = this.graph.getElementPosition(nodeKey);
+            const viewportPosition = this.graph.getViewportByCanvas(canvasPosition);
+            const x = viewportPosition[0];
+            const y = viewportPosition[1];
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return null;
+            }
+            return {
+                ref: node.ref,
+                viewportPosition: [x, y],
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    private readViewportAnchor(nodeKey: string | null | undefined): ViewportAnchor | null {
+        if (!nodeKey || !this.graph || !this.isGraphRendered()) {
+            return null;
+        }
+
+        const candidates: ViewportAnchorCandidate[] = [];
+        let currentKey: string | null = nodeKey;
+        while (currentKey) {
+            const candidate = this.readViewportAnchorCandidate(currentKey);
+            if (!candidate) {
+                break;
+            }
+            candidates.push(candidate);
+            currentKey = this.getNodeVM(currentKey)?.parentKey ?? null;
+        }
+
+        return candidates.length > 0 ? { candidates } : null;
+    }
+
+    private readViewportCenterAnchor(): ViewportAnchor | null {
+        if (!this.graph || !this.model || !this.isGraphRendered()) {
+            return null;
+        }
+
+        const width = this.container?.clientWidth ?? 0;
+        const height = this.container?.clientHeight ?? 0;
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+
+        const center: [number, number] = [width / 2, height / 2];
+        let best: { nodeKey: string; distance: number } | null = null;
+        for (const node of this.model.nodes) {
+            const nodeKey = node.ref.instanceKey;
+            if (!this.graph.hasNode(nodeKey)) {
+                continue;
+            }
+            try {
+                const canvasPosition = this.graph.getElementPosition(nodeKey);
+                const viewportPosition = this.graph.getViewportByCanvas(canvasPosition);
+                const distance = Math.hypot(
+                    viewportPosition[0] - center[0],
+                    viewportPosition[1] - center[1]
+                );
+                if (!best || distance < best.distance) {
+                    best = { nodeKey, distance };
+                }
+            } catch {
+                /* Try the next node. */
+            }
+        }
+
+        return best ? this.readViewportAnchor(best.nodeKey) : null;
+    }
+
+    private resolveViewportAnchorCandidate(anchor: ViewportAnchor): {
+        candidate: ViewportAnchorCandidate;
+        nodeKey: string;
+    } | null {
+        for (const candidate of anchor.candidates) {
+            const node = this.model?.nodes.find((entry) =>
+                isSameNodeIdentity(entry.ref, candidate.ref)
+            );
+            if (node?.ref.instanceKey && this.graph?.hasNode(node.ref.instanceKey)) {
+                return { candidate, nodeKey: node.ref.instanceKey };
+            }
+        }
+        return null;
+    }
+
+    private async applyAnchorViewportCompensation(anchor: ViewportAnchor | null): Promise<void> {
+        const resolved = anchor ? this.resolveViewportAnchorCandidate(anchor) : null;
+        if (
+            !anchor ||
+            !resolved ||
+            !this.graph ||
+            !this.isGraphRendered() ||
+            !this.graph.hasNode(resolved.nodeKey)
+        ) {
+            return;
+        }
+
+        let deltaX = 0;
+        let deltaY = 0;
+        try {
+            const canvasPosition = this.graph.getElementPosition(resolved.nodeKey);
+            const viewportPosition = this.graph.getViewportByCanvas(canvasPosition);
+            deltaX = resolved.candidate.viewportPosition[0] - viewportPosition[0];
+            deltaY = resolved.candidate.viewportPosition[1] - viewportPosition[1];
+        } catch {
+            return;
+        }
+
+        if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) {
+            return;
+        }
+
+        this.suppressTransformSync = true;
+        try {
+            await this.graph.translateBy([deltaX, deltaY], false);
+            this.syncViewportFromGraph();
+        } finally {
+            this.suppressTransformSync = false;
         }
     }
 
@@ -339,7 +489,7 @@ export class G6GraphAdapter implements GraphAdapter {
         }
     }
 
-    private async renderGraphData(): Promise<void> {
+    private async renderGraphData(anchor: ViewportAnchor | null = null): Promise<void> {
         if (!this.graph) {
             return;
         }
@@ -363,6 +513,7 @@ export class G6GraphAdapter implements GraphAdapter {
         await this.graph.clear();
         this.graph.setData(data);
         await this.rerenderWithStableViewport(viewport);
+        await this.applyAnchorViewportCompensation(anchor);
         if (isDefaultViewport(this.viewport)) {
             this.syncViewportFromGraph();
         }
@@ -698,10 +849,11 @@ export class G6GraphAdapter implements GraphAdapter {
     }
 
     async render(model: ResolvedGraphModel): Promise<void> {
+        const anchor = this.readViewportCenterAnchor();
         this.model = model;
         this.clearDragIntent();
         this.syncThemeOptions();
-        await this.renderGraphData();
+        await this.renderGraphData(anchor);
     }
 
     async applySelection(selection: GraphSelectionState): Promise<void> {

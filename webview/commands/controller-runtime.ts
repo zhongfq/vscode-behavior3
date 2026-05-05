@@ -874,12 +874,10 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
     };
 
     /**
-     * Undo/redo replays the serialized tree snapshot, then restores viewport so
-     * navigation history feels stable even though the whole resolved graph was
-     * rebuilt underneath.
+     * Undo/redo replays the serialized tree snapshot while the graph adapter
+     * keeps the visible viewport anchored around the current center.
      */
     const applyHistoryIndex = async (nextIndex: number) => {
-        const viewport = deps.graphAdapter.getViewport();
         const documentState = deps.documentStore.getState();
         const snapshot = documentState.history[nextIndex];
         if (!snapshot) {
@@ -890,7 +888,6 @@ export const createControllerRuntime = (deps: ControllerDeps): ControllerRuntime
         await applyDocumentTree(tree, {
             preserveSelection: true,
         });
-        await deps.graphAdapter.restoreViewport(viewport);
         deps.documentStore.setState((state) => ({
             ...state,
             historyIndex: nextIndex,
