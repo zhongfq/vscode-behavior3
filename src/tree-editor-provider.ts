@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import {
     normalizeTreeContentForWrite,
@@ -8,6 +9,7 @@ import {
 import type { HostToEditorMessage } from "../webview/shared/message-protocol";
 import type { ActiveTreeEditorWebview } from "./editor-session/tree-editor-webview-session";
 import { resolveTreeEditorSession } from "./editor-session/tree-editor-webview-session";
+import { isDocumentVersionNewer } from "../webview/shared/document-version";
 
 /**
  * Read the Vite-generated HTML for the active webview entry and rewrite all
@@ -57,6 +59,39 @@ function configureEditorWebview(
     webview.html = buildWebviewHtml(webview, extensionUri, "Behavior3 Editor");
 }
 
+function getTreeFileVersion(content: string): string | undefined {
+    try {
+        const fileData = JSON.parse(content) as { version?: unknown };
+        return typeof fileData.version === "string" ? fileData.version : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function getEditorLanguage(setting: string): "zh" | "en" {
+    if (setting === "zh" || setting === "en") {
+        return setting;
+    }
+    const envLanguage = vscode.env.language.toLowerCase();
+    return envLanguage.startsWith("zh") ? "zh" : "en";
+}
+
+function getNewerVersionEditMessage(fileVersion: string): string {
+    const config = vscode.workspace.getConfiguration("behavior3");
+    const language = getEditorLanguage(config.get<string>("language", "auto"));
+    return language === "zh"
+        ? `此文件由新版本 Behavior3(${fileVersion}) 创建，请升级到最新版本后再编辑。`
+        : `This file is created by a newer version of Behavior3(${fileVersion}). Please upgrade to the latest version.`;
+}
+
+function getNewerFileWriteError(content: string): string | null {
+    const fileVersion = getTreeFileVersion(content);
+    if (!fileVersion || !isDocumentVersionNewer(fileVersion)) {
+        return null;
+    }
+    return getNewerVersionEditMessage(fileVersion);
+}
+
 export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEditorDocument> {
     public static readonly viewType = "behavior3.treeEditor";
     private static readonly activeWebviews = new Set<ActiveTreeEditorWebview>();
@@ -97,7 +132,24 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
-    private async writeDocumentContentToDisk(targetUri: vscode.Uri, content: string): Promise<string> {
+    private assertCanWriteTreeContent(content: string): void {
+        const error = getNewerFileWriteError(content);
+        if (!error) {
+            return;
+        }
+        throw new Error(error);
+    }
+
+    private showBlockedSaveMessage(document: TreeEditorDocument, error: string): void {
+        void vscode.window.showErrorMessage(
+            `Failed to save '${path.basename(document.uri.fsPath)}': ${error}`
+        );
+    }
+
+    private async writeDocumentContentToDisk(
+        targetUri: vscode.Uri,
+        content: string
+    ): Promise<string> {
         const normalizedContent = normalizeTreeContentForWrite(content, targetUri.fsPath);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(normalizedContent, "utf-8"));
         return normalizedContent;
@@ -107,7 +159,11 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
         document: TreeEditorDocument,
         opts?: { notifyReload?: boolean }
     ): Promise<string> {
-        const normalizedContent = await this.writeDocumentContentToDisk(document.uri, document.content);
+        this.assertCanWriteTreeContent(document.content);
+        const normalizedContent = await this.writeDocumentContentToDisk(
+            document.uri,
+            document.content
+        );
         document.markSaved(normalizedContent);
         document.rememberOwnWrite(normalizedContent);
 
@@ -146,6 +202,11 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
         document: TreeEditorDocument,
         _cancellation: vscode.CancellationToken
     ): Promise<void> {
+        const error = getNewerFileWriteError(document.content);
+        if (error) {
+            this.showBlockedSaveMessage(document, error);
+            return;
+        }
         await this.persistMainDocumentToDisk(document);
     }
 
@@ -154,6 +215,16 @@ export class TreeEditorProvider implements vscode.CustomEditorProvider<TreeEdito
         destination: vscode.Uri,
         _cancellation: vscode.CancellationToken
     ): Promise<void> {
+        this.assertCanWriteTreeContent(document.content);
+        let existingContent: string | null = null;
+        try {
+            existingContent = await readFileContentFromDisk(destination);
+        } catch {
+            existingContent = null;
+        }
+        if (existingContent !== null) {
+            this.assertCanWriteTreeContent(existingContent);
+        }
         await this.writeDocumentContentToDisk(destination, document.content);
     }
 

@@ -554,14 +554,40 @@ export async function resolveTreeEditorSession({
         return true;
     };
 
-    const blockEditingForNewerFile = (): string | null => {
+    const getActiveNewerFileEditMessage = (): string | null => {
+        updateFileVersionState(document.content);
         if (!state.fileVersionIsNewer) {
             return null;
         }
 
         const fileVersion = state.newerFileVersion ?? getTreeFileVersion(document.content) ?? "";
-        const message = getNewerVersionMessage(state.currentSettings.language, fileVersion, "edit");
+        return getNewerVersionMessage(state.currentSettings.language, fileVersion, "edit");
+    };
+
+    const blockEditingForNewerFile = (): string | null => {
+        const message = getActiveNewerFileEditMessage();
+        if (!message) {
+            return null;
+        }
+
         vscode.window.showErrorMessage(message);
+        return message;
+    };
+
+    const getExistingNewerFileEditMessage = async (fileUri: vscode.Uri): Promise<string | null> => {
+        let content: string;
+        try {
+            content = await readWorkspaceFileContent(fileUri);
+        } catch {
+            return null;
+        }
+
+        const fileVersion = getTreeFileVersion(content);
+        if (!fileVersion || !isDocumentVersionNewer(fileVersion)) {
+            return null;
+        }
+
+        const message = getNewerVersionMessage(state.currentSettings.language, fileVersion, "edit");
         return message;
     };
 
@@ -804,6 +830,34 @@ export async function resolveTreeEditorSession({
         }
 
         try {
+            const activeFileBlockMessage = getActiveNewerFileEditMessage();
+            if (activeFileBlockMessage) {
+                await postMessage({
+                    type: "saveSubtreeResult",
+                    requestId: msg.requestId,
+                    success: false,
+                    error: activeFileBlockMessage,
+                });
+                getBehavior3OutputChannel().warn(
+                    `saveSubtree blocked: active file was created by a newer Behavior3 version`
+                );
+                return;
+            }
+
+            const targetFileBlockMessage = await getExistingNewerFileEditMessage(fileUri);
+            if (targetFileBlockMessage) {
+                await postMessage({
+                    type: "saveSubtreeResult",
+                    requestId: msg.requestId,
+                    success: false,
+                    error: targetFileBlockMessage,
+                });
+                getBehavior3OutputChannel().warn(
+                    `saveSubtree blocked: ${fileUri.fsPath} was created by a newer Behavior3 version`
+                );
+                return;
+            }
+
             await writeDocumentContentToDisk(fileUri, msg.content);
             await postMessage({
                 type: "saveSubtreeResult",
@@ -825,6 +879,18 @@ export async function resolveTreeEditorSession({
         msg: Extract<EditorToHostMessage, { type: "saveSubtreeAs" }>
     ): Promise<void> => {
         try {
+            const activeFileBlockMessage = getActiveNewerFileEditMessage();
+            if (activeFileBlockMessage) {
+                vscode.window.showErrorMessage(activeFileBlockMessage);
+                await postMessage({
+                    type: "saveSubtreeAsResult",
+                    requestId: msg.requestId,
+                    savedPath: null,
+                    error: activeFileBlockMessage,
+                });
+                return;
+            }
+
             const defaultUri = vscode.Uri.joinPath(projectRootUri, `${msg.suggestedBaseName}.json`);
             const picked = await vscode.window.showSaveDialog({
                 defaultUri,
@@ -848,6 +914,18 @@ export async function resolveTreeEditorSession({
                     requestId: msg.requestId,
                     savedPath: null,
                     error,
+                });
+                return;
+            }
+
+            const targetFileBlockMessage = await getExistingNewerFileEditMessage(picked);
+            if (targetFileBlockMessage) {
+                vscode.window.showErrorMessage(targetFileBlockMessage);
+                await postMessage({
+                    type: "saveSubtreeAsResult",
+                    requestId: msg.requestId,
+                    savedPath: null,
+                    error: targetFileBlockMessage,
                 });
                 return;
             }
