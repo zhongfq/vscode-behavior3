@@ -4,6 +4,7 @@ import {
     GraphEvent as G6GraphEvent,
     type IEvent as G6Event,
     type IPointerEvent as G6PointerEvent,
+    type Point as G6Point,
     NodeEvent as G6NodeEvent,
     treeToGraphData,
     type GraphData as G6GraphData,
@@ -40,6 +41,19 @@ const DEFAULT_PORTS = [
     { key: "right", placement: "right" as const },
     { key: "left", placement: "left" as const },
 ];
+const WHEEL_ZOOM_SENSITIVITY = 1;
+
+const clampNumber = (value: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, value));
+
+const getWheelZoomRatio = (event: WheelEvent): number | null => {
+    const delta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
+    if (!Number.isFinite(delta) || delta === 0) {
+        return null;
+    }
+
+    return 1 + (clampNumber(-delta, -50, 50) * WHEEL_ZOOM_SENSITIVITY) / 100;
+};
 
 const createNodeOptions = () => ({
     type: G6_VECTOR_TREE_NODE_TYPE,
@@ -175,6 +189,40 @@ export class G6GraphAdapter implements GraphAdapter {
             return;
         }
         this.syncViewportFromGraph();
+    };
+
+    private getWheelViewportOrigin(event: WheelEvent): G6Point | undefined {
+        const container = this.container;
+        if (!container) {
+            return undefined;
+        }
+
+        const rect = container.getBoundingClientRect();
+        return [event.clientX - rect.left, event.clientY - rect.top];
+    }
+
+    private readonly handleNativeWheel = (event: WheelEvent) => {
+        if (!this.graph || !this.isGraphRendered()) {
+            return;
+        }
+
+        const ratio = getWheelZoomRatio(event);
+        if (!ratio) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const origin = this.getWheelViewportOrigin(event);
+        void (async () => {
+            if (!this.graph || !this.isGraphRendered()) {
+                return;
+            }
+
+            await this.graph.zoomTo(this.graph.getZoom() * ratio, false, origin);
+            this.syncViewportFromGraph();
+        });
     };
 
     private isGraphRendered() {
@@ -783,7 +831,8 @@ export class G6GraphAdapter implements GraphAdapter {
             container,
             animation: false,
             zoomRange: [0.25, 2],
-            behaviors: ["drag-canvas", "zoom-canvas"],
+            // Wheel zoom is handled locally; G6 zoom-canvas can keep stale modifier keys after editor hotkeys.
+            behaviors: ["drag-canvas"],
             node: createNodeOptions(),
             edge: createEdgeOptions(),
             layout: {
@@ -816,6 +865,7 @@ export class G6GraphAdapter implements GraphAdapter {
         graph.on(G6NodeEvent.DRAG, this.handleNodeDrag);
         graph.on(G6NodeEvent.DROP, this.handleNodeDrop);
         graph.on(G6GraphEvent.AFTER_TRANSFORM, this.handleGraphTransform);
+        container.addEventListener("wheel", this.handleNativeWheel, { passive: false });
 
         this.graph = graph;
 
@@ -841,6 +891,7 @@ export class G6GraphAdapter implements GraphAdapter {
         this.cancelPendingResizeRestore();
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
+        this.container?.removeEventListener("wheel", this.handleNativeWheel);
         this.graph?.destroy();
         this.graph = null;
         this.container = null;
