@@ -65,12 +65,23 @@ const NodeArgField: React.FC<{
     form: FormInstance;
     arg: NodeArg;
     nodeDef: NodeDef;
+    committedArgValue: unknown;
     usingVars: Record<string, VarDecl> | null;
     checkExpr: boolean;
     nodeCheckDiagnostics: NodeCheckDiagnostic[];
     disabled: boolean;
     onCommit: () => void;
-}> = ({ form, arg, nodeDef, usingVars, checkExpr, nodeCheckDiagnostics, disabled, onCommit }) => {
+}> = ({
+    form,
+    arg,
+    nodeDef,
+    committedArgValue,
+    usingVars,
+    checkExpr,
+    nodeCheckDiagnostics,
+    disabled,
+    onCommit,
+}) => {
     const { t } = useTranslation();
     const argsValue = (Form.useWatch("args", form) as Record<string, unknown> | undefined) ?? {};
     const type = getNodeArgRawType(arg);
@@ -143,7 +154,7 @@ const NodeArgField: React.FC<{
         }
 
         const customDiagnostic = nodeCheckDiagnostics.find((entry) => entry.argName === arg.name);
-        if (customDiagnostic) {
+        if (customDiagnostic && compareJsonValue(parsedValue, committedArgValue)) {
             throw new Error(customDiagnostic.message);
         }
     };
@@ -669,6 +680,7 @@ const NodeStructuredArgsSection: React.FC<{
     form: FormInstance;
     nodeDef: NodeDef;
     args: NodeArg[];
+    committedArgs: Record<string, unknown> | undefined;
     usingVars: Record<string, VarDecl> | null;
     checkExpr: boolean;
     nodeCheckDiagnostics: NodeCheckDiagnostic[];
@@ -680,6 +692,7 @@ const NodeStructuredArgsSection: React.FC<{
     form,
     nodeDef,
     args,
+    committedArgs,
     usingVars,
     checkExpr,
     nodeCheckDiagnostics,
@@ -707,6 +720,7 @@ const NodeStructuredArgsSection: React.FC<{
                         form={form}
                         arg={arg}
                         nodeDef={nodeDef}
+                        committedArgValue={committedArgs?.[arg.name]}
                         usingVars={usingVars}
                         checkExpr={checkExpr}
                         nodeCheckDiagnostics={nodeCheckDiagnostics}
@@ -952,6 +966,7 @@ export const NodeInspectorForm: React.FC = () => {
                             form={form}
                             nodeDef={nodeDef}
                             args={structuredArgs}
+                            committedArgs={selectedNode.data.args}
                             usingVars={usingVars}
                             checkExpr={checkExpr}
                             nodeCheckDiagnostics={nodeCheckDiagnostics}
