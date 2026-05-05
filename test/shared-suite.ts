@@ -211,6 +211,7 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                     settings: {
                         checkExpr: true,
                         buildScript: "scripts/build.ts",
+                        checkScripts: ["scripts/checkers/**/*.ts"],
                         nodeColors: {
                             Action: "#123456",
                         },
@@ -220,7 +221,24 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
 
             assert.equal(workspace.settings.checkExpr, true);
             assert.equal(workspace.settings.buildScript, "scripts/build.ts");
+            assert.deepEqual(workspace.settings.checkScripts, ["scripts/checkers/**/*.ts"]);
             assert.equal(workspace.settings.nodeColors?.Action, "#123456");
+        },
+    },
+    {
+        name: "rejects invalid workspace check script patterns",
+        run() {
+            assert.throws(
+                () =>
+                    parseWorkspaceModelContent(
+                        JSON.stringify({
+                            settings: {
+                                checkScripts: ["scripts/checkers/**/*.ts", ""],
+                            },
+                        })
+                    ),
+                /workspace settings\.checkScripts\[1\] must be a non-empty string/
+            );
         },
     },
     {
@@ -1124,6 +1142,95 @@ const tests: Array<{ name: string; run(): Promise<void> | void }> = [
                 );
                 fs.writeFileSync(
                     buildScriptFile,
+                    [
+                        '@behavior3.check("positive")',
+                        "export class PositiveChecker {",
+                        "  validate(value) {",
+                        "    if (typeof value !== 'number' || value <= 0) {",
+                        "      return 'must be greater than 0';",
+                        "    }",
+                        "  }",
+                        "}",
+                        "",
+                    ].join("\n")
+                );
+
+                const result = await buildBehaviorProject({
+                    projectPath: treeFile,
+                    outputDir,
+                });
+
+                assert.equal(result.hasError, true);
+                assert.equal(fs.existsSync(path.join(outputDir, "main.json")), true);
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true });
+            }
+        },
+    },
+    {
+        name: "loads node arg checkers from workspace checkScripts",
+        async run() {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "behavior3-check-scripts-"));
+            const checkersDir = path.join(root, "scripts", "checkers");
+            const workspaceFile = path.join(root, "workspace.b3-workspace");
+            const settingFile = path.join(root, "node-config.b3-setting");
+            const treeFile = path.join(root, "main.json");
+            const checkerFile = path.join(checkersDir, "positive.ts");
+            const outputDir = path.join(root, "dist");
+
+            try {
+                fs.mkdirSync(checkersDir, { recursive: true });
+                fs.writeFileSync(
+                    workspaceFile,
+                    JSON.stringify({
+                        settings: {
+                            checkScripts: ["scripts/checkers/**/*.ts"],
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    settingFile,
+                    JSON.stringify([
+                        {
+                            name: "Wait",
+                            type: "Action",
+                            desc: "",
+                            args: [
+                                {
+                                    name: "time",
+                                    type: "float",
+                                    desc: "",
+                                    checker: "positive",
+                                },
+                            ],
+                        },
+                    ])
+                );
+                fs.writeFileSync(
+                    treeFile,
+                    JSON.stringify({
+                        version: "2.0.0",
+                        name: "main",
+                        prefix: "",
+                        group: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
+                        custom: {},
+                        overrides: {},
+                        root: {
+                            uuid: "root",
+                            id: "1",
+                            name: "Wait",
+                            args: {
+                                time: 0,
+                            },
+                        },
+                    })
+                );
+                fs.writeFileSync(
+                    checkerFile,
                     [
                         '@behavior3.check("positive")',
                         "export class PositiveChecker {",

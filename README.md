@@ -136,10 +136,17 @@ Example:
 {
     "settings": {
         "checkExpr": true,
-        "buildScript": "scripts/build.ts"
+        "buildScript": "scripts/build.ts",
+        "checkScripts": ["scripts/checkers/**/*.ts"]
     }
 }
 ```
+
+`settings.checkScripts` is optional and loads additional checker-only scripts
+relative to the `.b3-workspace` directory. Matching scripts are scanned for
+exported `@behavior3.check("name")` classes and are used by both the editor
+Inspector validation and project builds. Generated `.runtime.*.mjs`, `.d.ts`,
+`node_modules`, `dist`, and `build` paths are ignored.
 
 All build hooks receive `env`:
 

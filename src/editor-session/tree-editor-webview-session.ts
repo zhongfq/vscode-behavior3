@@ -33,9 +33,11 @@ import { setFs } from "../../webview/shared/misc/b3fs";
 import {
     collectNodeArgCheckDiagnostics,
     createBuildScriptRuntime,
+    createBuildScriptRuntimeWithCheckModules,
     loadRuntimeModule,
+    resolveCheckScriptPaths,
 } from "../../webview/shared/misc/b3build";
-import type { BuildEnv } from "../../webview/shared/misc/b3build-model";
+import type { BuildEnv, CheckScriptModule } from "../../webview/shared/misc/b3build";
 import type { NodeData, TreeData } from "../../webview/shared/misc/b3type";
 
 setFs(fs);
@@ -330,6 +332,7 @@ export async function resolveTreeEditorSession({
         const workspaceText = await readWorkspaceFileContent(vscode.Uri.file(workspaceFile));
         const workspaceModel = parseWorkspaceModelContent(workspaceText);
         const buildScript = workspaceModel.settings.buildScript;
+        const checkScripts = workspaceModel.settings.checkScripts ?? [];
         const workdir = path.dirname(workspaceFile).replace(/\\/g, "/");
         const env: BuildEnv = {
             fs,
@@ -339,27 +342,40 @@ export async function resolveTreeEditorSession({
             logger: createBuildScriptLogger(),
         };
 
-        if (!buildScript) {
-            return {
-                buildScriptRuntime: createBuildScriptRuntime(null, env),
-                treePath: workdir,
-            };
+        let buildScriptModule: unknown = null;
+        let hasRuntimeLoadError = false;
+        if (buildScript) {
+            const scriptPath = path.join(workdir, buildScript);
+            buildScriptModule = await loadRuntimeModule(scriptPath, { debug: false });
+            hasRuntimeLoadError = !buildScriptModule;
         }
 
-        const scriptPath = path.join(workdir, buildScript);
-        const moduleExports = await loadRuntimeModule(scriptPath, { debug: false });
-        if (!moduleExports) {
-            const buildScriptRuntime = createBuildScriptRuntime(null, env);
-            return {
-                buildScriptRuntime: {
-                    ...buildScriptRuntime,
-                    hasError: true,
-                },
-                treePath: workdir,
-            };
+        const checkScriptModules: CheckScriptModule[] = [];
+        const checkScriptPaths = resolveCheckScriptPaths(workdir, checkScripts);
+        hasRuntimeLoadError = hasRuntimeLoadError || checkScriptPaths.missingPatterns.length > 0;
+        for (const pattern of checkScriptPaths.missingPatterns) {
+            env.logger.error(`checkScripts pattern matched no files: ${pattern}`);
         }
+        for (const scriptPath of checkScriptPaths.paths) {
+            const moduleExports = await loadRuntimeModule(scriptPath, { debug: false });
+            if (!moduleExports) {
+                env.logger.error(`'${scriptPath}' is not a valid check script`);
+                hasRuntimeLoadError = true;
+                continue;
+            }
+            checkScriptModules.push({ path: scriptPath, moduleExports });
+        }
+
+        const buildScriptRuntime = createBuildScriptRuntimeWithCheckModules(
+            buildScriptModule,
+            checkScriptModules,
+            env
+        );
         return {
-            buildScriptRuntime: createBuildScriptRuntime(moduleExports, env),
+            buildScriptRuntime: {
+                ...buildScriptRuntime,
+                hasError: buildScriptRuntime.hasError || hasRuntimeLoadError,
+            },
             treePath: workdir,
         };
     };

@@ -1,6 +1,7 @@
 {
   "settings": {
     "checkExpr": true,
-    "buildScript": "scripts/build.ts"
+    "buildScript": "scripts/build.ts",
+    "checkScripts": ["scripts/checkers/**/*.ts"]
   }
 }

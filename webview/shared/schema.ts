@@ -401,6 +401,16 @@ export const normalizeWorkspaceModel = (value: unknown): WorkspaceModel => {
                     ? settingsRecord.checkExpr
                     : undefined,
             buildScript: asOptionalString(settingsRecord.buildScript),
+            checkScripts:
+                settingsRecord.checkScripts === undefined
+                    ? undefined
+                    : Array.isArray(settingsRecord.checkScripts)
+                      ? settingsRecord.checkScripts.map((entry, index) =>
+                            asRequiredString(entry, `workspace settings.checkScripts[${index}]`)
+                        )
+                      : (() => {
+                            throw new Error("workspace settings.checkScripts must be an array");
+                        })(),
             nodeColors: nodeColorsValue
                 ? Object.fromEntries(
                       Object.entries(nodeColorsValue).map(([key, color]) => {
