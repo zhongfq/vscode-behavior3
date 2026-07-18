@@ -170,6 +170,14 @@ const getNodeDef = (nodeDefs: NodeDef[], name: string): NodeDef | null => {
     return findNodeDef(createNodeDefMap(nodeDefs), name);
 };
 
+const toOptionalBoolean = (value: unknown): boolean | undefined =>
+    typeof value === "boolean" ? value : undefined;
+
+const hasBooleanStateChanged = (
+    left: boolean | undefined,
+    right: boolean | undefined
+): boolean => Boolean(left) !== Boolean(right);
+
 const computeNodeOverride = (
     original: PersistedNodeModel,
     edited: PersistedNodeModel,
@@ -186,13 +194,13 @@ const computeNodeOverride = (
         hasDiff = true;
     }
 
-    if ((edited.debug || undefined) !== (original.debug || undefined)) {
-        diff.debug = edited.debug || undefined;
+    if (hasBooleanStateChanged(edited.debug, original.debug)) {
+        diff.debug = Boolean(edited.debug);
         hasDiff = true;
     }
 
-    if ((edited.disabled || undefined) !== (original.disabled || undefined)) {
-        diff.disabled = edited.disabled || undefined;
+    if (hasBooleanStateChanged(edited.disabled, original.disabled)) {
+        diff.disabled = Boolean(edited.disabled);
         hasDiff = true;
     }
 
@@ -409,8 +417,8 @@ const reduceUpdateNode = (
         nextPath = parsedPath;
     }
 
-    const nextDebug = payload.data.debug ? true : undefined;
-    const nextDisabled = payload.data.disabled ? true : undefined;
+    const nextDebug = toOptionalBoolean(payload.data.debug);
+    const nextDisabled = toOptionalBoolean(payload.data.disabled);
     const nextInput = pruneNodeSlotsByDefinition(payload.data.input, nextNodeDef?.input);
     const nextOutput = pruneNodeSlotsByDefinition(payload.data.output, nextNodeDef?.output);
     const nextArgs = pruneNodeArgsByDefinition(payload.data.args, nextNodeDef);
@@ -419,8 +427,8 @@ const reduceUpdateNode = (
         nextName === selectedNode.data.name &&
         nextDesc === selectedNode.data.desc &&
         nextPath === selectedNode.data.path &&
-        nextDebug === selectedNode.data.debug &&
-        nextDisabled === selectedNode.data.disabled &&
+        !hasBooleanStateChanged(nextDebug, selectedNode.data.debug) &&
+        !hasBooleanStateChanged(nextDisabled, selectedNode.data.disabled) &&
         isJsonEqual(nextInput ?? [], selectedNode.data.input ?? []) &&
         isJsonEqual(nextOutput ?? [], selectedNode.data.output ?? []) &&
         isJsonEqual(nextArgs ?? {}, selectedNode.data.args ?? {})

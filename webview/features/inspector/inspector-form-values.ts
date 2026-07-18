@@ -74,12 +74,15 @@ export const isSameLogicalInspectorNode = (
         isSameInspectorNodeIdentity(previousSelectedNode.ref, nextSelectedNode.ref)
     );
 
+const toOptionalBoolean = (value: unknown): boolean | undefined =>
+    typeof value === "boolean" ? value : undefined;
+
 export const buildCommittedNodeData = (selectedNode: EditNode): UpdateNodeInput["data"] => ({
     name: selectedNode.data.name,
     desc: selectedNode.data.desc,
     path: selectedNode.data.path,
-    debug: selectedNode.data.debug ? true : undefined,
-    disabled: selectedNode.data.disabled ? true : undefined,
+    debug: toOptionalBoolean(selectedNode.data.debug),
+    disabled: toOptionalBoolean(selectedNode.data.disabled),
     input: selectedNode.data.input ? [...selectedNode.data.input] : undefined,
     output: selectedNode.data.output ? [...selectedNode.data.output] : undefined,
     args: selectedNode.data.args ? { ...selectedNode.data.args } : undefined,

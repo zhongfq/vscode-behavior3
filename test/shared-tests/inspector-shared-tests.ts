@@ -6,6 +6,7 @@ import {
 } from "../../webview/features/inspector/inspector-arg-values";
 import { validateNodeArgOneof } from "../../webview/shared/validation";
 import {
+    buildCommittedNodeData,
     buildArgsWithoutArg,
     buildScopedArgs,
     buildRenamedNodeData,
@@ -333,6 +334,44 @@ export const inspectorSharedTests = defineSharedTests([
                 path: undefined,
                 debug: undefined,
                 disabled: undefined,
+                input: undefined,
+                output: undefined,
+                args: undefined,
+            });
+        },
+    },
+    {
+        name: "committed node data preserves explicit false booleans",
+        run() {
+            const selectedNode: EditNode = {
+                ref: {
+                    instanceKey: "9b",
+                    displayId: "9",
+                    structuralStableId: "bool-node",
+                    sourceStableId: "bool-node",
+                    sourceTreePath: null,
+                    subtreeStack: [],
+                },
+                data: {
+                    uuid: "bool-node",
+                    id: "9",
+                    name: "Wait",
+                    debug: false,
+                    disabled: false,
+                },
+                prefix: "",
+                activeChildCount: 0,
+                disabled: false,
+                subtreeNode: true,
+                subtreeEditable: true,
+            };
+
+            assert.deepEqual(buildCommittedNodeData(selectedNode), {
+                name: "Wait",
+                desc: undefined,
+                path: undefined,
+                debug: false,
+                disabled: false,
                 input: undefined,
                 output: undefined,
                 args: undefined,

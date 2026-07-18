@@ -187,9 +187,10 @@
 
 1. override 只用于 subtree 内部节点，不用于主树节点。
 2. override 表达的是“相对 subtree 原始节点的差异”。
-3. 若差异为空，应删除对应 override 条目。
-4. override 不会直接回写 subtree 源文件。
-5. 若某个 override 对应的 subtree 源节点已不再从当前主树可达，则宿主在可完整解析当前 reachable subtree graph 时应清理该条目。
+3. 对 `debug` / `disabled` 这类 boolean 字段，override 比较按有效布尔状态进行；当源值为 `true` 且当前值显式关闭时，主文档 override 必须保留 `false`。
+4. 若差异为空，应删除对应 override 条目。
+5. override 不会直接回写 subtree 源文件。
+6. 若某个 override 对应的 subtree 源节点已不再从当前主树可达，则宿主在可完整解析当前 reachable subtree graph 时应清理该条目。
 
 ## History 与 Dirty
 

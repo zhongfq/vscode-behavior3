@@ -211,6 +211,7 @@ host reducer 当前分三条路径：
 - 以 payload 自带的 `subtreeOriginal` 对比出 diff
     - `subtreeOriginal` 与当前 resolved node 已共享同一套 arg 默认值归一化
     - `currentNodeSnapshot.data.args` 来自当前 resolved/current args，而不是主文档 committed JSON
+    - `debug` / `disabled` 的提交结果必须保留显式 `false`，以支持把 subtree 源节点中的 `true` 关闭成主文档 override
     - 仅因 nodeDef 默认值补齐而出现的值，不得单独生成 main-document `overrides`
 - 写入或清理主文档 `overrides`
 

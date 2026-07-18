@@ -138,14 +138,14 @@ export function useNodeInspectorCommitters({
     const commitDebug = () => {
         queueNodeMutation(["debug"], (values) => ({
             ...buildCommittedNodeData(selectedNode),
-            debug: values.debug ? true : undefined,
+            debug: values.debug,
         }));
     };
 
     const commitDisabled = () => {
         queueNodeMutation(["disabled"], (values) => ({
             ...buildCommittedNodeData(selectedNode),
-            disabled: values.disabled ? true : undefined,
+            disabled: values.disabled,
         }));
     };
 

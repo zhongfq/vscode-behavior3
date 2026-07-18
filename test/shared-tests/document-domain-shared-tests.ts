@@ -8,6 +8,7 @@ import {
     serializePersistedTreeForMainDocumentSave,
 } from "../../webview/domain/main-document-save";
 import { DOCUMENT_VERSION } from "../../webview/shared/b3type";
+import type { NodeDef, PersistedTreeModel } from "../../webview/shared/contracts";
 import { reduceDocumentMutation } from "../../webview/shared/document";
 import { parseWorkdirRelativeJsonPath } from "../../webview/shared/protocol";
 import { parseNodeDefsContent, parseWorkspaceModelContent } from "../../webview/shared/schema";
@@ -838,6 +839,199 @@ export const documentDomainSharedTests = defineSharedTests([
 
             assert.deepEqual(result.tree.overrides["sub-node"], {
                 desc: "updated",
+            });
+        },
+    },
+    {
+        name: "persists subtree debug override when turning true off",
+        run() {
+            const tree = createTestTree();
+            const nodeDefs: NodeDef[] = [
+                {
+                    name: "Wait",
+                    type: "Action",
+                    desc: "",
+                },
+            ];
+
+            const result = reduceDocumentMutation(
+                {
+                    type: "updateNode",
+                    payload: {
+                        target: {
+                            instanceKey: "node-debug",
+                            displayId: "2",
+                            structuralStableId: "sub-node",
+                            sourceStableId: "sub-node",
+                            sourceTreePath: "subtree/child.json" as any,
+                            subtreeStack: [],
+                        },
+                        data: {
+                            name: "Wait",
+                            debug: false,
+                            disabled: false,
+                        },
+                        currentNodeSnapshot: {
+                            data: {
+                                uuid: "sub-node",
+                                id: "2",
+                                name: "Wait",
+                                debug: true,
+                            },
+                            subtreeNode: true,
+                            subtreeOriginal: {
+                                uuid: "sub-node",
+                                id: "2",
+                                name: "Wait",
+                                debug: true,
+                            },
+                        },
+                    },
+                },
+                {
+                    tree,
+                    nodeDefs,
+                }
+            );
+
+            assert.equal(result.status, "changed");
+            if (result.status !== "changed") {
+                return;
+            }
+
+            assert.deepEqual(result.tree.overrides["sub-node"], {
+                debug: false,
+            });
+        },
+    },
+    {
+        name: "persists subtree disabled override when turning true off",
+        run() {
+            const tree = createTestTree();
+            const nodeDefs: NodeDef[] = [
+                {
+                    name: "Wait",
+                    type: "Action",
+                    desc: "",
+                },
+            ];
+
+            const result = reduceDocumentMutation(
+                {
+                    type: "updateNode",
+                    payload: {
+                        target: {
+                            instanceKey: "node-disabled",
+                            displayId: "2",
+                            structuralStableId: "sub-node",
+                            sourceStableId: "sub-node",
+                            sourceTreePath: "subtree/child.json" as any,
+                            subtreeStack: [],
+                        },
+                        data: {
+                            name: "Wait",
+                            debug: false,
+                            disabled: false,
+                        },
+                        currentNodeSnapshot: {
+                            data: {
+                                uuid: "sub-node",
+                                id: "2",
+                                name: "Wait",
+                                disabled: true,
+                            },
+                            subtreeNode: true,
+                            subtreeOriginal: {
+                                uuid: "sub-node",
+                                id: "2",
+                                name: "Wait",
+                                disabled: true,
+                            },
+                        },
+                    },
+                },
+                {
+                    tree,
+                    nodeDefs,
+                }
+            );
+
+            assert.equal(result.status, "changed");
+            if (result.status !== "changed") {
+                return;
+            }
+
+            assert.deepEqual(result.tree.overrides["sub-node"], {
+                disabled: false,
+            });
+        },
+    },
+    {
+        name: "keeps explicit false subtree boolean overrides when editing another field",
+        run() {
+            const tree = createTestTree();
+            const nodeDefs: NodeDef[] = [
+                {
+                    name: "Wait",
+                    type: "Action",
+                    desc: "",
+                },
+            ];
+
+            const result = reduceDocumentMutation(
+                {
+                    type: "updateNode",
+                    payload: {
+                        target: {
+                            instanceKey: "node-bool-desc",
+                            displayId: "2",
+                            structuralStableId: "sub-node",
+                            sourceStableId: "sub-node",
+                            sourceTreePath: "subtree/child.json" as any,
+                            subtreeStack: [],
+                        },
+                        data: {
+                            name: "Wait",
+                            desc: "updated",
+                            debug: false,
+                            disabled: false,
+                        },
+                        currentNodeSnapshot: {
+                            data: {
+                                uuid: "sub-node",
+                                id: "2",
+                                name: "Wait",
+                                desc: "",
+                                debug: false,
+                                disabled: false,
+                            },
+                            subtreeNode: true,
+                            subtreeOriginal: {
+                                uuid: "sub-node",
+                                id: "2",
+                                name: "Wait",
+                                desc: "",
+                                debug: true,
+                                disabled: true,
+                            },
+                        },
+                    },
+                },
+                {
+                    tree,
+                    nodeDefs,
+                }
+            );
+
+            assert.equal(result.status, "changed");
+            if (result.status !== "changed") {
+                return;
+            }
+
+            assert.deepEqual(result.tree.overrides["sub-node"], {
+                desc: "updated",
+                debug: false,
+                disabled: false,
             });
         },
     },

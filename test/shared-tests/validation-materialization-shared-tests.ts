@@ -864,6 +864,118 @@ export const validationMaterializationSharedTests = defineSharedTests([
         },
     },
     {
+        name: "applies explicit false subtree boolean overrides in materialization",
+        async run() {
+            const mainTree = parsePersistedTreeContent(
+                JSON.stringify({
+                    version: "2.0.0",
+                    name: "main",
+                    prefix: "",
+                    group: [],
+                    variables: {
+                        imports: [],
+                        locals: [],
+                    },
+                    custom: {},
+                    overrides: {
+                        leaf: {
+                            debug: false,
+                            disabled: false,
+                        },
+                    },
+                    root: {
+                        uuid: "root",
+                        id: "1",
+                        name: "Wrapper",
+                        children: [
+                            {
+                                uuid: "subref",
+                                id: "2",
+                                name: "SubtreeRef",
+                                path: "sub.json",
+                            },
+                        ],
+                    },
+                }),
+                "main.json"
+            );
+
+            const subtreeSources = await loadSubtreeSourceCache({
+                root: mainTree.root,
+                readContent: async (relativePath) => {
+                    if (relativePath !== "sub.json") {
+                        return null;
+                    }
+
+                    return JSON.stringify({
+                        version: "2.0.0",
+                        name: "sub",
+                        prefix: "",
+                        group: [],
+                        variables: {
+                            imports: [],
+                            locals: [],
+                        },
+                        custom: {},
+                        overrides: {},
+                        root: {
+                            uuid: "sub-root",
+                            id: "1",
+                            name: "SubtreeRoot",
+                            children: [
+                                {
+                                    uuid: "leaf",
+                                    id: "2",
+                                    name: "Leaf",
+                                    debug: true,
+                                    disabled: true,
+                                },
+                            ],
+                        },
+                    });
+                },
+            });
+
+            const root = materializePersistedTree({
+                persistedTree: mainTree,
+                subtreeSources,
+                nodeDefs: [
+                    {
+                        name: "Wrapper",
+                        type: "Composite",
+                        desc: "",
+                        status: ["|success"],
+                    },
+                    {
+                        name: "SubtreeRef",
+                        type: "Action",
+                        desc: "",
+                    },
+                    {
+                        name: "SubtreeRoot",
+                        type: "Composite",
+                        desc: "",
+                        status: ["|success"],
+                    },
+                    {
+                        name: "Leaf",
+                        type: "Action",
+                        desc: "",
+                        status: ["success"],
+                    },
+                ],
+                subtreeEditable: true,
+            });
+
+            const leaf = root.children[0]?.children[0];
+            assert.ok(leaf);
+            assert.equal(leaf?.data.debug, false);
+            assert.equal(leaf?.data.disabled, false);
+            assert.equal(leaf?.subtreeOriginal?.debug, true);
+            assert.equal(leaf?.subtreeOriginal?.disabled, true);
+        },
+    },
+    {
         name: "counts tree inspector variable usages inside materialized subtrees",
         run() {
             const mainTree = parsePersistedTreeContent(

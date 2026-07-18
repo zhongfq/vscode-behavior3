@@ -252,6 +252,7 @@ Inspector 暴露同一组 project/document quick actions，但承载位置随模
 ### 语义
 
 - 对 subtree 节点的 override 比较，`subtreeOriginal` 与当前 resolved node 使用同一套 arg 默认值归一化
+- 对 subtree 节点的 `debug` / `disabled` 覆写，提交链路必须保留显式 `false`，以便把源节点的 `true` 关闭成主文档 override
 - 因此 nodeDef 的默认参数补齐本身不会单独点亮 override UI
 - 对 subtree 节点的 selected snapshot，`data.args` 必须保留当前 resolved/current args，不能回落成空对象或只保留主树 committed JSON，因为 Inspector 需要它来和 `subtreeOriginal` 做 override 比较
 - 对主树普通节点，结构化参数区可以展示 resolved/effective arg 默认值；但只读 JSON 与提交基线仍以主文档实际持久化数据为准
